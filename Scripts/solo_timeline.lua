@@ -95,7 +95,9 @@ return function(M,S,ui)
  function V.mouse(down,pressed,recording)
   if recording then gesture=nil;return inside(gfx.mouse_x,gfx.mouse_y) or contains(comp_box,gfx.mouse_x,gfx.mouse_y) or contains(take_box,gfx.mouse_x,gfx.mouse_y)end
   if pressed and not gesture and contains(comp_box,gfx.mouse_x,gfx.mouse_y)then
-   if ui.comp() or ui.preview() then ui.run(function()ui.take_action('back')end)end
+   -- Let the shared button handler receive the Comp / Take controls in the gutter.
+   if gfx.mouse_x<box.x then return false end
+   if ui.comp() then ui.run(function()ui.take_action('listen_comp')end)end
    return true
   end
   if pressed and not gesture and contains(take_box,gfx.mouse_x,gfx.mouse_y)then
@@ -158,7 +160,7 @@ return function(M,S,ui)
   if not view_end then V.fit()end
   regions=S.list();local active=S.active();local enabled=not recording
   local takes=ui.rows();local chosen=ui.chosen();local selected_count=ui.selection_count();local set=M.get('active')
-  local comp=ui.comp();local audition=ui.preview();local target=ui.target()
+  local comp=ui.comp();local listen_mode=ui.listen_mode();local target=ui.target()
   if set~=last_set then take_scroll=0;last_selected=nil;last_set=set;record_start=nil end
   text('Song timeline',x,y,4)
   text('Click a section to record it. Drag its center to move, or an edge to resize.',x+158,y+3,3,C.muted,w-158)
@@ -234,8 +236,9 @@ return function(M,S,ui)
   end
   local cy=comp_box.y
   color({0.19,0.26,0.24});gfx.rect(x,cy,w,lane_height-2,1)
-  text('Comp',x+12,cy+5,1,C.text,gutter-20)
-  text(audition and 'Preview / click to return' or comp and (comp.playing and 'Playing / saved choices' or 'Click to play') or 'Your chosen passages',x+12,cy+26,3,audition and C.gold or C.muted,gutter-20)
+  text('Comp',x+12,cy+2,1,C.text,gutter-20)
+  button('Comp',x+8,cy+22,80,21,function()ui.take_action('listen_comp')end,listen_mode=='comp'and C.blue or nil,enabled and comp~=nil)
+  button('Take',x+96,cy+22,80,21,function()ui.take_action('listen_take')end,listen_mode=='take'and C.blue or nil,enabled and selected_count==1)
   for _,px in ipairs(ticks)do color(C.line);gfx.line(px,cy,px,cy+lane_height-2)end
   local function comp_clip(a,b,label,tint)
    local left=math.max(box.x,to_x(a));local right=math.min(box.x+box.w,to_x(b))
@@ -250,8 +253,7 @@ return function(M,S,ui)
     local _,name=R.GetSetMediaItemInfo_String(clip.item,'P_EXT:SoloStudioSourceName','',false)
     comp_clip(clip.s,clip.e,name~='' and ('Take '..name):gsub('^Take (%D)','%1') or 'Kept passage',{0.28,0.43,0.36})
    end
-  elseif not audition then text('Click a take clip below, then Use in comp.',box.x+16,cy+14,3,C.muted,box.w-32)end
-  if audition then comp_clip(audition.s,audition.e,'Preview: '..audition.name,{0.52,0.39,0.17})end
+  else text('Click a take clip below, then Use in comp.',box.x+16,cy+14,3,C.muted,box.w-32)end
   for i=take_scroll+1,math.min(count,take_scroll+take_visible)do
    local row=takes[i];local live=not row;local ry=take_box.y+(i-take_scroll-1)*lane_height
    local is_selected=row and ui.selected(row.key)
@@ -269,10 +271,9 @@ return function(M,S,ui)
    else
     clips,a,b=spans(row)
     text((row.favorite and '* 'or '')..take_name(row),x+12,ry+5,1,C.text,gutter-20)
-    local previewing=audition and audition.key==row.key
     local tempo=row.tempo or {label='Tempo ?'}
-    local suffix=previewing and ' / preview' or row.playing and ' / playing' or tempo.different and ' / different' or ''
-    text(tempo.label..suffix,x+12,ry+26,3,(tempo.different or previewing) and C.gold or row.playing and C.blue or C.muted,gutter-20)
+    local suffix=row.playing and ' / playing' or tempo.different and ' / different' or ''
+    text(tempo.label..suffix,x+12,ry+26,3,tempo.different and C.gold or row.playing and C.blue or C.muted,gutter-20)
    end
    for _,clip in ipairs(clips)do
     local left=math.max(box.x,to_x(clip.s));local right=math.min(box.x+box.w,to_x(clip.e))
@@ -300,7 +301,7 @@ return function(M,S,ui)
   end
   local px=to_x(S.position());if px>=box.x and px<=box.x+box.w then color(C.gold);gfx.line(px,box.y,px,take_box.y+take_box.h);gfx.rect(px-3,box.y,6,7,1)end
   color(C.line);gfx.line(box.x,box.y,box.x,take_box.y+take_box.h)
-  local detail='Click a take clip, then Use in comp to keep it. Preview compares it with the saved comp.'
+  local detail='Comp / Take controls playback. In Take mode, click a take to hear it; Use in comp keeps the passage.'
   if selected_count>1 then
    detail=selected_count..' takes selected. Delete removes these whole passes across the recording set. Cmd+Z in REAPER restores them.'
   elseif chosen then
@@ -314,13 +315,12 @@ return function(M,S,ui)
   text(detail,x,y+h-97,3,g and not g.valid and C.record or C.muted,w-155)
   text(count>0 and (take_scroll+1)..'-'..math.min(count,take_scroll+take_visible)..' of '..count..' lanes' or '',x+w-145,y+h-97,3,C.muted,145)
   local ay=y+h-74;local single=enabled and selected_count==1
-  for _,spec in ipairs({{'Use in comp',0,132,'comp',C.blue},{'Preview',140,96,'preview'},
-   {audition and 'Back to comp' or 'Play comp',244,132,'back'},{'Favorite',384,86,'favorite'},{'Take note',478,94,'note'},
-   {'Rename',580,84,'rename'},{selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',672,160,'delete',C.record}})do
-   local available=spec[4]=='back' and (comp~=nil or audition~=nil) or spec[4]~='back' and (spec[4]=='delete' and selected_count>0 or single)
+  for _,spec in ipairs({{'Use in comp',0,132,'comp',C.blue},{'Favorite',140,96,'favorite'},{'Take note',244,105,'note'},
+   {'Rename',357,90,'rename'},{selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',455,160,'delete',C.record}})do
+   local available=spec[4]=='delete' and selected_count>0 or single
    button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],enabled and available)
   end
-  text('Left / Right: preview another take',x+848,ay+8,3,C.muted,w-848)
+  text('Left / Right: select a take / Take mode follows selection',x+631,ay+8,3,C.muted,w-631)
   local iy=y+h-33
   text('Section',x,iy+8,3,C.muted)
   if active then

@@ -217,7 +217,7 @@ end
 function M.row_for_lane(lane) for _,row in ipairs(M.lanes()) do if row.lane==lane then return row end end end
 -- Remove project items, never their source files. Keep empty native lanes so
 -- source/comp lane indices remain aligned across microphones.
-function M.delete_takes(takes)
+function M.delete_takes(takes,listen_key)
   M.stopped();M.cancel_preview()
   assert(type(takes)=='table' and #takes>0,'Select at least one take to delete.')
   local tracks=M.require_tracks();local live={};local lanes={};local total=0
@@ -226,6 +226,12 @@ function M.delete_takes(takes)
     local row=live[take.lane]
     assert(row and row.key==take.key,'A selected take changed. Select it again before deleting.')
     if not lanes[take.lane]then lanes[take.lane]=true;total=total+1 end
+  end
+  local listen
+  if listen_key then
+    listen=assert(M.row_for_key(listen_key),'The next take changed. Select it again before deleting.')
+    assert(not lanes[listen.lane]and not listen.is_comp and not listen.is_preview,'The next take must be a surviving source lane.')
+    M.validate_lane(tracks,listen.lane)
   end
   local count=R.GetMediaTrackInfo_Value(tracks[1],'I_NUMFIXEDLANES')
   local saved={}
@@ -249,6 +255,10 @@ function M.delete_takes(takes)
         local comp={}
         for _,id in ipairs(split(str(tr,'P_EXT:SoloStudioComp'))) do if not removed[id] then comp[#comp+1]=id end end
         R.GetSetMediaTrackInfo_String(tr,'P_EXT:SoloStudioComp',table.concat(comp,'\n'),true)
+        if listen then
+          R.SetMediaTrackInfo_Value(tr,'C_LANEPLAYS:'..listen.lane,1)
+          assert(R.GetMediaTrackInfo_Value(tr,'C_LANEPLAYS:'..listen.lane)==1,'REAPER could not switch every microphone to the next take.')
+        end
       end
     end,debug.traceback)
     if not ok then

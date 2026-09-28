@@ -4,14 +4,24 @@ local passed=0
 local function fixture(initial_view)
   local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={},sections={},view=initial_view or 'review'}
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
-  local P={current=function()return f.preview end,cancel=function()f.preview=nil end,close=function()f.preview=nil end,poll=function()end,
-    start=function(key,s,e)f.preview={key=key,s=s,e=e};for _,row in ipairs(f.rows)do if row.key==key then call('audition',row.lane)end end end}
-  local M={stopped=function()assert(not f.recording)end,finish_recorded_tempo=function()end,preview=function()return P end,cancel_preview=function()P.cancel()end,ns='test',use_in_comp=function(key,s,e)P.cancel();call('comp',{key=key,s=s,e=e})end,listen_comp=function()call('back',true)end,require_tracks=function()return {'track'}end,validate_lane=function(_,lane,range)for _,row in ipairs(f.rows)do if row.lane==lane then assert(row.items[1].s<=range[1]and row.items[1].e>=range[2]);return end end;error('Missing lane')end,tracks=function()return {'track'}end,lanes=function()return f.rows end,
-    audition=function(lane)call('audition',lane)end,
-    delete_takes=function(rows)
+  f.saved_comp={is_comp=true,key='saved-comp',lane=99,playing=true,name='Comp',note='',items={{s=0,e=24}}}
+  local function activate(lane)
+    if f.saved_comp then f.saved_comp.playing=lane==f.saved_comp.lane end
+    for _,row in ipairs(f.rows)do row.playing=row.lane==lane end
+  end
+  local M={stopped=function()assert(not f.recording)end,finish_recorded_tempo=function()end,cancel_preview=function()end,ns='test',
+    stop=function()f.playing=false end,
+    use_in_comp=function(key,s,e)activate(99);call('comp',{key=key,s=s,e=e})end,
+    listen_comp=function()assert(f.saved_comp);activate(99);call('back',true)end,
+    require_tracks=function()return {'track'}end,tracks=function()return {'track'}end,
+    lanes=function()local rows={};for _,row in ipairs(f.rows)do rows[#rows+1]=row end;if f.saved_comp then rows[#rows+1]=f.saved_comp end;return rows end,
+    row_for_key=function(key)for _,row in ipairs(f.rows)do if row.key==key then return row end end end,
+    audition=function(lane,whole_lane)assert(not f.recording);assert(whole_lane,'Toggle must play the whole source lane');assert(not f.audition_fail,'Simulated audition failure');activate(lane);call('audition',lane)end,
+    delete_takes=function(rows,listen_key)
       if f.delete_fail then error('Simulated failure')end
-      P.cancel();local keys={};for _,row in ipairs(rows)do keys[#keys+1]=row.key end
+      local keys={};for _,row in ipairs(rows)do keys[#keys+1]=row.key end
       call('delete',table.concat(keys,','))
+      if listen_key then for _,row in ipairs(f.rows)do if row.key==listen_key then activate(row.lane)end end end
       for i=#f.rows,1,-1 do for _,key in ipairs(keys)do if f.rows[i].key==key then table.remove(f.rows,i);break end end end
     end,
     get=function(key)return key=='active' and f.set or 'Scratch'end,
@@ -78,37 +88,43 @@ check(#f.calls==0,'Tempo-map project disables tempo slider')
 f=fixture();f.mouse(750,230,true);f.mouse(750,230,false)
 check(#f.calls==1 and f.calls[1][1]=='sounds','Click sound button opens native sound settings')
 local function take(key,lane,playing)return {key=key,lane=lane,name=key,note='',playing=playing,favorite=false,items={{s=0,e=8}}}end
-f=fixture();f.rows={take('Short take',0,false),take('Playing take',1,true)};f.frame()
-f.mouse(400,435,true);f.mouse(400,435,false)
-check(#f.calls==0,'Take-list click selects a partial take without switching audio')
-f.mouse(620,388,true);f.mouse(620,388,false)
-check(f.calls[1]and f.calls[1][1]=='audition'and f.calls[1][2]==0,'Audition button uses the explicitly selected take')
-f.mouse(540,579,true);f.mouse(540,579,false)
-check(f.calls[2]and f.calls[2][1]=='delete'and f.calls[2][2]=='Short take'and #f.rows==1,'Take-list Delete removes the selected take, not the playing one')
-f=fixture();f.rows={take('Take 1',0,true)};f.recording=true;f.frame()
-f.mouse(540,579,true);f.mouse(540,579,false)
-check(#f.calls==0 and #f.rows==1,'Take-list deletion is disabled during recording')
-f=fixture();f.rows={take('Old take',0,true)};f.frame();f.recording=true;f.frame()
+local function audition_button(f)f.click(680,353)end
+local function comp_button(f)f.click(610,353)end
+local function last(f)return f.calls[#f.calls]end
+f=fixture();f.rows={take('Short take',0),take('Other take',1)};f.frame()
+f.click(400,435)
+check(#f.calls==0,'Comp mode lets a take-list click select without switching audio')
+audition_button(f)
+check(last(f)[1]=='audition'and last(f)[2]==0 and not f.playing,'Take toggle selects the highlighted lane without starting stopped transport')
+f.click(400,477)
+check(last(f)[2]==1 and f.timeline.listen_mode()=='take','Take mode follows a new take-list selection automatically')
+f.click(540,579)
+check(last(f)[1]=='delete'and last(f)[2]=='Other take'and f.rows[1].playing and #f.rows==1,'Deleting the playing take automatically listens to its selected neighbor')
+comp_button(f);check(last(f)[1]=='back'and not f.playing,'Comp toggle returns to saved choices without starting playback')
+f=fixture();f.rows={take('Take 1',0)};f.recording=true;f.frame()
+f.click(540,579);audition_button(f);comp_button(f)
+check(#f.calls==0 and #f.rows==1,'Deletion and playback toggles are disabled during recording')
+f.key=1919379572;f.frame();f.key=nil
+check(#f.calls==0,'Keyboard browsing cannot switch lanes while recording')
+f=fixture();f.rows={take('Old take',0,true)};f.saved_comp.playing=false;f.frame();f.recording=true;f.frame()
 f.rows={take('Old take',0,false),take('New take',1,true)};f.recording=false;f.frame()
-f.mouse(540,579,true);f.mouse(540,579,false)
+f.click(540,579)
 check(f.calls[1]and f.calls[1][2]=='New take','After Stop the new pass becomes the selected take for review or deletion')
-f=fixture();f.rows={take('First',0,true),take('Middle',1),take('Last',2)};f.frame()
-f.click(400,477);f.click(540,579);f.click(620,388)
-check(f.calls[1][2]=='Middle'and f.calls[2][1]=='audition'and f.calls[2][2]==2,'Deleting a middle take selects its next neighbor, not the playing first take')
-f.click(540,579);f.click(620,388)
-check(f.calls[3][2]=='Last'and f.calls[4][2]==0,'Deleting the final take selects the previous surviving take')
 f=fixture();f.rows={take('First',0),take('Middle',1),take('Last',2)};f.frame()
-f.click(400,435);f.click(400,519,4);f.click(620,388)
-check(#f.calls==0,'Audition disabled when several takes are selected')
+f.click(400,477);f.click(540,579)
+check(last(f)[2]=='Middle'and f.timeline.chosen().key=='Last'and #f.calls==1,'Deleting in Comp mode selects the next neighbor and preserves comp playback')
+audition_button(f);f.click(540,579)
+check(f.calls[3][2]=='Last'and f.rows[1].playing and f.timeline.chosen().key=='First','Deleting the final take in Take mode selects and plays the previous survivor')
+f=fixture();f.rows={take('First',0),take('Middle',1),take('Last',2)};f.frame()
+f.click(400,435);f.click(400,519,4);audition_button(f)
+check(#f.calls==0,'Take toggle is disabled when several takes are selected')
 f.click(540,579)
 check(f.calls[1][2]=='First,Last'and #f.rows==1,'Cmd-click selects disjoint takes and Delete submits one batch')
-f.click(620,388)
-check(f.calls[2][2]==1,'After deleting disjoint takes, the nearest surviving neighbor is selected')
+audition_button(f);check(last(f)[2]==1,'After batch deletion the nearest surviving neighbor is selected')
 f=fixture();f.rows={take('First',0),take('Middle',1),take('Last',2)};f.frame()
 f.click(400,435);f.click(400,519,8);f.click(540,579)
 check(f.calls[1][2]=='First,Middle,Last'and #f.rows==0,'Shift-click selects an inclusive range for batch deletion')
-f.click(540,579)
-check(#f.calls==1,'Deleting every take leaves no selection or repeat deletion')
+f.click(540,579);check(#f.calls==1,'Deleting every take leaves no selection or repeat deletion')
 f=fixture();f.rows={take('First',0),take('Middle',1),take('Last',2)};f.frame()
 f.click(400,435);f.click(400,519,4);f.click(400,435,4);f.click(540,579)
 check(f.calls[1][2]=='Last','Cmd-click toggles a selected take out of the batch')
@@ -126,21 +142,37 @@ check(f.calls[1][2]=='Guitar','Changing instruments clears the previous multisel
 f=fixture('timeline');f.rows={take('Full',0),take('Partial',1)};f.rows[1].items[1].e=24;f.rows[2].items={{s=10,e=14}}
 f.sections={{s=0,e=8},{s=8,e=16},{s=16,e=24}};f.section=f.sections[1];f.frame()
 f.timeline.select(f.rows[2],{s=10,e=14},11)
-f.timeline.take_action('preview')
-check(f.preview.key=='Partial'and f.preview.s==10 and f.preview.e==14,'Clicking a partial clip previews its actual bounds, even outside the recording section')
-f.timeline.select(f.rows[1],{s=0,e=24},12)
-check(f.preview.key=='Full'and f.preview.s==8 and f.preview.e==16,'Clicking another clip during preview compares its clicked song section')
-f.timeline.take_action('comp')
-local committed=f.calls[#f.calls][2]
-check(not f.preview and committed.key=='Full'and committed.s==8 and committed.e==16,'Use in comp commits the selected clip range and ends temporary preview')
-local comp=take('Comp',2,true);comp.is_comp=true;local temporary=take('Temporary',3,true);temporary.is_preview=true
-f.rows[#f.rows+1]=comp;f.rows[#f.rows+1]=temporary;f.frame()
-check(#f.timeline.rows()==2 and f.timeline.comp()==comp,'Saved comp and temporary playback lane stay out of source take selection')
-f.timeline.take_action('back');check(f.calls[#f.calls][1]=='back'and f.playing,'Play comp activates saved choices and starts playback when stopped')
-f.timeline.select(f.rows[2],{s=10,e=14},11);f.timeline.take_action('preview');f.timeline.take_action('back')
-check(not f.preview and f.playing,'Back to comp cancels preview while keeping playback active')
-f.timeline.select(f.rows[2],{s=10,e=14},11);f.key=1919379572;f.frame();f.key=nil
-check(f.preview.key=='Full'and f.preview.s==10 and f.preview.e==14,'Arrow-key comparison preserves the selected passage when switching source takes')
+check(#f.calls==0 and f.timeline.listen_mode()=='comp','Selecting a timeline clip in Comp mode leaves saved comp playing')
+f.timeline.take_action('listen_take')
+check(last(f)[2]==1 and not f.playing,'Take mode plays the complete partial lane even outside the selected recording section')
+f.playing=true;f.timeline.select(f.rows[1],{s=0,e=24},12)
+check(last(f)[2]==0 and f.playing,'Clicking another timeline clip switches its whole lane without stopping playback')
+f.timeline.take_action('comp');local committed=last(f)[2]
+check(committed.key=='Full'and committed.s==8 and committed.e==16 and f.timeline.listen_mode()=='comp'and f.playing,'Use in comp keeps the clicked section, returns to Comp, and preserves playback')
+local temporary=take('Temporary',3);temporary.is_preview=true;f.rows[#f.rows+1]=temporary;f.frame()
+check(#f.timeline.rows()==2 and f.timeline.comp()==f.saved_comp,'Comp and legacy temporary lanes stay out of source take selection')
+f.timeline.select(f.rows[2],{s=10,e=14},11);local count=#f.calls
+f.key=1919379572;f.frame();f.key=nil
+check(#f.calls==count and f.timeline.chosen().key=='Full','Arrow keys browse selections without changing audio in Comp mode')
+f.timeline.take_action('listen_take');f.key=1919379572;f.frame();f.key=nil
+check(last(f)[2]==1 and f.playing,'Arrow keys automatically switch playback in Take mode')
+f.timeline.take_action('listen_comp')
+check(last(f)[1]=='back'and f.playing and f.timeline.chosen().key=='Partial','Comp toggle preserves playback and highlighted source take')
+f.timeline.take_action('listen_take');f.click(250,110)
+check(not f.playing and f.timeline.listen_mode()=='take'and f.rows[2].playing,'Stop preserves the chosen Take playback lane')
+f.click(250,110);check(f.playing and f.rows[2].playing,'Play resumes the selected lane without another audition action')
+f.gfx.mouse_cap=4;count=#f.calls;f.timeline.select(f.rows[1]);f.gfx.mouse_cap=0
+check(f.timeline.selection_count()==2 and #f.calls==count,'Multiselection in Take mode keeps the current audio lane')
+f.timeline.take_action('listen_comp');check(f.timeline.listen_mode()=='comp','Comp remains available with multiple sources selected')
+f.timeline.select(f.rows[1]);f.audition_fail=true
+local ok=pcall(f.timeline.take_action,'listen_take')
+check(not ok and f.saved_comp.playing and f.timeline.listen_mode()=='comp','Failed Take activation preserves Comp playback and mode')
+f=fixture('timeline');f.saved_comp=nil;f.rows={take('First',0,true),take('Second',1)};f.frame();f.timeline.select(f.rows[2])
+check(last(f)[2]==1 and f.timeline.listen_mode()=='take','Before a comp exists, single selection directly activates the source take')
+f.saved_comp={is_comp=true,key='guitar-comp',lane=99,playing=true,name='Comp',items={{s=0,e=24}}};f.set='guitar';f.rows={take('Guitar',0)};f.frame()
+check(f.timeline.listen_mode()=='comp','Changing instruments reflects the new set native playback mode')
+f=fixture();local preview_label=false;for _,label in ipairs(f.labels)do if label=='Preview'then preview_label=true end end
+check(not preview_label,'The Takes view no longer exposes an explicit Preview button')
 f=fixture('timeline');f.rows={take('Current',0),take('Slow',1),take('Unknown',2),take('Mixed',3)}
 f.rows[1].tempo={label='120 BPM',bpm=120};f.rows[2].tempo={label='100 BPM',bpm=100,different=true};f.rows[3].tempo={unknown=true,label='Tempo ?'};f.rows[4].tempo={label='Mixed tempo',mixed=true,unknown=true};f.frame()
 f.menu_choice=1;f.timeline.tempo_menu()

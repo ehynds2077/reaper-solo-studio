@@ -32,7 +32,7 @@ local function fixture()
  for _,fn in ipairs({'rect','line'})do gfx[fn]=function(...)f.draws[#f.draws+1]={kind=fn,args={...}}end end
  local ui={tempo_menu=function()f.action='tempo'end,colors={muted={},text={},line={},blue={},record={},gold={}},text=function(label)f.labels[#f.labels+1]=label end,color=function()end,
   button=function(label,_,_,_,_,fn,_,enabled)if enabled~=false then f.buttons[label]=fn end end,
-  comp=function()return f.comp end,preview=function()return f.preview end,target=function()return f.target end,
+  comp=function()return f.comp end,listen_mode=function()return f.mode or 'comp'end,target=function()return f.target end,
   rows=function()return f.takes end,chosen=function()return f.chosen end,
   selected=function(key)return f.selected and f.selected[key] or f.chosen and f.chosen.key==key end,
   selection_count=function()return f.selected_count or (f.chosen and 1 or 0)end,
@@ -88,7 +88,7 @@ local function take(key,s,e)
 end
 f=fixture();f.S.create(0,8,'Verse');f.S.create(8,16,'Chorus');f.S.select(f.S.list()[1].key)
 f.takes={take('Short pass',2,6),take('Later pass',12,14)};f.draw()
-check(f.buttons.Preview==nil,'Take actions disabled until a take is chosen')
+check(f.buttons.Take==nil,'Take actions disabled until a take is chosen')
 f.mouse(4,true,true,463)
 check(f.chosen==f.takes[1] and not f.action and f.S.active().s==0,'Clicking a partial take selects without auditioning or changing section')
 f.draw();f.buttons['Delete take']()
@@ -122,17 +122,22 @@ f.chosen=f.takes[2];f.selected={First=true,Second=true};f.selected_count=2;f.dra
 local outlines=0
 for _,shape in ipairs(f.draws)do if shape.kind=='rect'and shape.args[4]==34 and shape.args[5]==0 then outlines=outlines+1 end end
 check(outlines==2,'Timeline highlights every selected take')
-check(f.buttons.Preview==nil and f.buttons['Use in comp']==nil and f.buttons['Delete 2 takes']~=nil,'Timeline exposes batch Delete and disables single-take actions for multiple selection')
+check(f.buttons.Take==nil and f.buttons['Use in comp']==nil and f.buttons['Delete 2 takes']~=nil,'Timeline exposes batch Delete and disables single-take actions for multiple selection')
 f.buttons['Delete 2 takes']();check(f.action=='delete','Timeline batch delete routes through the shared selection action')
-check(f.buttons['Play comp']==nil,'Empty comp cannot be played')
+check(f.buttons.Comp==nil,'Empty comp cannot be played')
 f.comp=take('Comp',0,8);reaper.GetSetMediaItemInfo_String=function()return true,'First'end;f.draw()
-check(f.buttons['Play comp']~=nil,'Saved comp has a dedicated playback control')
-f.mouse(2,true,true,417);check(f.action=='back','Clicking the pinned comp lane activates saved comp')
-f.selected_count=1;f.selected=nil;f.chosen=f.takes[1];f.target={s=2,e=6};f.preview={key='First',name='First',s=2,e=6};f.draw()
-check(f.buttons['Back to comp']~=nil and f.buttons['Use in comp']~=nil,'Preview exposes separate commit and return controls')
+check(f.buttons.Comp~=nil,'Saved comp has a dedicated playback control')
+f.mouse(2,true,true,417);check(f.action=='listen_comp','Clicking the pinned comp lane activates saved comp')
+f.selected_count=1;f.selected=nil;f.chosen=f.takes[1];f.target={s=2,e=6};f.mode='take';f.draw()
+check(f.buttons.Comp and f.buttons.Take and f.buttons['Use in comp'],'Comp and Take toggles coexist with the passage commit action')
+f.buttons.Take();check(f.action=='listen_take','Take toggle activates the highlighted whole lane')
+f.buttons.Comp();check(f.action=='listen_comp','Comp toggle activates saved choices')
+check(not f.buttons.Preview and not f.buttons['Back to comp']and not f.buttons['Play comp'],'Obsolete preview and return buttons are absent')
+gfx.mouse_x=60;gfx.mouse_y=424
+check(not f.V.mouse(true,true,false),'Comp header clicks reach the toggle buttons instead of the comp clip hit area')
 f.mouse(3,true,true,463)
 check(f.clip.s==0 and f.clip.e==8 and math.abs(f.position-3)<1e-8,'Clip selection passes exact clip and clicked musical position')
-f.preview=nil;f.comp=nil;f.takes[1].items[1].deleted=true;f.takes[2].items[1].deleted=true
+f.comp=nil;f.takes[1].items[1].deleted=true;f.takes[2].items[1].deleted=true
 check(pcall(f.draw),'A native deletion between refreshes cannot crash timeline drawing')
 f=fixture();f.takes={take('Slower',0,8)};f.takes[1].tempo={label='100 BPM',different=true,clips={[f.takes[1].items[1]]='100 BPM'}};f.draw()
 local label=false;for _,s in ipairs(f.labels)do if s=='100 BPM / different'then label=true end end

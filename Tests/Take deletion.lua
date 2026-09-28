@@ -13,9 +13,10 @@ local function fixture()
  reaper={GetProjExtState=function(_,_,k)return 1,f.state[k]or''end,
   GetPlayState=function()return f.recording and 4 or 0 end,
   CountTracks=function()return #f.tracks end,GetTrack=function(_,i)return f.tracks[i+1]end,GetTrackGUID=function(tr)return tr.id end,
-  GetMediaTrackInfo_Value=function(tr,k)if k=='I_NUMFIXEDLANES'then return tr.count end;return 0 end,
+  GetMediaTrackInfo_Value=function(tr,k)if k=='I_NUMFIXEDLANES'then return tr.count end;return tr.props[k]or 0 end,
+  SetMediaTrackInfo_Value=function(tr,k,v)if not(f.switch_fail and tr.id=='snare')then tr.props[k]=v end end,
   GetSetMediaTrackInfo_String=function(tr,k,v,set)if set then tr.props[k]=v end;return true,tr.props[k]or''end,
-  GetSetMediaItemInfo_String=function(it)return true,it.id end,
+  GetSetMediaItemInfo_String=function(it,k)return true,k=='GUID'and it.id or ''end,
   GetMediaItemInfo_Value=function(it,k)return k=='I_FIXEDLANE'and it.lane or k=='D_POSITION'and it.s or it.length end,
   CountTrackMediaItems=function(tr)return #tr.items end,GetTrackMediaItem=function(tr,i)return tr.items[i+1]end,
   GetTrackStateChunk=function(tr)return not f.snapshot_fail,copy(tr)end,
@@ -65,4 +66,11 @@ check(not pcall(f.M.delete_takes,{{lane=0,key='kicka'},{lane=2,key='stale'}})and
 f=fixture();f.M.delete_takes({{lane=1,key='kickb'},{lane=1,key='kickb'}})
 check(f.deletes==4 and f.undo==1,'Duplicate batch entries do not delete twice')
 f=fixture();check(not pcall(f.M.delete_takes,{})and f.undo==0,'Empty batches cannot create edits')
+f=fixture();f.M.delete_takes({{lane=1,key='kickb'}},'kickd')
+check(f.undo==1 and #f.tracks[1].items==2 and f.tracks[1].props['C_LANEPLAYS:2']==1 and f.tracks[2].props['C_LANEPLAYS:2']==1,'Deletion and follow-selection playback share one undo block across microphones')
+f=fixture();f.switch_fail=true
+check(not pcall(f.M.delete_takes,{{lane=1,key='kickb'}},'kickd')and #f.tracks[1].items==4 and #f.tracks[2].items==4 and not f.tracks[1].props['C_LANEPLAYS:2'],'A failed neighbor switch rolls back both deletion and playback on all microphones')
+f=fixture()
+check(not pcall(f.M.delete_takes,{{lane=1,key='kickb'}},'stale')and f.undo==0 and f.deletes==0,'A stale neighbor cannot cause deletion')
+check(not pcall(f.M.delete_takes,{{lane=1,key='kickb'}},'kickb')and f.undo==0,'A deleted lane cannot be its own playback successor')
 print(total..' take deletion checks passed.')

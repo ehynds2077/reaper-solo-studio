@@ -49,13 +49,14 @@ return function()
    local row=Q.chosen(rows);focus=row and row.key
   else Q.only(key)end
  end
- function Q.after_delete(before,removed)
+ function Q.neighbor_after_delete(before,removed)
   local gone={};for _,row in ipairs(removed)do gone[row.key]=true end
   local index=1;for i,row in ipairs(before)do if row.key==focus then index=i;break end end
   local neighbor
   for i=index+1,#before do if not gone[before[i].key]then neighbor=before[i].key;break end end
   if not neighbor then for i=index-1,1,-1 do if not gone[before[i].key]then neighbor=before[i].key;break end end end
-  Q.only(neighbor)
+  return neighbor
  end
+ function Q.after_delete(before,removed)Q.only(Q.neighbor_after_delete(before,removed))end
  return Q
 end
