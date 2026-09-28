@@ -1,0 +1,270 @@
+desc:Solo Studio Strobe
+author:Solo Studio
+version:0.1.0
+tags:analysis tuner guitar bass
+options:no_meter gfx_hz=60 maxmem=65536
+in_pin:Left
+in_pin:Right
+out_pin:Left
+out_pin:Right
+slider1:440<400,480,0.1>-A4 reference (Hz)
+slider2:0<0,1,1{Auto,Locked}>-Target mode
+slider3:40<23,88,1>-Locked target (MIDI note)
+slider4:0<0,2,1{Left,Right,Mono sum}>-Detector input
+slider5:-55<-80,-20,1>-Signal gate (dBFS)
+slider6:0<0,1,1{Pass through,Mute}>-Audio output
+slider7:4<1,16,1>-Strobe detail
+slider8:0<0,2,1{Guitar,Drop D,Bass}>-String buttons
+slider10:0<0,2000,0.000001>-Measured frequency (read only)
+slider11:0<0,1,0.000001>-Confidence (read only)
+slider12:0<-2400,2400,0.000001>-Cents (read only)
+slider13:0<0,1,1>-Valid signal (read only)
+
+@init
+// Ring, FFT and prefix buffers all stay within a 65536-slot boundary.
+ring=0; spectrum=4096; prefix=13000; nsdf=16000; peaks=18000;
+n=2048; fftsize=4096; mask=2047;
+decimate=max(1,floor(srate/12000)); dsrate=srate/decimate;
+hop=max(1,floor(dsrate/40)); writepos=filled=hopcount=ready=decimcount=0;
+valid=target_note=target_hz=measured_hz=confidence=0;
+gate_power=10^(slider5/10);
+env=0; env_alpha=1-exp(-1/(0.025*srate));
+iq_alpha=1-exp(-2*$pi*5/srate);
+memset(0,0,22000);
+slider10=slider11=slider12=slider13=0;
+
+function lowpass_setup(freq,q)
+instance(b0,b1,b2,a1,a2,z1,z2) local(w,c,s,a) (
+  w=2*$pi*freq/srate;c=cos(w);s=sin(w);a=s/(2*q);
+  b0=(1-c)/(2*(1+a));b1=2*b0;b2=b0;
+  a1=-2*c/(1+a);a2=(1-a)/(1+a);z1=z2=0;
+);
+function lowpass(x) instance(b0,b1,b2,a1,a2,z1,z2) local(y) (
+  y=b0*x+z1;z1=b1*x-a1*y+z2;z2=b2*x-a2*y;y;
+);
+aa1.lowpass_setup(min(1800,srate*.2),0.5176380902);
+aa2.lowpass_setup(min(1800,srate*.2),0.7071067812);
+aa3.lowpass_setup(min(1800,srate*.2),1.931851653);
+
+function iq_reset() instance(i1,i2,i3,i4,q1,q2,q3,q4) (
+  i1=i2=i3=i4=q1=q2=q3=q4=0;
+);
+function iq_feed(x,c,s) instance(i1,i2,i3,i4,q1,q2,q3,q4) (
+  i1+=iq_alpha*(x*c-i1);i2+=iq_alpha*(i1-i2);
+  i3+=iq_alpha*(i2-i3);i4+=iq_alpha*(i3-i4);
+  q1+=iq_alpha*(x*s-q1);q2+=iq_alpha*(q1-q2);
+  q3+=iq_alpha*(q2-q3);q4+=iq_alpha*(q3-q4);
+);
+function peak_position(i) local(den,delta) (
+  den=nsdf[i-1]-2*nsdf[i]+nsdf[i+1];
+  delta=abs(den)>0.000000000000001 ? .5*(nsdf[i-1]-nsdf[i+1])/den : 0;
+  i+max(-.5,min(.5,delta));
+);
+function analyze() local(i,x,mean,total,lag,den,maxlag,minlag,crossed,count,best,p,period,k,j,pos,num,weight,refined,hz) (
+  mean=0;i=0;
+  loop(n,mean+=ring[i];i+=1;);mean/=n;
+  memset(spectrum,0,fftsize*2);prefix[0]=0;i=0;
+  loop(n,
+    x=ring[(writepos+i)&mask]-mean;
+    spectrum[2*i]=x;prefix[i+1]=prefix[i]+x*x;i+=1;
+  );
+  total=prefix[n];
+  fft(spectrum,fftsize);
+  i=0;loop(fftsize,
+    x=spectrum[2*i]*spectrum[2*i]+spectrum[2*i+1]*spectrum[2*i+1];
+    spectrum[2*i]=x;spectrum[2*i+1]=0;i+=1;
+  );
+  ifft(spectrum,fftsize);
+  lag=0;loop(n/2,
+    den=prefix[n-lag]+total-prefix[lag];
+    nsdf[lag]=den>0.00000000000000000001 ? 2*spectrum[2*lag]/(fftsize*den) : 0;
+    lag+=1;
+  );
+  minlag=max(2,floor(dsrate/1400));maxlag=min(n/2-2,floor(dsrate/30));
+  crossed=count=best=0;i=1;
+  loop(maxlag,
+    nsdf[i]<0 ? crossed=1;
+    crossed && i>=minlag && nsdf[i]>nsdf[i-1] && nsdf[i]>=nsdf[i+1] ? (
+      peaks[count]=i;count+=1;best=max(best,nsdf[i]);
+    );i+=1;
+  );
+  p=0;i=0;
+  loop(count,
+    p==0 && nsdf[peaks[i]]>=max(.85,best*.94) ? p=peaks[i];i+=1;
+  );
+  valid=0;confidence=best;
+  p>0 && env>gate_power ? (
+    period=peak_position(p);num=weight=0;k=1;
+    loop(floor((n/2-3)/period),
+      pos=floor(k*period+.5);j=pos;
+      nsdf[pos-1]>nsdf[j] ? j=pos-1;
+      nsdf[pos+1]>nsdf[j] ? j=pos+1;
+      abs(j-k*period)<=2 && nsdf[j]>=.8 ? (
+        refined=peak_position(j);num+=k*refined;weight+=k*k;
+      );k+=1;
+    );
+    weight>0 ? period=num/weight;
+    hz=dsrate/period;
+    hz>=30 && hz<=1400 ? (measured_hz=hz;valid=1;);
+  );
+);
+
+@slider
+gate_power=10^(slider5/10);
+last_input!=slider4 ? (
+  writepos=filled=hopcount=ready=0;memset(ring,0,n);
+  aa1.z1=aa1.z2=aa2.z1=aa2.z2=aa3.z1=aa3.z2=env=0;
+  valid=0;last_input=slider4;
+  band1.iq_reset();band2.iq_reset();band4.iq_reset();phase_age=0;
+);
+
+@block
+audio_heartbeat=time_precise();
+ready ? (analyze();ready=0;);
+env<gate_power ? valid=0;
+valid ? (
+  note_float=69+12*log(measured_hz/slider1)/log(2);
+  next_note=slider2 ? slider3 : floor(note_float+.5);
+  !slider2 && target_note>0 && abs(note_float-target_note)<.58 ? next_note=target_note;
+  new_target=slider1*2^((next_note-69)/12);
+  abs(new_target-target_hz)>.000001 ? (
+    target_note=next_note;target_hz=new_target;
+    band1.iq_reset();band2.iq_reset();band4.iq_reset();phase_age=0;
+  );
+  cents=1200*log(measured_hz/target_hz)/log(2);
+  slider10=measured_hz;slider11=confidence;slider12=cents;slider13=1;
+) : (slider10=slider11=slider12=slider13=0;);
+
+@sample
+x=slider4==0 ? spl0 : slider4==1 ? spl1 : (spl0+spl1)*.5;
+env+=env_alpha*(x*x-env);
+abs(x)>=.999 ? clip_timer=srate;
+clip_timer=max(0,clip_timer-1);
+y=aa3.lowpass(aa2.lowpass(aa1.lowpass(x)));
+decimcount+=1;
+decimcount>=decimate ? (
+  decimcount=0;ring[writepos]=y;writepos=(writepos+1)&mask;
+  filled=min(n,filled+1);hopcount+=1;
+  filled==n && hopcount>=hop ? (ready=1;hopcount=0;);
+);
+target_hz>0 ? (
+  ref_phase+=2*$pi*target_hz/srate;
+  ref_phase>=2*$pi ? ref_phase-=2*$pi;
+  cs=cos(ref_phase);sn=sin(ref_phase);
+  cs2=cs*cs-sn*sn;sn2=2*sn*cs;
+  cs4=cs2*cs2-sn2*sn2;sn4=2*sn2*cs2;
+  band1.iq_feed(x,cs,sn);band2.iq_feed(x,cs2,sn2);band4.iq_feed(x,cs4,sn4);
+  phase_age+=1;
+);
+slider6 ? (spl0=0;spl1=0;);
+
+@gfx 760 500
+// Graphics read the DSP state; they never drive pitch analysis or the audio clock.
+scale=min(gfx_w/760,gfx_h/500);ox=(gfx_w-760*scale)/2;oy=(gfx_h-500*scale)/2;
+mx=(mouse_x-ox)/scale;my=(mouse_y-oy)/scale;
+down=mouse_cap&1;clicked=down&&!was_down;was_down=down;
+now=time_precise();live=now-audio_heartbeat<.3;
+show_valid=valid && live && env>gate_power;
+gfx_clear=$x422F17;
+
+function ink(r,g,b,a) (gfx_set(r,g,b,a););
+function box(x,y,w,h) (gfx_rect(ox+x*scale,oy+y*scale,w*scale,h*scale););
+function font(id,size,bold) (gfx_setfont(id,id==2 ? "Menlo" : "Helvetica",max(8,size*scale),bold ? 'b' : 0););
+function label(str,x,y) (gfx_x=ox+x*scale;gfx_y=oy+y*scale;gfx_drawstr(str););
+function button(str,x,y,w,h,active) local(hover,tw,th) (
+  hover=mx>=x&&mx<x+w&&my>=y&&my<y+h;
+  active ? ink(.38,.65,.66,1) : ink(.14+(hover*.04),.275+(hover*.04),.36+(hover*.04),1);
+  box(x,y,w,h);font(1,14,0);
+  active ? ink(.06,.16,.22,1) : ink(.95,.945,.914,1);
+  gfx_measurestr(str,tw,th);label(str,x+(w-tw/scale)/2,y+(h-th/scale)/2);
+  hover&&clicked;
+);
+function note_name(midi,str) local(pc) (
+  pc=(midi%12+12)%12;
+  pc==0 ? strcpy(str,"C") : pc==1 ? strcpy(str,"C#") : pc==2 ? strcpy(str,"D") :
+  pc==3 ? strcpy(str,"D#") : pc==4 ? strcpy(str,"E") : pc==5 ? strcpy(str,"F") :
+  pc==6 ? strcpy(str,"F#") : pc==7 ? strcpy(str,"G") : pc==8 ? strcpy(str,"G#") :
+  pc==9 ? strcpy(str,"A") : pc==10 ? strcpy(str,"A#") : strcpy(str,"B");
+);
+function strobe(y,qi,qq,harmonic) local(mag,visible,phase,start,i,x,l,r,a) (
+  mag=sqrt(qi*qi+qq*qq);
+  visible=show_valid && phase_age>srate*.2 && mag>max(sqrt(gate_power)*.2,sqrt(env)*.015);
+  ink(.09,.19,.26,1);box(66,y,668,26);
+  phase=atan2(qi,qq)/(2*$pi)*slider7;
+  phase-=floor(phase);
+  start=phase*48-48;i=0;
+  loop(16,
+    x=start+i*48;l=max(0,x);r=min(668,x+24);
+    r>l ? (ink(.94,.72,.37,visible ? .9 : .08);box(66+l,y+2,r-l,22););
+    i+=1;
+  );
+  font(1,12,0);ink(.66,.73,.78,1);sprintf(#bandlabel,"%dx",harmonic);label(#bandlabel,27,y+5);
+);
+
+ink(.95,.945,.914,1);font(1,20,1);label("Solo Studio",26,22);
+font(1,20,0);ink(.66,.73,.78,1);label("Strobe",145,22);
+db=live ? 10*log(max(env,0.000000000001))/log(10) : -120;
+font(2,12,0);sprintf(#db,"Input  %+.0f dB",db);label(#db,564,20);
+ink(.14,.275,.36,1);box(565,42,168,3);
+clip_timer>0&&live ? ink(.93,.42,.36,1) : ink(.45,.78,.71,1);
+box(565,42,168*max(0,min(1,(db+70)/70)),3);
+
+display_note=slider2 ? slider3 : target_note;
+show_valid || slider2 ? (
+  note_name(display_note,#note);sprintf(#octave,"%d",floor(display_note/12)-1);
+) : (strcpy(#note,"--");strcpy(#octave,""););
+ink(.95,.945,.914,1);font(1,98,1);label(#note,24,62);
+gfx_measurestr(#note,notew,noteth);font(1,34,0);ink(.66,.73,.78,1);label(#octave,27+notew/scale,109);
+font(2,16,0);
+show_valid ? sprintf(#freq,"%.3f Hz",measured_hz) : strcpy(#freq,"Waiting for a single note");
+label(#freq,28,177);
+
+font(2,43,0);
+show_valid ? sprintf(#cents,"%+.2f",cents) : strcpy(#cents,"--.--");
+show_valid && abs(cents)<1 ? ink(.45,.78,.71,1) : ink(.94,.72,.37,1);
+label(#cents,454,94);
+font(1,15,0);ink(.66,.73,.78,1);label("cents",670,115);
+font(1,16,0);
+!live ? strcpy(#state,"Arm the tuner input to listen") :
+clip_timer>0 ? strcpy(#state,"Input clipping - lower the gain") :
+!show_valid ? strcpy(#state,"Play one string") :
+abs(cents)<1 ? strcpy(#state,"Within 1 cent") :
+cents<0 ? strcpy(#state,"Flat - tighten the string") : strcpy(#state,"Sharp - loosen the string");
+label(#state,454,177);
+
+strobe(222,band1.i4,band1.q4,1);
+strobe(258,band2.i4,band2.q4,2);
+strobe(294,band4.i4,band4.q4,4);
+ink(.95,.945,.914,.45);box(399,218,1,106);
+font(1,12,0);ink(.66,.73,.78,1);
+label("< Flat",66,333);label("Still = in tune",350,333);label("Sharp >",683,333);
+
+button("Auto",26,367,67,32,!slider2) ? (slider2=0;slider_automate(slider2););
+button("Lock",97,367,67,32,slider2) ? (
+  slider2=1;target_note>0 ? slider3=target_note;slider_automate(slider2);slider_automate(slider3);
+);
+button("-",177,367,28,32,0) ? (slider1=max(400,slider1-.1);slider_automate(slider1););
+sprintf(#reference,"A4 %.1f Hz",slider1);
+button(#reference,209,367,123,32,0) ? (
+  gfx_x=mouse_x;gfx_y=mouse_y;choice=gfx_showmenu("415 Hz|432 Hz|440 Hz|442 Hz");
+  choice>0 ? (slider1=choice==1?415:choice==2?432:choice==3?440:442;slider_automate(slider1););
+);
+button("+",336,367,28,32,0) ? (slider1=min(480,slider1+.1);slider_automate(slider1););
+slider4==0 ? strcpy(#input,"Input: left") : slider4==1 ? strcpy(#input,"Input: right") : strcpy(#input,"Input: sum");
+button(#input,380,367,119,32,0) ? (slider4=(slider4+1)%3;slider_automate(slider4););
+sprintf(#detail,"Detail %dx",slider7);
+button(#detail,511,367,104,32,0) ? (slider7=slider7==1?4:slider7==4?16:1;slider_automate(slider7););
+button(slider6 ? "Muted" : "Audio thru",627,367,107,32,slider6) ? (slider6=!slider6;slider_automate(slider6););
+
+button(slider8==0?"Guitar":slider8==1?"Drop D":"Bass",26,416,91,34,0) ? (slider8=(slider8+1)%3;slider_automate(slider8););
+si=0;loop(slider8==2?5:6,
+  slider8==2 ? (string_note=si==0?23:si==1?28:si==2?33:si==3?38:43;) :
+  (string_note=si==0?(slider8==1?38:40):si==1?45:si==2?50:si==3?55:si==4?59:64;);
+  note_name(string_note,#string_name);sprintf(#string_button,"%s%d",#string_name,floor(string_note/12)-1);
+  button(#string_button,129+si*102,416,94,34,slider2&&slider3==string_note) ? (
+    slider2=1;slider3=string_note;slider_automate(slider2);slider_automate(slider3);
+  );si+=1;
+);
+font(1,12,0);ink(.66,.73,.78,1);
+label("Bands follow the signal's 1st, 2nd and 4th harmonics. Faint bands mean little energy at that harmonic.",26,475);
+gfx_getchar();

@@ -1,0 +1,18 @@
+PASS Creates one helper track
+PASS Preserves instrument record arm
+PASS Preserves hardware-monitoring workflow
+PASS Leaves the instrument FX chain unchanged
+PASS Helper never records media
+PASS No helper master or parent send
+PASS No helper track or hardware sends
+PASS Plugin output also muted
+PASS Reuses helper on repeated invocation
+PASS Rejects unavailable input before changing the project
+PASS Opening the floating tuner starts its input
+PASS Production plugin opens as a floating window
+PASS Closing the tuner disarms its helper
+PASS Closing the tuner preserves instrument record arm
+PASS Closing the tuner preserves instrument monitoring off
+PASS Refuses to repurpose a helper containing media
+PASS Rejected helper reuse preserves the media item
+ALL TUNER INTEGRATION CHECKS PASSED

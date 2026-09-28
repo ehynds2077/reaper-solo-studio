@@ -1,0 +1,2 @@
+# REAPER writes native project templates with CRLF line endings.
+*.RPP whitespace=cr-at-eol

@@ -1,0 +1,62 @@
+local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
+local R=reaper
+assert(R.GetPlayState()==0,'Stop playback before running tuner integration checks.')
+local original=R.EnumProjects(-1,'')
+local T=dofile(dir..'/../../Scripts/solo_tuner.lua')
+local log=assert(io.open(dir..'/integration-results.txt','w'))
+local function check(value,message)
+ assert(value,message);log:write('PASS '..message..'\n');log:flush()
+end
+R.Main_OnCommand(41929,0)
+local project=R.EnumProjects(-1,'')
+local source,helper,fx
+local function finish(err)
+ if err then log:write('FAIL '..err..'\n') else log:write('ALL TUNER INTEGRATION CHECKS PASSED\n') end
+ log:close()
+ if helper and R.ValidatePtr2(project,helper,'MediaTrack*') then R.SetMediaTrackInfo_Value(helper,'I_RECARM',0) end
+ R.Main_SaveProjectEx(project,dir..'/Tuner integration.rpp',8)
+ R.Main_OnCommand(40860,0)
+ R.SelectProjectInstance(original)
+ if err then R.ShowMessageBox(err,'Tuner integration',0) end
+end
+local ok,err=xpcall(function()
+ R.InsertTrackAtIndex(0,false);source=R.GetTrack(0,0)
+ R.GetSetMediaTrackInfo_String(source,'P_NAME','Test guitar',true)
+ R.SetMediaTrackInfo_Value(source,'I_RECINPUT',0)
+ R.SetMediaTrackInfo_Value(source,'I_RECMON',0)
+ R.SetMediaTrackInfo_Value(source,'I_RECARM',1)
+ R.SetMediaTrackInfo_Value(source,'B_MAINSEND',0)
+ local master=R.GetMasterTrack(0)
+ for i=R.GetTrackNumSends(master,1)-1,0,-1 do R.RemoveTrackSend(master,1,i) end
+ helper,fx=T.prepare(source,0)
+ check(R.CountTracks(0)==2,'Creates one helper track')
+ check(R.GetMediaTrackInfo_Value(source,'I_RECARM')==1,'Preserves instrument record arm')
+ check(R.GetMediaTrackInfo_Value(source,'I_RECMON')==0,'Preserves hardware-monitoring workflow')
+ check(R.TrackFX_GetCount(source)==0,'Leaves the instrument FX chain unchanged')
+ check(R.GetMediaTrackInfo_Value(helper,'I_RECMODE')==2,'Helper never records media')
+ check(R.GetMediaTrackInfo_Value(helper,'B_MAINSEND')==0,'No helper master or parent send')
+ check(R.GetTrackNumSends(helper,0)==0 and R.GetTrackNumSends(helper,1)==0,'No helper track or hardware sends')
+ check(R.TrackFX_GetParam(helper,fx,5)==1,'Plugin output also muted')
+ check(T.prepare(source,0)==helper and R.CountTracks(0)==2,'Reuses helper on repeated invocation')
+ check(not pcall(T.prepare,source,R.GetNumAudioInputs()),'Rejects unavailable input before changing the project')
+ R.SetOnlyTrackSelected(source)
+ helper,fx=T.open()
+ check(R.GetMediaTrackInfo_Value(helper,'I_RECARM')==1,'Opening the floating tuner starts its input')
+ check(R.TrackFX_GetFloatingWindow(helper,fx)~=nil,'Production plugin opens as a floating window')
+ R.TrackFX_Show(helper,fx,2)
+end,debug.traceback)
+if not ok then finish(err);return end
+local start=R.time_precise()
+local function wait_for_cleanup()
+ if R.time_precise()-start<.3 then R.defer(wait_for_cleanup);return end
+ local good,why=xpcall(function()
+  check(R.GetMediaTrackInfo_Value(helper,'I_RECARM')==0,'Closing the tuner disarms its helper')
+  check(R.GetMediaTrackInfo_Value(source,'I_RECARM')==1,'Closing the tuner preserves instrument record arm')
+  check(R.GetMediaTrackInfo_Value(source,'I_RECMON')==0,'Closing the tuner preserves instrument monitoring off')
+  local item=R.AddMediaItemToTrack(helper)
+  check(not pcall(T.prepare,source,0),'Refuses to repurpose a helper containing media')
+  check(R.ValidatePtr2(project,item,'MediaItem*'),'Rejected helper reuse preserves the media item')
+ end,debug.traceback)
+ finish(good and nil or why)
+end
+R.defer(wait_for_cleanup)

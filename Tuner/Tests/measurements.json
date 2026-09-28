@@ -1,0 +1,1402 @@
+[
+  {
+    "run": "44100-left",
+    "case": "note 40 -17 cents",
+    "maximum_cents_error": 0.0005959127153555007
+  },
+  {
+    "run": "44100-left",
+    "case": "note 40 -0.1 cents",
+    "maximum_cents_error": 0.002909127610707488
+  },
+  {
+    "run": "44100-left",
+    "case": "note 40 +0 cents",
+    "maximum_cents_error": 0.0027303781686067027
+  },
+  {
+    "run": "44100-left",
+    "case": "note 40 +0.1 cents",
+    "maximum_cents_error": 0.0025574252856686453
+  },
+  {
+    "run": "44100-left",
+    "case": "note 40 +13 cents",
+    "maximum_cents_error": 0.003749611190508579
+  },
+  {
+    "run": "44100-left",
+    "case": "note 45 -17 cents",
+    "maximum_cents_error": 0.0004373952485771353
+  },
+  {
+    "run": "44100-left",
+    "case": "note 45 -0.1 cents",
+    "maximum_cents_error": 0.0007850562630115303
+  },
+  {
+    "run": "44100-left",
+    "case": "note 45 +0 cents",
+    "maximum_cents_error": 0.0021013140225268553
+  },
+  {
+    "run": "44100-left",
+    "case": "note 45 +0.1 cents",
+    "maximum_cents_error": 0.00034048583843286986
+  },
+  {
+    "run": "44100-left",
+    "case": "note 45 +13 cents",
+    "maximum_cents_error": 8.574478183811371e-05
+  },
+  {
+    "run": "44100-left",
+    "case": "note 50 -17 cents",
+    "maximum_cents_error": 0.0006698162849545146
+  },
+  {
+    "run": "44100-left",
+    "case": "note 50 -0.1 cents",
+    "maximum_cents_error": 0.002578063305226453
+  },
+  {
+    "run": "44100-left",
+    "case": "note 50 +0 cents",
+    "maximum_cents_error": 0.0018422950284351736
+  },
+  {
+    "run": "44100-left",
+    "case": "note 50 +0.1 cents",
+    "maximum_cents_error": 0.0021648489809243288
+  },
+  {
+    "run": "44100-left",
+    "case": "note 50 +13 cents",
+    "maximum_cents_error": 0.0017028234713722678
+  },
+  {
+    "run": "44100-left",
+    "case": "note 55 -17 cents",
+    "maximum_cents_error": 0.00019436767473395315
+  },
+  {
+    "run": "44100-left",
+    "case": "note 55 -0.1 cents",
+    "maximum_cents_error": 0.0011142607372302867
+  },
+  {
+    "run": "44100-left",
+    "case": "note 55 +0 cents",
+    "maximum_cents_error": 2.6450532416461724e-05
+  },
+  {
+    "run": "44100-left",
+    "case": "note 55 +0.1 cents",
+    "maximum_cents_error": 0.0010554574382376216
+  },
+  {
+    "run": "44100-left",
+    "case": "note 55 +13 cents",
+    "maximum_cents_error": 0.0015069568370295046
+  },
+  {
+    "run": "44100-left",
+    "case": "note 59 -17 cents",
+    "maximum_cents_error": 0.0008550034389695585
+  },
+  {
+    "run": "44100-left",
+    "case": "note 59 -0.1 cents",
+    "maximum_cents_error": 0.0008818458887718997
+  },
+  {
+    "run": "44100-left",
+    "case": "note 59 +0 cents",
+    "maximum_cents_error": 0.0010814549727292562
+  },
+  {
+    "run": "44100-left",
+    "case": "note 59 +0.1 cents",
+    "maximum_cents_error": 0.0013673682546017417
+  },
+  {
+    "run": "44100-left",
+    "case": "note 59 +13 cents",
+    "maximum_cents_error": 0.001394283396991957
+  },
+  {
+    "run": "44100-left",
+    "case": "note 64 -17 cents",
+    "maximum_cents_error": 0.0018604663915548559
+  },
+  {
+    "run": "44100-left",
+    "case": "note 64 -0.1 cents",
+    "maximum_cents_error": 0.001656857464288322
+  },
+  {
+    "run": "44100-left",
+    "case": "note 64 +0 cents",
+    "maximum_cents_error": 0.0014781804831223277
+  },
+  {
+    "run": "44100-left",
+    "case": "note 64 +0.1 cents",
+    "maximum_cents_error": 0.0013053000528754012
+  },
+  {
+    "run": "44100-left",
+    "case": "note 64 +13 cents",
+    "maximum_cents_error": 2.1121572001593758e-05
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 23 -9",
+    "maximum_cents_error": 0.003157411927980608
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 23 +0",
+    "maximum_cents_error": 0.0060958886108313905
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 23 +11",
+    "maximum_cents_error": 0.002834398146339624
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 28 -9",
+    "maximum_cents_error": 0.0031996663396735023
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 28 +0",
+    "maximum_cents_error": 0.0022784071381083603
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 28 +11",
+    "maximum_cents_error": 0.0033765684845276337
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 33 -9",
+    "maximum_cents_error": 0.004397622343476937
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 33 +0",
+    "maximum_cents_error": 0.0021013140225268553
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 33 +11",
+    "maximum_cents_error": 0.001007253461423744
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 38 -9",
+    "maximum_cents_error": 0.000996183928754844
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 38 +0",
+    "maximum_cents_error": 0.0009687910214767392
+  },
+  {
+    "run": "44100-left",
+    "case": "bass 38 +11",
+    "maximum_cents_error": 0.003331403124592407
+  },
+  {
+    "run": "44100-left",
+    "case": "high note 76",
+    "maximum_cents_error": 0.0009126992532562394
+  },
+  {
+    "run": "44100-left",
+    "case": "high note 83",
+    "maximum_cents_error": 0.00094524284650327
+  },
+  {
+    "run": "44100-left",
+    "case": "high note 88",
+    "maximum_cents_error": 0.0012241249068838352
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 28",
+    "maximum_cents_error": 0.31447018815843286
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 40",
+    "maximum_cents_error": 0.06529160024275317
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 45",
+    "maximum_cents_error": 0.05364085473928548
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 50",
+    "maximum_cents_error": 0.021767966851844754
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 55",
+    "maximum_cents_error": 0.015542003509228318
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 59",
+    "maximum_cents_error": 0.01132885868725956
+  },
+  {
+    "run": "44100-left",
+    "case": "pluck 64",
+    "maximum_cents_error": 0.004074364389155799
+  },
+  {
+    "run": "44100-left",
+    "case": "weak fundamental 28",
+    "maximum_cents_error": 0.003712723506754277
+  },
+  {
+    "run": "44100-left",
+    "case": "weak fundamental 40",
+    "maximum_cents_error": 0.001310551478446309
+  },
+  {
+    "run": "44100-left",
+    "case": "weak fundamental 45",
+    "maximum_cents_error": 0.0005132772820771877
+  },
+  {
+    "run": "44100-left",
+    "case": "noisy E2",
+    "maximum_cents_error": 0.05527785953256733
+  },
+  {
+    "run": "48000-left",
+    "case": "note 40 -17 cents",
+    "maximum_cents_error": 0.0005959127153555007
+  },
+  {
+    "run": "48000-left",
+    "case": "note 40 -0.1 cents",
+    "maximum_cents_error": 0.002909127610707488
+  },
+  {
+    "run": "48000-left",
+    "case": "note 40 +0 cents",
+    "maximum_cents_error": 0.0027303781686067027
+  },
+  {
+    "run": "48000-left",
+    "case": "note 40 +0.1 cents",
+    "maximum_cents_error": 0.0025574252856686453
+  },
+  {
+    "run": "48000-left",
+    "case": "note 40 +13 cents",
+    "maximum_cents_error": 0.001221706515965688
+  },
+  {
+    "run": "48000-left",
+    "case": "note 45 -17 cents",
+    "maximum_cents_error": 0.0004373952485771353
+  },
+  {
+    "run": "48000-left",
+    "case": "note 45 -0.1 cents",
+    "maximum_cents_error": 0.0007850562630115303
+  },
+  {
+    "run": "48000-left",
+    "case": "note 45 +0 cents",
+    "maximum_cents_error": 0.0016510342355575609
+  },
+  {
+    "run": "48000-left",
+    "case": "note 45 +0.1 cents",
+    "maximum_cents_error": 0.00034048583843286986
+  },
+  {
+    "run": "48000-left",
+    "case": "note 45 +13 cents",
+    "maximum_cents_error": 8.574478183811371e-05
+  },
+  {
+    "run": "48000-left",
+    "case": "note 50 -17 cents",
+    "maximum_cents_error": 0.0006698162849545146
+  },
+  {
+    "run": "48000-left",
+    "case": "note 50 -0.1 cents",
+    "maximum_cents_error": 0.002578063305226453
+  },
+  {
+    "run": "48000-left",
+    "case": "note 50 +0 cents",
+    "maximum_cents_error": 0.0018422950284351736
+  },
+  {
+    "run": "48000-left",
+    "case": "note 50 +0.1 cents",
+    "maximum_cents_error": 0.0021648489809243288
+  },
+  {
+    "run": "48000-left",
+    "case": "note 50 +13 cents",
+    "maximum_cents_error": 0.001087232715666448
+  },
+  {
+    "run": "48000-left",
+    "case": "note 55 -17 cents",
+    "maximum_cents_error": 0.00019436767473395315
+  },
+  {
+    "run": "48000-left",
+    "case": "note 55 -0.1 cents",
+    "maximum_cents_error": 0.0011142607372302867
+  },
+  {
+    "run": "48000-left",
+    "case": "note 55 +0 cents",
+    "maximum_cents_error": 0.0021323863752132476
+  },
+  {
+    "run": "48000-left",
+    "case": "note 55 +0.1 cents",
+    "maximum_cents_error": 0.0010554574382376216
+  },
+  {
+    "run": "48000-left",
+    "case": "note 55 +13 cents",
+    "maximum_cents_error": 0.0005832226988622097
+  },
+  {
+    "run": "48000-left",
+    "case": "note 59 -17 cents",
+    "maximum_cents_error": 0.0008329720190662497
+  },
+  {
+    "run": "48000-left",
+    "case": "note 59 -0.1 cents",
+    "maximum_cents_error": 0.0008818458887718997
+  },
+  {
+    "run": "48000-left",
+    "case": "note 59 +0 cents",
+    "maximum_cents_error": 0.0010814549727292562
+  },
+  {
+    "run": "48000-left",
+    "case": "note 59 +0.1 cents",
+    "maximum_cents_error": 0.0013673682546017417
+  },
+  {
+    "run": "48000-left",
+    "case": "note 59 +13 cents",
+    "maximum_cents_error": 0.001923671189121535
+  },
+  {
+    "run": "48000-left",
+    "case": "note 64 -17 cents",
+    "maximum_cents_error": 0.0006686400371704592
+  },
+  {
+    "run": "48000-left",
+    "case": "note 64 -0.1 cents",
+    "maximum_cents_error": 0.000404588223685089
+  },
+  {
+    "run": "48000-left",
+    "case": "note 64 +0 cents",
+    "maximum_cents_error": 0.00022598370354126688
+  },
+  {
+    "run": "48000-left",
+    "case": "note 64 +0.1 cents",
+    "maximum_cents_error": 5.3175726072869666e-05
+  },
+  {
+    "run": "48000-left",
+    "case": "note 64 +13 cents",
+    "maximum_cents_error": 2.1121572001593758e-05
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 23 -9",
+    "maximum_cents_error": 0.003157411927980608
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 23 +0",
+    "maximum_cents_error": 0.0060958886108313905
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 23 +11",
+    "maximum_cents_error": 0.002834398146339624
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 28 -9",
+    "maximum_cents_error": 0.0031996663396735023
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 28 +0",
+    "maximum_cents_error": 0.0022784071381083603
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 28 +11",
+    "maximum_cents_error": 0.0033765684845276337
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 33 -9",
+    "maximum_cents_error": 0.004397622343476937
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 33 +0",
+    "maximum_cents_error": 0.0021013140225268553
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 33 +11",
+    "maximum_cents_error": 0.001007253461423744
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 38 -9",
+    "maximum_cents_error": 0.000996183928754844
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 38 +0",
+    "maximum_cents_error": 0.0009687910214767392
+  },
+  {
+    "run": "48000-left",
+    "case": "bass 38 +11",
+    "maximum_cents_error": 0.003331403124592407
+  },
+  {
+    "run": "48000-left",
+    "case": "high note 76",
+    "maximum_cents_error": 0.001578707991379228
+  },
+  {
+    "run": "48000-left",
+    "case": "high note 83",
+    "maximum_cents_error": 0.0013609467537752783
+  },
+  {
+    "run": "48000-left",
+    "case": "high note 88",
+    "maximum_cents_error": 0.0012672818897729978
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 28",
+    "maximum_cents_error": 0.20454771082928672
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 40",
+    "maximum_cents_error": 0.06463628113564188
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 45",
+    "maximum_cents_error": 0.019948369939271834
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 50",
+    "maximum_cents_error": 0.017496354633587372
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 55",
+    "maximum_cents_error": 0.015542003509228318
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 59",
+    "maximum_cents_error": 0.009661244936805818
+  },
+  {
+    "run": "48000-left",
+    "case": "pluck 64",
+    "maximum_cents_error": 0.005920080807634481
+  },
+  {
+    "run": "48000-left",
+    "case": "weak fundamental 28",
+    "maximum_cents_error": 0.006333811888368426
+  },
+  {
+    "run": "48000-left",
+    "case": "weak fundamental 40",
+    "maximum_cents_error": 0.003712723506754277
+  },
+  {
+    "run": "48000-left",
+    "case": "weak fundamental 45",
+    "maximum_cents_error": 0.003249927311027596
+  },
+  {
+    "run": "48000-left",
+    "case": "noisy E2",
+    "maximum_cents_error": 0.050289438397741464
+  },
+  {
+    "run": "96000-left",
+    "case": "note 40 -17 cents",
+    "maximum_cents_error": 0.0005959127153555007
+  },
+  {
+    "run": "96000-left",
+    "case": "note 40 -0.1 cents",
+    "maximum_cents_error": 0.002909127610707488
+  },
+  {
+    "run": "96000-left",
+    "case": "note 40 +0 cents",
+    "maximum_cents_error": 0.0027303781686067027
+  },
+  {
+    "run": "96000-left",
+    "case": "note 40 +0.1 cents",
+    "maximum_cents_error": 0.0025574252856686453
+  },
+  {
+    "run": "96000-left",
+    "case": "note 40 +13 cents",
+    "maximum_cents_error": 0.001221706515965688
+  },
+  {
+    "run": "96000-left",
+    "case": "note 45 -17 cents",
+    "maximum_cents_error": 0.0004373952485771353
+  },
+  {
+    "run": "96000-left",
+    "case": "note 45 -0.1 cents",
+    "maximum_cents_error": 0.0007850562630115303
+  },
+  {
+    "run": "96000-left",
+    "case": "note 45 +0 cents",
+    "maximum_cents_error": 0.0016510342355575609
+  },
+  {
+    "run": "96000-left",
+    "case": "note 45 +0.1 cents",
+    "maximum_cents_error": 0.00034048583843286986
+  },
+  {
+    "run": "96000-left",
+    "case": "note 45 +13 cents",
+    "maximum_cents_error": 8.574478183811371e-05
+  },
+  {
+    "run": "96000-left",
+    "case": "note 50 -17 cents",
+    "maximum_cents_error": 0.0006698162849545146
+  },
+  {
+    "run": "96000-left",
+    "case": "note 50 -0.1 cents",
+    "maximum_cents_error": 0.002578063305226453
+  },
+  {
+    "run": "96000-left",
+    "case": "note 50 +0 cents",
+    "maximum_cents_error": 0.0018422950284351736
+  },
+  {
+    "run": "96000-left",
+    "case": "note 50 +0.1 cents",
+    "maximum_cents_error": 0.0006460727567375083
+  },
+  {
+    "run": "96000-left",
+    "case": "note 50 +13 cents",
+    "maximum_cents_error": 0.001087232715666448
+  },
+  {
+    "run": "96000-left",
+    "case": "note 55 -17 cents",
+    "maximum_cents_error": 0.00019436767473395315
+  },
+  {
+    "run": "96000-left",
+    "case": "note 55 -0.1 cents",
+    "maximum_cents_error": 0.0011142607372302867
+  },
+  {
+    "run": "96000-left",
+    "case": "note 55 +0 cents",
+    "maximum_cents_error": 0.0021323863752132476
+  },
+  {
+    "run": "96000-left",
+    "case": "note 55 +0.1 cents",
+    "maximum_cents_error": 0.0010554574382376216
+  },
+  {
+    "run": "96000-left",
+    "case": "note 55 +13 cents",
+    "maximum_cents_error": 0.0005832226988622097
+  },
+  {
+    "run": "96000-left",
+    "case": "note 59 -17 cents",
+    "maximum_cents_error": 0.0008329720190662497
+  },
+  {
+    "run": "96000-left",
+    "case": "note 59 -0.1 cents",
+    "maximum_cents_error": 0.0008818458887718997
+  },
+  {
+    "run": "96000-left",
+    "case": "note 59 +0 cents",
+    "maximum_cents_error": 0.0010814549727292562
+  },
+  {
+    "run": "96000-left",
+    "case": "note 59 +0.1 cents",
+    "maximum_cents_error": 0.0013673682546017417
+  },
+  {
+    "run": "96000-left",
+    "case": "note 59 +13 cents",
+    "maximum_cents_error": 0.001923671189121535
+  },
+  {
+    "run": "96000-left",
+    "case": "note 64 -17 cents",
+    "maximum_cents_error": 0.0006686400371704592
+  },
+  {
+    "run": "96000-left",
+    "case": "note 64 -0.1 cents",
+    "maximum_cents_error": 0.000404588223685089
+  },
+  {
+    "run": "96000-left",
+    "case": "note 64 +0 cents",
+    "maximum_cents_error": 0.00022598370354126688
+  },
+  {
+    "run": "96000-left",
+    "case": "note 64 +0.1 cents",
+    "maximum_cents_error": 5.3175726072869666e-05
+  },
+  {
+    "run": "96000-left",
+    "case": "note 64 +13 cents",
+    "maximum_cents_error": 2.1121572001593758e-05
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 23 -9",
+    "maximum_cents_error": 0.003157411927980608
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 23 +0",
+    "maximum_cents_error": 0.0060958886108313905
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 23 +11",
+    "maximum_cents_error": 0.002834398146339624
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 28 -9",
+    "maximum_cents_error": 0.0031996663396735023
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 28 +0",
+    "maximum_cents_error": 0.0022784071381083603
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 28 +11",
+    "maximum_cents_error": 0.0033765684845276337
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 33 -9",
+    "maximum_cents_error": 0.003146193409774286
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 33 +0",
+    "maximum_cents_error": 0.0021013140225268553
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 33 +11",
+    "maximum_cents_error": 0.001007253461423744
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 38 -9",
+    "maximum_cents_error": 0.000996183928754844
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 38 +0",
+    "maximum_cents_error": 0.0009687910214767392
+  },
+  {
+    "run": "96000-left",
+    "case": "bass 38 +11",
+    "maximum_cents_error": 0.003331403124592407
+  },
+  {
+    "run": "96000-left",
+    "case": "high note 76",
+    "maximum_cents_error": 0.001578707991379228
+  },
+  {
+    "run": "96000-left",
+    "case": "high note 83",
+    "maximum_cents_error": 0.0013609467537752783
+  },
+  {
+    "run": "96000-left",
+    "case": "high note 88",
+    "maximum_cents_error": 0.0012672818897729978
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 28",
+    "maximum_cents_error": 0.224534134933113
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 40",
+    "maximum_cents_error": 0.03031005755116335
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 45",
+    "maximum_cents_error": 0.038666498001817186
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 50",
+    "maximum_cents_error": 0.021767966851844754
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 55",
+    "maximum_cents_error": 0.015542003509228318
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 59",
+    "maximum_cents_error": 0.009661244936805818
+  },
+  {
+    "run": "96000-left",
+    "case": "pluck 64",
+    "maximum_cents_error": 0.005920080807634481
+  },
+  {
+    "run": "96000-left",
+    "case": "weak fundamental 28",
+    "maximum_cents_error": 0.003712723506754277
+  },
+  {
+    "run": "96000-left",
+    "case": "weak fundamental 40",
+    "maximum_cents_error": 0.003712723506754277
+  },
+  {
+    "run": "96000-left",
+    "case": "weak fundamental 45",
+    "maximum_cents_error": 0.003249927311027596
+  },
+  {
+    "run": "96000-left",
+    "case": "noisy E2",
+    "maximum_cents_error": 0.050289438397741464
+  },
+  {
+    "run": "48000-right",
+    "case": "note 40 -17 cents",
+    "maximum_cents_error": 0.0005959127153555007
+  },
+  {
+    "run": "48000-right",
+    "case": "note 40 -0.1 cents",
+    "maximum_cents_error": 0.002909127610707488
+  },
+  {
+    "run": "48000-right",
+    "case": "note 40 +0 cents",
+    "maximum_cents_error": 0.0027303781686067027
+  },
+  {
+    "run": "48000-right",
+    "case": "note 40 +0.1 cents",
+    "maximum_cents_error": 0.0025574252856686453
+  },
+  {
+    "run": "48000-right",
+    "case": "note 40 +13 cents",
+    "maximum_cents_error": 0.001221706515965688
+  },
+  {
+    "run": "48000-right",
+    "case": "note 45 -17 cents",
+    "maximum_cents_error": 0.0004373952485771353
+  },
+  {
+    "run": "48000-right",
+    "case": "note 45 -0.1 cents",
+    "maximum_cents_error": 0.0007850562630115303
+  },
+  {
+    "run": "48000-right",
+    "case": "note 45 +0 cents",
+    "maximum_cents_error": 0.0016510342355575609
+  },
+  {
+    "run": "48000-right",
+    "case": "note 45 +0.1 cents",
+    "maximum_cents_error": 0.00034048583843286986
+  },
+  {
+    "run": "48000-right",
+    "case": "note 45 +13 cents",
+    "maximum_cents_error": 8.574478183811371e-05
+  },
+  {
+    "run": "48000-right",
+    "case": "note 50 -17 cents",
+    "maximum_cents_error": 0.0006698162849545146
+  },
+  {
+    "run": "48000-right",
+    "case": "note 50 -0.1 cents",
+    "maximum_cents_error": 0.002578063305226453
+  },
+  {
+    "run": "48000-right",
+    "case": "note 50 +0 cents",
+    "maximum_cents_error": 0.0018422950284351736
+  },
+  {
+    "run": "48000-right",
+    "case": "note 50 +0.1 cents",
+    "maximum_cents_error": 0.0021648489809243288
+  },
+  {
+    "run": "48000-right",
+    "case": "note 50 +13 cents",
+    "maximum_cents_error": 0.001087232715666448
+  },
+  {
+    "run": "48000-right",
+    "case": "note 55 -17 cents",
+    "maximum_cents_error": 0.00019436767473395315
+  },
+  {
+    "run": "48000-right",
+    "case": "note 55 -0.1 cents",
+    "maximum_cents_error": 0.0011142607372302867
+  },
+  {
+    "run": "48000-right",
+    "case": "note 55 +0 cents",
+    "maximum_cents_error": 0.0021323863752132476
+  },
+  {
+    "run": "48000-right",
+    "case": "note 55 +0.1 cents",
+    "maximum_cents_error": 0.0010554574382376216
+  },
+  {
+    "run": "48000-right",
+    "case": "note 55 +13 cents",
+    "maximum_cents_error": 0.0005832226988622097
+  },
+  {
+    "run": "48000-right",
+    "case": "note 59 -17 cents",
+    "maximum_cents_error": 0.0008329720190662497
+  },
+  {
+    "run": "48000-right",
+    "case": "note 59 -0.1 cents",
+    "maximum_cents_error": 0.0008818458887718997
+  },
+  {
+    "run": "48000-right",
+    "case": "note 59 +0 cents",
+    "maximum_cents_error": 0.0010814549727292562
+  },
+  {
+    "run": "48000-right",
+    "case": "note 59 +0.1 cents",
+    "maximum_cents_error": 0.0013673682546017417
+  },
+  {
+    "run": "48000-right",
+    "case": "note 59 +13 cents",
+    "maximum_cents_error": 0.001923671189121535
+  },
+  {
+    "run": "48000-right",
+    "case": "note 64 -17 cents",
+    "maximum_cents_error": 0.0006686400371704592
+  },
+  {
+    "run": "48000-right",
+    "case": "note 64 -0.1 cents",
+    "maximum_cents_error": 0.000404588223685089
+  },
+  {
+    "run": "48000-right",
+    "case": "note 64 +0 cents",
+    "maximum_cents_error": 0.00022598370354126688
+  },
+  {
+    "run": "48000-right",
+    "case": "note 64 +0.1 cents",
+    "maximum_cents_error": 5.3175726072869666e-05
+  },
+  {
+    "run": "48000-right",
+    "case": "note 64 +13 cents",
+    "maximum_cents_error": 2.1121572001593758e-05
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 23 -9",
+    "maximum_cents_error": 0.003157411927980608
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 23 +0",
+    "maximum_cents_error": 0.0060958886108313905
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 23 +11",
+    "maximum_cents_error": 0.002834398146339624
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 28 -9",
+    "maximum_cents_error": 0.0031996663396735023
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 28 +0",
+    "maximum_cents_error": 0.0022784071381083603
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 28 +11",
+    "maximum_cents_error": 0.0033765684845276337
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 33 -9",
+    "maximum_cents_error": 0.004397622343476937
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 33 +0",
+    "maximum_cents_error": 0.0021013140225268553
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 33 +11",
+    "maximum_cents_error": 0.001007253461423744
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 38 -9",
+    "maximum_cents_error": 0.000996183928754844
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 38 +0",
+    "maximum_cents_error": 0.0009687910214767392
+  },
+  {
+    "run": "48000-right",
+    "case": "bass 38 +11",
+    "maximum_cents_error": 0.003331403124592407
+  },
+  {
+    "run": "48000-right",
+    "case": "high note 76",
+    "maximum_cents_error": 0.001578707991379228
+  },
+  {
+    "run": "48000-right",
+    "case": "high note 83",
+    "maximum_cents_error": 0.0013609467537752783
+  },
+  {
+    "run": "48000-right",
+    "case": "high note 88",
+    "maximum_cents_error": 0.0012672818897729978
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 28",
+    "maximum_cents_error": 0.20454771082928672
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 40",
+    "maximum_cents_error": 0.06463628113564188
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 45",
+    "maximum_cents_error": 0.019948369939271834
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 50",
+    "maximum_cents_error": 0.017496354633587372
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 55",
+    "maximum_cents_error": 0.015542003509228318
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 59",
+    "maximum_cents_error": 0.009661244936805818
+  },
+  {
+    "run": "48000-right",
+    "case": "pluck 64",
+    "maximum_cents_error": 0.005920080807634481
+  },
+  {
+    "run": "48000-right",
+    "case": "weak fundamental 28",
+    "maximum_cents_error": 0.006333811888368426
+  },
+  {
+    "run": "48000-right",
+    "case": "weak fundamental 40",
+    "maximum_cents_error": 0.003712723506754277
+  },
+  {
+    "run": "48000-right",
+    "case": "weak fundamental 45",
+    "maximum_cents_error": 0.003249927311027596
+  },
+  {
+    "run": "48000-right",
+    "case": "noisy E2",
+    "maximum_cents_error": 0.050289438397741464
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 40 -17 cents",
+    "maximum_cents_error": 0.0005959127153555007
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 40 -0.1 cents",
+    "maximum_cents_error": 0.002909127610707488
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 40 +0 cents",
+    "maximum_cents_error": 0.0027303781686067027
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 40 +0.1 cents",
+    "maximum_cents_error": 0.0025574252856686453
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 40 +13 cents",
+    "maximum_cents_error": 0.001221706515965688
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 45 -17 cents",
+    "maximum_cents_error": 0.0004373952485771353
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 45 -0.1 cents",
+    "maximum_cents_error": 0.0007850562630115303
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 45 +0 cents",
+    "maximum_cents_error": 0.0016510342355575609
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 45 +0.1 cents",
+    "maximum_cents_error": 0.00034048583843286986
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 45 +13 cents",
+    "maximum_cents_error": 8.574478183811371e-05
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 50 -17 cents",
+    "maximum_cents_error": 0.0006698162849545146
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 50 -0.1 cents",
+    "maximum_cents_error": 0.002578063305226453
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 50 +0 cents",
+    "maximum_cents_error": 0.0018422950284351736
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 50 +0.1 cents",
+    "maximum_cents_error": 0.0021648489809243288
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 50 +13 cents",
+    "maximum_cents_error": 0.001087232715666448
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 55 -17 cents",
+    "maximum_cents_error": 0.00019436767473395315
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 55 -0.1 cents",
+    "maximum_cents_error": 0.0011142607372302867
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 55 +0 cents",
+    "maximum_cents_error": 0.0021323863752132476
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 55 +0.1 cents",
+    "maximum_cents_error": 0.0010554574382376216
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 55 +13 cents",
+    "maximum_cents_error": 0.0005832226988622097
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 59 -17 cents",
+    "maximum_cents_error": 0.0008329720190662497
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 59 -0.1 cents",
+    "maximum_cents_error": 0.0008818458887718997
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 59 +0 cents",
+    "maximum_cents_error": 0.0010814549727292562
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 59 +0.1 cents",
+    "maximum_cents_error": 0.0013673682546017417
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 59 +13 cents",
+    "maximum_cents_error": 0.001923671189121535
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 64 -17 cents",
+    "maximum_cents_error": 0.0006686400371704592
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 64 -0.1 cents",
+    "maximum_cents_error": 0.000404588223685089
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 64 +0 cents",
+    "maximum_cents_error": 0.00022598370354126688
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 64 +0.1 cents",
+    "maximum_cents_error": 5.3175726072869666e-05
+  },
+  {
+    "run": "48000-muted",
+    "case": "note 64 +13 cents",
+    "maximum_cents_error": 2.1121572001593758e-05
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 23 -9",
+    "maximum_cents_error": 0.003157411927980608
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 23 +0",
+    "maximum_cents_error": 0.0060958886108313905
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 23 +11",
+    "maximum_cents_error": 0.002834398146339624
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 28 -9",
+    "maximum_cents_error": 0.0031996663396735023
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 28 +0",
+    "maximum_cents_error": 0.0022784071381083603
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 28 +11",
+    "maximum_cents_error": 0.0033765684845276337
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 33 -9",
+    "maximum_cents_error": 0.004397622343476937
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 33 +0",
+    "maximum_cents_error": 0.0021013140225268553
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 33 +11",
+    "maximum_cents_error": 0.001007253461423744
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 38 -9",
+    "maximum_cents_error": 0.000996183928754844
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 38 +0",
+    "maximum_cents_error": 0.0009687910214767392
+  },
+  {
+    "run": "48000-muted",
+    "case": "bass 38 +11",
+    "maximum_cents_error": 0.003331403124592407
+  },
+  {
+    "run": "48000-muted",
+    "case": "high note 76",
+    "maximum_cents_error": 0.001578707991379228
+  },
+  {
+    "run": "48000-muted",
+    "case": "high note 83",
+    "maximum_cents_error": 0.0013609467537752783
+  },
+  {
+    "run": "48000-muted",
+    "case": "high note 88",
+    "maximum_cents_error": 0.0012672818897729978
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 28",
+    "maximum_cents_error": 0.20454771082928672
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 40",
+    "maximum_cents_error": 0.06463628113564188
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 45",
+    "maximum_cents_error": 0.019948369939271834
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 50",
+    "maximum_cents_error": 0.017496354633587372
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 55",
+    "maximum_cents_error": 0.015542003509228318
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 59",
+    "maximum_cents_error": 0.009661244936805818
+  },
+  {
+    "run": "48000-muted",
+    "case": "pluck 64",
+    "maximum_cents_error": 0.005920080807634481
+  },
+  {
+    "run": "48000-muted",
+    "case": "weak fundamental 28",
+    "maximum_cents_error": 0.006333811888368426
+  },
+  {
+    "run": "48000-muted",
+    "case": "weak fundamental 40",
+    "maximum_cents_error": 0.003712723506754277
+  },
+  {
+    "run": "48000-muted",
+    "case": "weak fundamental 45",
+    "maximum_cents_error": 0.003249927311027596
+  },
+  {
+    "run": "48000-muted",
+    "case": "noisy E2",
+    "maximum_cents_error": 0.050289438397741464
+  }
+]

@@ -1,0 +1,714 @@
+PASS 44100-left: rejects initial silence
+PASS 44100-left: tracks note 40 -17 cents
+PASS 44100-left: note 40 -17 cents error 0.00060 cents < 0.5
+PASS 44100-left: tracks note 40 -0.1 cents
+PASS 44100-left: note 40 -0.1 cents error 0.00291 cents < 0.5
+PASS 44100-left: tracks note 40 +0 cents
+PASS 44100-left: note 40 +0 cents error 0.00273 cents < 0.5
+PASS 44100-left: tracks note 40 +0.1 cents
+PASS 44100-left: note 40 +0.1 cents error 0.00256 cents < 0.5
+PASS 44100-left: tracks note 40 +13 cents
+PASS 44100-left: note 40 +13 cents error 0.00375 cents < 0.5
+PASS 44100-left: tracks note 45 -17 cents
+PASS 44100-left: note 45 -17 cents error 0.00044 cents < 0.5
+PASS 44100-left: tracks note 45 -0.1 cents
+PASS 44100-left: note 45 -0.1 cents error 0.00079 cents < 0.5
+PASS 44100-left: tracks note 45 +0 cents
+PASS 44100-left: note 45 +0 cents error 0.00210 cents < 0.5
+PASS 44100-left: tracks note 45 +0.1 cents
+PASS 44100-left: note 45 +0.1 cents error 0.00034 cents < 0.5
+PASS 44100-left: tracks note 45 +13 cents
+PASS 44100-left: note 45 +13 cents error 0.00009 cents < 0.5
+PASS 44100-left: tracks note 50 -17 cents
+PASS 44100-left: note 50 -17 cents error 0.00067 cents < 0.5
+PASS 44100-left: tracks note 50 -0.1 cents
+PASS 44100-left: note 50 -0.1 cents error 0.00258 cents < 0.5
+PASS 44100-left: tracks note 50 +0 cents
+PASS 44100-left: note 50 +0 cents error 0.00184 cents < 0.5
+PASS 44100-left: tracks note 50 +0.1 cents
+PASS 44100-left: note 50 +0.1 cents error 0.00216 cents < 0.5
+PASS 44100-left: tracks note 50 +13 cents
+PASS 44100-left: note 50 +13 cents error 0.00170 cents < 0.5
+PASS 44100-left: tracks note 55 -17 cents
+PASS 44100-left: note 55 -17 cents error 0.00019 cents < 0.5
+PASS 44100-left: tracks note 55 -0.1 cents
+PASS 44100-left: note 55 -0.1 cents error 0.00111 cents < 0.5
+PASS 44100-left: tracks note 55 +0 cents
+PASS 44100-left: note 55 +0 cents error 0.00003 cents < 0.5
+PASS 44100-left: tracks note 55 +0.1 cents
+PASS 44100-left: note 55 +0.1 cents error 0.00106 cents < 0.5
+PASS 44100-left: tracks note 55 +13 cents
+PASS 44100-left: note 55 +13 cents error 0.00151 cents < 0.5
+PASS 44100-left: tracks note 59 -17 cents
+PASS 44100-left: note 59 -17 cents error 0.00086 cents < 0.5
+PASS 44100-left: tracks note 59 -0.1 cents
+PASS 44100-left: note 59 -0.1 cents error 0.00088 cents < 0.5
+PASS 44100-left: tracks note 59 +0 cents
+PASS 44100-left: note 59 +0 cents error 0.00108 cents < 0.5
+PASS 44100-left: tracks note 59 +0.1 cents
+PASS 44100-left: note 59 +0.1 cents error 0.00137 cents < 0.5
+PASS 44100-left: tracks note 59 +13 cents
+PASS 44100-left: note 59 +13 cents error 0.00139 cents < 0.5
+PASS 44100-left: tracks note 64 -17 cents
+PASS 44100-left: note 64 -17 cents error 0.00186 cents < 0.5
+PASS 44100-left: tracks note 64 -0.1 cents
+PASS 44100-left: note 64 -0.1 cents error 0.00166 cents < 0.5
+PASS 44100-left: tracks note 64 +0 cents
+PASS 44100-left: note 64 +0 cents error 0.00148 cents < 0.5
+PASS 44100-left: tracks note 64 +0.1 cents
+PASS 44100-left: note 64 +0.1 cents error 0.00131 cents < 0.5
+PASS 44100-left: tracks note 64 +13 cents
+PASS 44100-left: note 64 +13 cents error 0.00002 cents < 0.5
+PASS 44100-left: tracks bass 23 -9
+PASS 44100-left: bass 23 -9 error 0.00316 cents < 0.5
+PASS 44100-left: tracks bass 23 +0
+PASS 44100-left: bass 23 +0 error 0.00610 cents < 0.5
+PASS 44100-left: tracks bass 23 +11
+PASS 44100-left: bass 23 +11 error 0.00283 cents < 0.5
+PASS 44100-left: tracks bass 28 -9
+PASS 44100-left: bass 28 -9 error 0.00320 cents < 0.5
+PASS 44100-left: tracks bass 28 +0
+PASS 44100-left: bass 28 +0 error 0.00228 cents < 0.5
+PASS 44100-left: tracks bass 28 +11
+PASS 44100-left: bass 28 +11 error 0.00338 cents < 0.5
+PASS 44100-left: tracks bass 33 -9
+PASS 44100-left: bass 33 -9 error 0.00440 cents < 0.5
+PASS 44100-left: tracks bass 33 +0
+PASS 44100-left: bass 33 +0 error 0.00210 cents < 0.5
+PASS 44100-left: tracks bass 33 +11
+PASS 44100-left: bass 33 +11 error 0.00101 cents < 0.5
+PASS 44100-left: tracks bass 38 -9
+PASS 44100-left: bass 38 -9 error 0.00100 cents < 0.5
+PASS 44100-left: tracks bass 38 +0
+PASS 44100-left: bass 38 +0 error 0.00097 cents < 0.5
+PASS 44100-left: tracks bass 38 +11
+PASS 44100-left: bass 38 +11 error 0.00333 cents < 0.5
+PASS 44100-left: tracks high note 76
+PASS 44100-left: high note 76 error 0.00091 cents < 0.5
+PASS 44100-left: tracks high note 83
+PASS 44100-left: high note 83 error 0.00095 cents < 0.5
+PASS 44100-left: tracks high note 88
+PASS 44100-left: high note 88 error 0.00122 cents < 0.5
+PASS 44100-left: tracks pluck 28
+PASS 44100-left: pluck 28 error 0.31447 cents < 0.5
+PASS 44100-left: tracks pluck 40
+PASS 44100-left: pluck 40 error 0.06529 cents < 0.5
+PASS 44100-left: tracks pluck 45
+PASS 44100-left: pluck 45 error 0.05364 cents < 0.5
+PASS 44100-left: tracks pluck 50
+PASS 44100-left: pluck 50 error 0.02177 cents < 0.5
+PASS 44100-left: tracks pluck 55
+PASS 44100-left: pluck 55 error 0.01554 cents < 0.5
+PASS 44100-left: tracks pluck 59
+PASS 44100-left: pluck 59 error 0.01133 cents < 0.5
+PASS 44100-left: tracks pluck 64
+PASS 44100-left: pluck 64 error 0.00407 cents < 0.5
+PASS 44100-left: tracks weak fundamental 28
+PASS 44100-left: weak fundamental 28 error 0.00371 cents < 0.5
+PASS 44100-left: tracks weak fundamental 40
+PASS 44100-left: weak fundamental 40 error 0.00131 cents < 0.5
+PASS 44100-left: tracks weak fundamental 45
+PASS 44100-left: weak fundamental 45 error 0.00051 cents < 0.5
+PASS 44100-left: tracks noisy E2
+PASS 44100-left: noisy E2 error 0.05528 cents < 0.5
+PASS 44100-left: rejects below gate
+PASS 44100-left: rejects noise rejection
+PASS 44100-left: rejects final silence
+MAX 44100-left: 0.314470 cents across 56 pitched cases
+PASS 48000-left: rejects initial silence
+PASS 48000-left: tracks note 40 -17 cents
+PASS 48000-left: note 40 -17 cents error 0.00060 cents < 0.5
+PASS 48000-left: tracks note 40 -0.1 cents
+PASS 48000-left: note 40 -0.1 cents error 0.00291 cents < 0.5
+PASS 48000-left: tracks note 40 +0 cents
+PASS 48000-left: note 40 +0 cents error 0.00273 cents < 0.5
+PASS 48000-left: tracks note 40 +0.1 cents
+PASS 48000-left: note 40 +0.1 cents error 0.00256 cents < 0.5
+PASS 48000-left: tracks note 40 +13 cents
+PASS 48000-left: note 40 +13 cents error 0.00122 cents < 0.5
+PASS 48000-left: tracks note 45 -17 cents
+PASS 48000-left: note 45 -17 cents error 0.00044 cents < 0.5
+PASS 48000-left: tracks note 45 -0.1 cents
+PASS 48000-left: note 45 -0.1 cents error 0.00079 cents < 0.5
+PASS 48000-left: tracks note 45 +0 cents
+PASS 48000-left: note 45 +0 cents error 0.00165 cents < 0.5
+PASS 48000-left: tracks note 45 +0.1 cents
+PASS 48000-left: note 45 +0.1 cents error 0.00034 cents < 0.5
+PASS 48000-left: tracks note 45 +13 cents
+PASS 48000-left: note 45 +13 cents error 0.00009 cents < 0.5
+PASS 48000-left: tracks note 50 -17 cents
+PASS 48000-left: note 50 -17 cents error 0.00067 cents < 0.5
+PASS 48000-left: tracks note 50 -0.1 cents
+PASS 48000-left: note 50 -0.1 cents error 0.00258 cents < 0.5
+PASS 48000-left: tracks note 50 +0 cents
+PASS 48000-left: note 50 +0 cents error 0.00184 cents < 0.5
+PASS 48000-left: tracks note 50 +0.1 cents
+PASS 48000-left: note 50 +0.1 cents error 0.00216 cents < 0.5
+PASS 48000-left: tracks note 50 +13 cents
+PASS 48000-left: note 50 +13 cents error 0.00109 cents < 0.5
+PASS 48000-left: tracks note 55 -17 cents
+PASS 48000-left: note 55 -17 cents error 0.00019 cents < 0.5
+PASS 48000-left: tracks note 55 -0.1 cents
+PASS 48000-left: note 55 -0.1 cents error 0.00111 cents < 0.5
+PASS 48000-left: tracks note 55 +0 cents
+PASS 48000-left: note 55 +0 cents error 0.00213 cents < 0.5
+PASS 48000-left: tracks note 55 +0.1 cents
+PASS 48000-left: note 55 +0.1 cents error 0.00106 cents < 0.5
+PASS 48000-left: tracks note 55 +13 cents
+PASS 48000-left: note 55 +13 cents error 0.00058 cents < 0.5
+PASS 48000-left: tracks note 59 -17 cents
+PASS 48000-left: note 59 -17 cents error 0.00083 cents < 0.5
+PASS 48000-left: tracks note 59 -0.1 cents
+PASS 48000-left: note 59 -0.1 cents error 0.00088 cents < 0.5
+PASS 48000-left: tracks note 59 +0 cents
+PASS 48000-left: note 59 +0 cents error 0.00108 cents < 0.5
+PASS 48000-left: tracks note 59 +0.1 cents
+PASS 48000-left: note 59 +0.1 cents error 0.00137 cents < 0.5
+PASS 48000-left: tracks note 59 +13 cents
+PASS 48000-left: note 59 +13 cents error 0.00192 cents < 0.5
+PASS 48000-left: tracks note 64 -17 cents
+PASS 48000-left: note 64 -17 cents error 0.00067 cents < 0.5
+PASS 48000-left: tracks note 64 -0.1 cents
+PASS 48000-left: note 64 -0.1 cents error 0.00040 cents < 0.5
+PASS 48000-left: tracks note 64 +0 cents
+PASS 48000-left: note 64 +0 cents error 0.00023 cents < 0.5
+PASS 48000-left: tracks note 64 +0.1 cents
+PASS 48000-left: note 64 +0.1 cents error 0.00005 cents < 0.5
+PASS 48000-left: tracks note 64 +13 cents
+PASS 48000-left: note 64 +13 cents error 0.00002 cents < 0.5
+PASS 48000-left: tracks bass 23 -9
+PASS 48000-left: bass 23 -9 error 0.00316 cents < 0.5
+PASS 48000-left: tracks bass 23 +0
+PASS 48000-left: bass 23 +0 error 0.00610 cents < 0.5
+PASS 48000-left: tracks bass 23 +11
+PASS 48000-left: bass 23 +11 error 0.00283 cents < 0.5
+PASS 48000-left: tracks bass 28 -9
+PASS 48000-left: bass 28 -9 error 0.00320 cents < 0.5
+PASS 48000-left: tracks bass 28 +0
+PASS 48000-left: bass 28 +0 error 0.00228 cents < 0.5
+PASS 48000-left: tracks bass 28 +11
+PASS 48000-left: bass 28 +11 error 0.00338 cents < 0.5
+PASS 48000-left: tracks bass 33 -9
+PASS 48000-left: bass 33 -9 error 0.00440 cents < 0.5
+PASS 48000-left: tracks bass 33 +0
+PASS 48000-left: bass 33 +0 error 0.00210 cents < 0.5
+PASS 48000-left: tracks bass 33 +11
+PASS 48000-left: bass 33 +11 error 0.00101 cents < 0.5
+PASS 48000-left: tracks bass 38 -9
+PASS 48000-left: bass 38 -9 error 0.00100 cents < 0.5
+PASS 48000-left: tracks bass 38 +0
+PASS 48000-left: bass 38 +0 error 0.00097 cents < 0.5
+PASS 48000-left: tracks bass 38 +11
+PASS 48000-left: bass 38 +11 error 0.00333 cents < 0.5
+PASS 48000-left: tracks high note 76
+PASS 48000-left: high note 76 error 0.00158 cents < 0.5
+PASS 48000-left: tracks high note 83
+PASS 48000-left: high note 83 error 0.00136 cents < 0.5
+PASS 48000-left: tracks high note 88
+PASS 48000-left: high note 88 error 0.00127 cents < 0.5
+PASS 48000-left: tracks pluck 28
+PASS 48000-left: pluck 28 error 0.20455 cents < 0.5
+PASS 48000-left: tracks pluck 40
+PASS 48000-left: pluck 40 error 0.06464 cents < 0.5
+PASS 48000-left: tracks pluck 45
+PASS 48000-left: pluck 45 error 0.01995 cents < 0.5
+PASS 48000-left: tracks pluck 50
+PASS 48000-left: pluck 50 error 0.01750 cents < 0.5
+PASS 48000-left: tracks pluck 55
+PASS 48000-left: pluck 55 error 0.01554 cents < 0.5
+PASS 48000-left: tracks pluck 59
+PASS 48000-left: pluck 59 error 0.00966 cents < 0.5
+PASS 48000-left: tracks pluck 64
+PASS 48000-left: pluck 64 error 0.00592 cents < 0.5
+PASS 48000-left: tracks weak fundamental 28
+PASS 48000-left: weak fundamental 28 error 0.00633 cents < 0.5
+PASS 48000-left: tracks weak fundamental 40
+PASS 48000-left: weak fundamental 40 error 0.00371 cents < 0.5
+PASS 48000-left: tracks weak fundamental 45
+PASS 48000-left: weak fundamental 45 error 0.00325 cents < 0.5
+PASS 48000-left: tracks noisy E2
+PASS 48000-left: noisy E2 error 0.05029 cents < 0.5
+PASS 48000-left: rejects below gate
+PASS 48000-left: rejects noise rejection
+PASS 48000-left: rejects final silence
+MAX 48000-left: 0.204548 cents across 56 pitched cases
+PASS 48000-left: audio is bit-identical pass-through
+PASS 96000-left: rejects initial silence
+PASS 96000-left: tracks note 40 -17 cents
+PASS 96000-left: note 40 -17 cents error 0.00060 cents < 0.5
+PASS 96000-left: tracks note 40 -0.1 cents
+PASS 96000-left: note 40 -0.1 cents error 0.00291 cents < 0.5
+PASS 96000-left: tracks note 40 +0 cents
+PASS 96000-left: note 40 +0 cents error 0.00273 cents < 0.5
+PASS 96000-left: tracks note 40 +0.1 cents
+PASS 96000-left: note 40 +0.1 cents error 0.00256 cents < 0.5
+PASS 96000-left: tracks note 40 +13 cents
+PASS 96000-left: note 40 +13 cents error 0.00122 cents < 0.5
+PASS 96000-left: tracks note 45 -17 cents
+PASS 96000-left: note 45 -17 cents error 0.00044 cents < 0.5
+PASS 96000-left: tracks note 45 -0.1 cents
+PASS 96000-left: note 45 -0.1 cents error 0.00079 cents < 0.5
+PASS 96000-left: tracks note 45 +0 cents
+PASS 96000-left: note 45 +0 cents error 0.00165 cents < 0.5
+PASS 96000-left: tracks note 45 +0.1 cents
+PASS 96000-left: note 45 +0.1 cents error 0.00034 cents < 0.5
+PASS 96000-left: tracks note 45 +13 cents
+PASS 96000-left: note 45 +13 cents error 0.00009 cents < 0.5
+PASS 96000-left: tracks note 50 -17 cents
+PASS 96000-left: note 50 -17 cents error 0.00067 cents < 0.5
+PASS 96000-left: tracks note 50 -0.1 cents
+PASS 96000-left: note 50 -0.1 cents error 0.00258 cents < 0.5
+PASS 96000-left: tracks note 50 +0 cents
+PASS 96000-left: note 50 +0 cents error 0.00184 cents < 0.5
+PASS 96000-left: tracks note 50 +0.1 cents
+PASS 96000-left: note 50 +0.1 cents error 0.00065 cents < 0.5
+PASS 96000-left: tracks note 50 +13 cents
+PASS 96000-left: note 50 +13 cents error 0.00109 cents < 0.5
+PASS 96000-left: tracks note 55 -17 cents
+PASS 96000-left: note 55 -17 cents error 0.00019 cents < 0.5
+PASS 96000-left: tracks note 55 -0.1 cents
+PASS 96000-left: note 55 -0.1 cents error 0.00111 cents < 0.5
+PASS 96000-left: tracks note 55 +0 cents
+PASS 96000-left: note 55 +0 cents error 0.00213 cents < 0.5
+PASS 96000-left: tracks note 55 +0.1 cents
+PASS 96000-left: note 55 +0.1 cents error 0.00106 cents < 0.5
+PASS 96000-left: tracks note 55 +13 cents
+PASS 96000-left: note 55 +13 cents error 0.00058 cents < 0.5
+PASS 96000-left: tracks note 59 -17 cents
+PASS 96000-left: note 59 -17 cents error 0.00083 cents < 0.5
+PASS 96000-left: tracks note 59 -0.1 cents
+PASS 96000-left: note 59 -0.1 cents error 0.00088 cents < 0.5
+PASS 96000-left: tracks note 59 +0 cents
+PASS 96000-left: note 59 +0 cents error 0.00108 cents < 0.5
+PASS 96000-left: tracks note 59 +0.1 cents
+PASS 96000-left: note 59 +0.1 cents error 0.00137 cents < 0.5
+PASS 96000-left: tracks note 59 +13 cents
+PASS 96000-left: note 59 +13 cents error 0.00192 cents < 0.5
+PASS 96000-left: tracks note 64 -17 cents
+PASS 96000-left: note 64 -17 cents error 0.00067 cents < 0.5
+PASS 96000-left: tracks note 64 -0.1 cents
+PASS 96000-left: note 64 -0.1 cents error 0.00040 cents < 0.5
+PASS 96000-left: tracks note 64 +0 cents
+PASS 96000-left: note 64 +0 cents error 0.00023 cents < 0.5
+PASS 96000-left: tracks note 64 +0.1 cents
+PASS 96000-left: note 64 +0.1 cents error 0.00005 cents < 0.5
+PASS 96000-left: tracks note 64 +13 cents
+PASS 96000-left: note 64 +13 cents error 0.00002 cents < 0.5
+PASS 96000-left: tracks bass 23 -9
+PASS 96000-left: bass 23 -9 error 0.00316 cents < 0.5
+PASS 96000-left: tracks bass 23 +0
+PASS 96000-left: bass 23 +0 error 0.00610 cents < 0.5
+PASS 96000-left: tracks bass 23 +11
+PASS 96000-left: bass 23 +11 error 0.00283 cents < 0.5
+PASS 96000-left: tracks bass 28 -9
+PASS 96000-left: bass 28 -9 error 0.00320 cents < 0.5
+PASS 96000-left: tracks bass 28 +0
+PASS 96000-left: bass 28 +0 error 0.00228 cents < 0.5
+PASS 96000-left: tracks bass 28 +11
+PASS 96000-left: bass 28 +11 error 0.00338 cents < 0.5
+PASS 96000-left: tracks bass 33 -9
+PASS 96000-left: bass 33 -9 error 0.00315 cents < 0.5
+PASS 96000-left: tracks bass 33 +0
+PASS 96000-left: bass 33 +0 error 0.00210 cents < 0.5
+PASS 96000-left: tracks bass 33 +11
+PASS 96000-left: bass 33 +11 error 0.00101 cents < 0.5
+PASS 96000-left: tracks bass 38 -9
+PASS 96000-left: bass 38 -9 error 0.00100 cents < 0.5
+PASS 96000-left: tracks bass 38 +0
+PASS 96000-left: bass 38 +0 error 0.00097 cents < 0.5
+PASS 96000-left: tracks bass 38 +11
+PASS 96000-left: bass 38 +11 error 0.00333 cents < 0.5
+PASS 96000-left: tracks high note 76
+PASS 96000-left: high note 76 error 0.00158 cents < 0.5
+PASS 96000-left: tracks high note 83
+PASS 96000-left: high note 83 error 0.00136 cents < 0.5
+PASS 96000-left: tracks high note 88
+PASS 96000-left: high note 88 error 0.00127 cents < 0.5
+PASS 96000-left: tracks pluck 28
+PASS 96000-left: pluck 28 error 0.22453 cents < 0.5
+PASS 96000-left: tracks pluck 40
+PASS 96000-left: pluck 40 error 0.03031 cents < 0.5
+PASS 96000-left: tracks pluck 45
+PASS 96000-left: pluck 45 error 0.03867 cents < 0.5
+PASS 96000-left: tracks pluck 50
+PASS 96000-left: pluck 50 error 0.02177 cents < 0.5
+PASS 96000-left: tracks pluck 55
+PASS 96000-left: pluck 55 error 0.01554 cents < 0.5
+PASS 96000-left: tracks pluck 59
+PASS 96000-left: pluck 59 error 0.00966 cents < 0.5
+PASS 96000-left: tracks pluck 64
+PASS 96000-left: pluck 64 error 0.00592 cents < 0.5
+PASS 96000-left: tracks weak fundamental 28
+PASS 96000-left: weak fundamental 28 error 0.00371 cents < 0.5
+PASS 96000-left: tracks weak fundamental 40
+PASS 96000-left: weak fundamental 40 error 0.00371 cents < 0.5
+PASS 96000-left: tracks weak fundamental 45
+PASS 96000-left: weak fundamental 45 error 0.00325 cents < 0.5
+PASS 96000-left: tracks noisy E2
+PASS 96000-left: noisy E2 error 0.05029 cents < 0.5
+PASS 96000-left: rejects below gate
+PASS 96000-left: rejects noise rejection
+PASS 96000-left: rejects final silence
+MAX 96000-left: 0.224534 cents across 56 pitched cases
+PASS 48000-right: rejects initial silence
+PASS 48000-right: tracks note 40 -17 cents
+PASS 48000-right: note 40 -17 cents error 0.00060 cents < 0.5
+PASS 48000-right: tracks note 40 -0.1 cents
+PASS 48000-right: note 40 -0.1 cents error 0.00291 cents < 0.5
+PASS 48000-right: tracks note 40 +0 cents
+PASS 48000-right: note 40 +0 cents error 0.00273 cents < 0.5
+PASS 48000-right: tracks note 40 +0.1 cents
+PASS 48000-right: note 40 +0.1 cents error 0.00256 cents < 0.5
+PASS 48000-right: tracks note 40 +13 cents
+PASS 48000-right: note 40 +13 cents error 0.00122 cents < 0.5
+PASS 48000-right: tracks note 45 -17 cents
+PASS 48000-right: note 45 -17 cents error 0.00044 cents < 0.5
+PASS 48000-right: tracks note 45 -0.1 cents
+PASS 48000-right: note 45 -0.1 cents error 0.00079 cents < 0.5
+PASS 48000-right: tracks note 45 +0 cents
+PASS 48000-right: note 45 +0 cents error 0.00165 cents < 0.5
+PASS 48000-right: tracks note 45 +0.1 cents
+PASS 48000-right: note 45 +0.1 cents error 0.00034 cents < 0.5
+PASS 48000-right: tracks note 45 +13 cents
+PASS 48000-right: note 45 +13 cents error 0.00009 cents < 0.5
+PASS 48000-right: tracks note 50 -17 cents
+PASS 48000-right: note 50 -17 cents error 0.00067 cents < 0.5
+PASS 48000-right: tracks note 50 -0.1 cents
+PASS 48000-right: note 50 -0.1 cents error 0.00258 cents < 0.5
+PASS 48000-right: tracks note 50 +0 cents
+PASS 48000-right: note 50 +0 cents error 0.00184 cents < 0.5
+PASS 48000-right: tracks note 50 +0.1 cents
+PASS 48000-right: note 50 +0.1 cents error 0.00216 cents < 0.5
+PASS 48000-right: tracks note 50 +13 cents
+PASS 48000-right: note 50 +13 cents error 0.00109 cents < 0.5
+PASS 48000-right: tracks note 55 -17 cents
+PASS 48000-right: note 55 -17 cents error 0.00019 cents < 0.5
+PASS 48000-right: tracks note 55 -0.1 cents
+PASS 48000-right: note 55 -0.1 cents error 0.00111 cents < 0.5
+PASS 48000-right: tracks note 55 +0 cents
+PASS 48000-right: note 55 +0 cents error 0.00213 cents < 0.5
+PASS 48000-right: tracks note 55 +0.1 cents
+PASS 48000-right: note 55 +0.1 cents error 0.00106 cents < 0.5
+PASS 48000-right: tracks note 55 +13 cents
+PASS 48000-right: note 55 +13 cents error 0.00058 cents < 0.5
+PASS 48000-right: tracks note 59 -17 cents
+PASS 48000-right: note 59 -17 cents error 0.00083 cents < 0.5
+PASS 48000-right: tracks note 59 -0.1 cents
+PASS 48000-right: note 59 -0.1 cents error 0.00088 cents < 0.5
+PASS 48000-right: tracks note 59 +0 cents
+PASS 48000-right: note 59 +0 cents error 0.00108 cents < 0.5
+PASS 48000-right: tracks note 59 +0.1 cents
+PASS 48000-right: note 59 +0.1 cents error 0.00137 cents < 0.5
+PASS 48000-right: tracks note 59 +13 cents
+PASS 48000-right: note 59 +13 cents error 0.00192 cents < 0.5
+PASS 48000-right: tracks note 64 -17 cents
+PASS 48000-right: note 64 -17 cents error 0.00067 cents < 0.5
+PASS 48000-right: tracks note 64 -0.1 cents
+PASS 48000-right: note 64 -0.1 cents error 0.00040 cents < 0.5
+PASS 48000-right: tracks note 64 +0 cents
+PASS 48000-right: note 64 +0 cents error 0.00023 cents < 0.5
+PASS 48000-right: tracks note 64 +0.1 cents
+PASS 48000-right: note 64 +0.1 cents error 0.00005 cents < 0.5
+PASS 48000-right: tracks note 64 +13 cents
+PASS 48000-right: note 64 +13 cents error 0.00002 cents < 0.5
+PASS 48000-right: tracks bass 23 -9
+PASS 48000-right: bass 23 -9 error 0.00316 cents < 0.5
+PASS 48000-right: tracks bass 23 +0
+PASS 48000-right: bass 23 +0 error 0.00610 cents < 0.5
+PASS 48000-right: tracks bass 23 +11
+PASS 48000-right: bass 23 +11 error 0.00283 cents < 0.5
+PASS 48000-right: tracks bass 28 -9
+PASS 48000-right: bass 28 -9 error 0.00320 cents < 0.5
+PASS 48000-right: tracks bass 28 +0
+PASS 48000-right: bass 28 +0 error 0.00228 cents < 0.5
+PASS 48000-right: tracks bass 28 +11
+PASS 48000-right: bass 28 +11 error 0.00338 cents < 0.5
+PASS 48000-right: tracks bass 33 -9
+PASS 48000-right: bass 33 -9 error 0.00440 cents < 0.5
+PASS 48000-right: tracks bass 33 +0
+PASS 48000-right: bass 33 +0 error 0.00210 cents < 0.5
+PASS 48000-right: tracks bass 33 +11
+PASS 48000-right: bass 33 +11 error 0.00101 cents < 0.5
+PASS 48000-right: tracks bass 38 -9
+PASS 48000-right: bass 38 -9 error 0.00100 cents < 0.5
+PASS 48000-right: tracks bass 38 +0
+PASS 48000-right: bass 38 +0 error 0.00097 cents < 0.5
+PASS 48000-right: tracks bass 38 +11
+PASS 48000-right: bass 38 +11 error 0.00333 cents < 0.5
+PASS 48000-right: tracks high note 76
+PASS 48000-right: high note 76 error 0.00158 cents < 0.5
+PASS 48000-right: tracks high note 83
+PASS 48000-right: high note 83 error 0.00136 cents < 0.5
+PASS 48000-right: tracks high note 88
+PASS 48000-right: high note 88 error 0.00127 cents < 0.5
+PASS 48000-right: tracks pluck 28
+PASS 48000-right: pluck 28 error 0.20455 cents < 0.5
+PASS 48000-right: tracks pluck 40
+PASS 48000-right: pluck 40 error 0.06464 cents < 0.5
+PASS 48000-right: tracks pluck 45
+PASS 48000-right: pluck 45 error 0.01995 cents < 0.5
+PASS 48000-right: tracks pluck 50
+PASS 48000-right: pluck 50 error 0.01750 cents < 0.5
+PASS 48000-right: tracks pluck 55
+PASS 48000-right: pluck 55 error 0.01554 cents < 0.5
+PASS 48000-right: tracks pluck 59
+PASS 48000-right: pluck 59 error 0.00966 cents < 0.5
+PASS 48000-right: tracks pluck 64
+PASS 48000-right: pluck 64 error 0.00592 cents < 0.5
+PASS 48000-right: tracks weak fundamental 28
+PASS 48000-right: weak fundamental 28 error 0.00633 cents < 0.5
+PASS 48000-right: tracks weak fundamental 40
+PASS 48000-right: weak fundamental 40 error 0.00371 cents < 0.5
+PASS 48000-right: tracks weak fundamental 45
+PASS 48000-right: weak fundamental 45 error 0.00325 cents < 0.5
+PASS 48000-right: tracks noisy E2
+PASS 48000-right: noisy E2 error 0.05029 cents < 0.5
+PASS 48000-right: rejects below gate
+PASS 48000-right: rejects noise rejection
+PASS 48000-right: rejects final silence
+MAX 48000-right: 0.204548 cents across 56 pitched cases
+PASS 48000-right: audio is bit-identical pass-through
+PASS 48000-sum: rejects initial silence
+PASS 48000-sum: rejects note 40 -17 cents
+PASS 48000-sum: rejects note 40 -0.1 cents
+PASS 48000-sum: rejects note 40 +0 cents
+PASS 48000-sum: rejects note 40 +0.1 cents
+PASS 48000-sum: rejects note 40 +13 cents
+PASS 48000-sum: rejects note 45 -17 cents
+PASS 48000-sum: rejects note 45 -0.1 cents
+PASS 48000-sum: rejects note 45 +0 cents
+PASS 48000-sum: rejects note 45 +0.1 cents
+PASS 48000-sum: rejects note 45 +13 cents
+PASS 48000-sum: rejects note 50 -17 cents
+PASS 48000-sum: rejects note 50 -0.1 cents
+PASS 48000-sum: rejects note 50 +0 cents
+PASS 48000-sum: rejects note 50 +0.1 cents
+PASS 48000-sum: rejects note 50 +13 cents
+PASS 48000-sum: rejects note 55 -17 cents
+PASS 48000-sum: rejects note 55 -0.1 cents
+PASS 48000-sum: rejects note 55 +0 cents
+PASS 48000-sum: rejects note 55 +0.1 cents
+PASS 48000-sum: rejects note 55 +13 cents
+PASS 48000-sum: rejects note 59 -17 cents
+PASS 48000-sum: rejects note 59 -0.1 cents
+PASS 48000-sum: rejects note 59 +0 cents
+PASS 48000-sum: rejects note 59 +0.1 cents
+PASS 48000-sum: rejects note 59 +13 cents
+PASS 48000-sum: rejects note 64 -17 cents
+PASS 48000-sum: rejects note 64 -0.1 cents
+PASS 48000-sum: rejects note 64 +0 cents
+PASS 48000-sum: rejects note 64 +0.1 cents
+PASS 48000-sum: rejects note 64 +13 cents
+PASS 48000-sum: rejects bass 23 -9
+PASS 48000-sum: rejects bass 23 +0
+PASS 48000-sum: rejects bass 23 +11
+PASS 48000-sum: rejects bass 28 -9
+PASS 48000-sum: rejects bass 28 +0
+PASS 48000-sum: rejects bass 28 +11
+PASS 48000-sum: rejects bass 33 -9
+PASS 48000-sum: rejects bass 33 +0
+PASS 48000-sum: rejects bass 33 +11
+PASS 48000-sum: rejects bass 38 -9
+PASS 48000-sum: rejects bass 38 +0
+PASS 48000-sum: rejects bass 38 +11
+PASS 48000-sum: rejects high note 76
+PASS 48000-sum: rejects high note 83
+PASS 48000-sum: rejects high note 88
+PASS 48000-sum: rejects pluck 28
+PASS 48000-sum: rejects pluck 40
+PASS 48000-sum: rejects pluck 45
+PASS 48000-sum: rejects pluck 50
+PASS 48000-sum: rejects pluck 55
+PASS 48000-sum: rejects pluck 59
+PASS 48000-sum: rejects pluck 64
+PASS 48000-sum: rejects weak fundamental 28
+PASS 48000-sum: rejects weak fundamental 40
+PASS 48000-sum: rejects weak fundamental 45
+PASS 48000-sum: rejects noisy E2
+PASS 48000-sum: rejects below gate
+PASS 48000-sum: rejects noise rejection
+PASS 48000-sum: rejects final silence
+PASS 48000-sum: audio is bit-identical pass-through
+PASS 48000-muted: rejects initial silence
+PASS 48000-muted: tracks note 40 -17 cents
+PASS 48000-muted: note 40 -17 cents error 0.00060 cents < 0.5
+PASS 48000-muted: tracks note 40 -0.1 cents
+PASS 48000-muted: note 40 -0.1 cents error 0.00291 cents < 0.5
+PASS 48000-muted: tracks note 40 +0 cents
+PASS 48000-muted: note 40 +0 cents error 0.00273 cents < 0.5
+PASS 48000-muted: tracks note 40 +0.1 cents
+PASS 48000-muted: note 40 +0.1 cents error 0.00256 cents < 0.5
+PASS 48000-muted: tracks note 40 +13 cents
+PASS 48000-muted: note 40 +13 cents error 0.00122 cents < 0.5
+PASS 48000-muted: tracks note 45 -17 cents
+PASS 48000-muted: note 45 -17 cents error 0.00044 cents < 0.5
+PASS 48000-muted: tracks note 45 -0.1 cents
+PASS 48000-muted: note 45 -0.1 cents error 0.00079 cents < 0.5
+PASS 48000-muted: tracks note 45 +0 cents
+PASS 48000-muted: note 45 +0 cents error 0.00165 cents < 0.5
+PASS 48000-muted: tracks note 45 +0.1 cents
+PASS 48000-muted: note 45 +0.1 cents error 0.00034 cents < 0.5
+PASS 48000-muted: tracks note 45 +13 cents
+PASS 48000-muted: note 45 +13 cents error 0.00009 cents < 0.5
+PASS 48000-muted: tracks note 50 -17 cents
+PASS 48000-muted: note 50 -17 cents error 0.00067 cents < 0.5
+PASS 48000-muted: tracks note 50 -0.1 cents
+PASS 48000-muted: note 50 -0.1 cents error 0.00258 cents < 0.5
+PASS 48000-muted: tracks note 50 +0 cents
+PASS 48000-muted: note 50 +0 cents error 0.00184 cents < 0.5
+PASS 48000-muted: tracks note 50 +0.1 cents
+PASS 48000-muted: note 50 +0.1 cents error 0.00216 cents < 0.5
+PASS 48000-muted: tracks note 50 +13 cents
+PASS 48000-muted: note 50 +13 cents error 0.00109 cents < 0.5
+PASS 48000-muted: tracks note 55 -17 cents
+PASS 48000-muted: note 55 -17 cents error 0.00019 cents < 0.5
+PASS 48000-muted: tracks note 55 -0.1 cents
+PASS 48000-muted: note 55 -0.1 cents error 0.00111 cents < 0.5
+PASS 48000-muted: tracks note 55 +0 cents
+PASS 48000-muted: note 55 +0 cents error 0.00213 cents < 0.5
+PASS 48000-muted: tracks note 55 +0.1 cents
+PASS 48000-muted: note 55 +0.1 cents error 0.00106 cents < 0.5
+PASS 48000-muted: tracks note 55 +13 cents
+PASS 48000-muted: note 55 +13 cents error 0.00058 cents < 0.5
+PASS 48000-muted: tracks note 59 -17 cents
+PASS 48000-muted: note 59 -17 cents error 0.00083 cents < 0.5
+PASS 48000-muted: tracks note 59 -0.1 cents
+PASS 48000-muted: note 59 -0.1 cents error 0.00088 cents < 0.5
+PASS 48000-muted: tracks note 59 +0 cents
+PASS 48000-muted: note 59 +0 cents error 0.00108 cents < 0.5
+PASS 48000-muted: tracks note 59 +0.1 cents
+PASS 48000-muted: note 59 +0.1 cents error 0.00137 cents < 0.5
+PASS 48000-muted: tracks note 59 +13 cents
+PASS 48000-muted: note 59 +13 cents error 0.00192 cents < 0.5
+PASS 48000-muted: tracks note 64 -17 cents
+PASS 48000-muted: note 64 -17 cents error 0.00067 cents < 0.5
+PASS 48000-muted: tracks note 64 -0.1 cents
+PASS 48000-muted: note 64 -0.1 cents error 0.00040 cents < 0.5
+PASS 48000-muted: tracks note 64 +0 cents
+PASS 48000-muted: note 64 +0 cents error 0.00023 cents < 0.5
+PASS 48000-muted: tracks note 64 +0.1 cents
+PASS 48000-muted: note 64 +0.1 cents error 0.00005 cents < 0.5
+PASS 48000-muted: tracks note 64 +13 cents
+PASS 48000-muted: note 64 +13 cents error 0.00002 cents < 0.5
+PASS 48000-muted: tracks bass 23 -9
+PASS 48000-muted: bass 23 -9 error 0.00316 cents < 0.5
+PASS 48000-muted: tracks bass 23 +0
+PASS 48000-muted: bass 23 +0 error 0.00610 cents < 0.5
+PASS 48000-muted: tracks bass 23 +11
+PASS 48000-muted: bass 23 +11 error 0.00283 cents < 0.5
+PASS 48000-muted: tracks bass 28 -9
+PASS 48000-muted: bass 28 -9 error 0.00320 cents < 0.5
+PASS 48000-muted: tracks bass 28 +0
+PASS 48000-muted: bass 28 +0 error 0.00228 cents < 0.5
+PASS 48000-muted: tracks bass 28 +11
+PASS 48000-muted: bass 28 +11 error 0.00338 cents < 0.5
+PASS 48000-muted: tracks bass 33 -9
+PASS 48000-muted: bass 33 -9 error 0.00440 cents < 0.5
+PASS 48000-muted: tracks bass 33 +0
+PASS 48000-muted: bass 33 +0 error 0.00210 cents < 0.5
+PASS 48000-muted: tracks bass 33 +11
+PASS 48000-muted: bass 33 +11 error 0.00101 cents < 0.5
+PASS 48000-muted: tracks bass 38 -9
+PASS 48000-muted: bass 38 -9 error 0.00100 cents < 0.5
+PASS 48000-muted: tracks bass 38 +0
+PASS 48000-muted: bass 38 +0 error 0.00097 cents < 0.5
+PASS 48000-muted: tracks bass 38 +11
+PASS 48000-muted: bass 38 +11 error 0.00333 cents < 0.5
+PASS 48000-muted: tracks high note 76
+PASS 48000-muted: high note 76 error 0.00158 cents < 0.5
+PASS 48000-muted: tracks high note 83
+PASS 48000-muted: high note 83 error 0.00136 cents < 0.5
+PASS 48000-muted: tracks high note 88
+PASS 48000-muted: high note 88 error 0.00127 cents < 0.5
+PASS 48000-muted: tracks pluck 28
+PASS 48000-muted: pluck 28 error 0.20455 cents < 0.5
+PASS 48000-muted: tracks pluck 40
+PASS 48000-muted: pluck 40 error 0.06464 cents < 0.5
+PASS 48000-muted: tracks pluck 45
+PASS 48000-muted: pluck 45 error 0.01995 cents < 0.5
+PASS 48000-muted: tracks pluck 50
+PASS 48000-muted: pluck 50 error 0.01750 cents < 0.5
+PASS 48000-muted: tracks pluck 55
+PASS 48000-muted: pluck 55 error 0.01554 cents < 0.5
+PASS 48000-muted: tracks pluck 59
+PASS 48000-muted: pluck 59 error 0.00966 cents < 0.5
+PASS 48000-muted: tracks pluck 64
+PASS 48000-muted: pluck 64 error 0.00592 cents < 0.5
+PASS 48000-muted: tracks weak fundamental 28
+PASS 48000-muted: weak fundamental 28 error 0.00633 cents < 0.5
+PASS 48000-muted: tracks weak fundamental 40
+PASS 48000-muted: weak fundamental 40 error 0.00371 cents < 0.5
+PASS 48000-muted: tracks weak fundamental 45
+PASS 48000-muted: weak fundamental 45 error 0.00325 cents < 0.5
+PASS 48000-muted: tracks noisy E2
+PASS 48000-muted: noisy E2 error 0.05029 cents < 0.5
+PASS 48000-muted: rejects below gate
+PASS 48000-muted: rejects noise rejection
+PASS 48000-muted: rejects final silence
+MAX 48000-muted: 0.204548 cents across 56 pitched cases
+PASS 48000-muted: audio is exactly silent
+PASS phase-440: target correct for phase 40 -5
+PASS phase-440: phase 40 -5, harmonic 1, phase rate -0.237659 Hz vs -0.237657
+PASS phase-440: phase 40 -5, harmonic 2, phase rate -0.475314 Hz vs -0.475314
+PASS phase-440: phase 40 -5, harmonic 4, phase rate -0.950628 Hz vs -0.950628
+PASS phase-440: target correct for phase 40 -0.1
+PASS phase-440: phase 40 -0.1, harmonic 1, phase rate -0.004755 Hz vs -0.004760
+PASS phase-440: phase 40 -0.1, harmonic 2, phase rate -0.009520 Hz vs -0.009520
+PASS phase-440: phase 40 -0.1, harmonic 4, phase rate -0.019040 Hz vs -0.019039
+PASS phase-440: target correct for phase 40 +0
+PASS phase-440: phase 40 +0, harmonic 1, phase rate 0.000004 Hz vs 0.000000
+PASS phase-440: phase 40 +0, harmonic 2, phase rate 0.000000 Hz vs 0.000000
+PASS phase-440: phase 40 +0, harmonic 4, phase rate -0.000001 Hz vs 0.000000
+PASS phase-440: target correct for phase 40 +0.1
+PASS phase-440: phase 40 +0.1, harmonic 1, phase rate 0.004765 Hz vs 0.004760
+PASS phase-440: phase 40 +0.1, harmonic 2, phase rate 0.009521 Hz vs 0.009520
+PASS phase-440: phase 40 +0.1, harmonic 4, phase rate 0.019040 Hz vs 0.019041
+PASS phase-440: target correct for phase 40 +5
+PASS phase-440: phase 40 +5, harmonic 1, phase rate 0.238343 Hz vs 0.238344
+PASS phase-440: phase 40 +5, harmonic 2, phase rate 0.476689 Hz vs 0.476689
+PASS phase-440: phase 40 +5, harmonic 4, phase rate 0.953377 Hz vs 0.953378
+PASS phase-440: target correct for phase 64 -5
+PASS phase-440: phase 64 -5, harmonic 1, phase rate -0.950628 Hz vs -0.950628
+PASS phase-440: phase 64 -5, harmonic 2, phase rate -1.901257 Hz vs -1.901257
+PASS phase-440: phase 64 -5, harmonic 4, phase rate -3.802513 Hz vs -3.802513
+PASS phase-440: target correct for phase 64 -0.1
+PASS phase-440: phase 64 -0.1, harmonic 1, phase rate -0.019039 Hz vs -0.019039
+PASS phase-440: phase 64 -0.1, harmonic 2, phase rate -0.038079 Hz vs -0.038079
+PASS phase-440: phase 64 -0.1, harmonic 4, phase rate -0.076158 Hz vs -0.076158
+PASS phase-440: target correct for phase 64 +0
+PASS phase-440: phase 64 +0, harmonic 1, phase rate 0.000000 Hz vs 0.000000
+PASS phase-440: phase 64 +0, harmonic 2, phase rate 0.000000 Hz vs 0.000000
+PASS phase-440: phase 64 +0, harmonic 4, phase rate 0.000000 Hz vs 0.000000
+PASS phase-440: target correct for phase 64 +0.1
+PASS phase-440: phase 64 +0.1, harmonic 1, phase rate 0.019041 Hz vs 0.019041
+PASS phase-440: phase 64 +0.1, harmonic 2, phase rate 0.038081 Hz vs 0.038081
+PASS phase-440: phase 64 +0.1, harmonic 4, phase rate 0.076162 Hz vs 0.076162
+PASS phase-440: target correct for phase 64 +5
+PASS phase-440: phase 64 +5, harmonic 1, phase rate 0.953378 Hz vs 0.953378
+PASS phase-440: phase 64 +5, harmonic 2, phase rate 1.906756 Hz vs 1.906756
+PASS phase-440: phase 64 +5, harmonic 4, phase rate 3.813511 Hz vs 3.813511
+PASS phase-442-locked: target correct for phase 40 -5
+PASS phase-442-locked: phase 40 -5, harmonic 1, phase rate -0.612236 Hz vs -0.612234
+PASS phase-442-locked: phase 40 -5, harmonic 2, phase rate -1.224468 Hz vs -1.224468
+PASS phase-442-locked: phase 40 -5, harmonic 4, phase rate -2.448936 Hz vs -2.448935
+PASS phase-442-locked: target correct for phase 40 -0.1
+PASS phase-442-locked: phase 40 -0.1, harmonic 1, phase rate -0.379333 Hz vs -0.379337
+PASS phase-442-locked: phase 40 -0.1, harmonic 2, phase rate -0.758673 Hz vs -0.758673
+PASS phase-442-locked: phase 40 -0.1, harmonic 4, phase rate -1.517347 Hz vs -1.517347
+PASS phase-442-locked: target correct for phase 40 +0
+PASS phase-442-locked: phase 40 +0, harmonic 1, phase rate -0.374573 Hz vs -0.374577
+PASS phase-442-locked: phase 40 +0, harmonic 2, phase rate -0.749153 Hz vs -0.749154
+PASS phase-442-locked: phase 40 +0, harmonic 4, phase rate -1.498307 Hz vs -1.498307
+PASS phase-442-locked: target correct for phase 40 +0.1
+PASS phase-442-locked: phase 40 +0.1, harmonic 1, phase rate -0.369812 Hz vs -0.369817
+PASS phase-442-locked: phase 40 +0.1, harmonic 2, phase rate -0.739633 Hz vs -0.739633
+PASS phase-442-locked: phase 40 +0.1, harmonic 4, phase rate -1.479267 Hz vs -1.479266
+PASS phase-442-locked: target correct for phase 40 +5
+PASS phase-442-locked: phase 40 +5, harmonic 1, phase rate -0.136232 Hz vs -0.136232
+PASS phase-442-locked: phase 40 +5, harmonic 2, phase rate -0.272465 Hz vs -0.272465
+PASS phase-442-locked: phase 40 +5, harmonic 4, phase rate -0.544929 Hz vs -0.544929
+PASS phase-442-locked: target correct for phase 64 -5
+PASS phase-442-locked: target correct for phase 64 -0.1
+PASS phase-442-locked: target correct for phase 64 +0
+PASS phase-442-locked: target correct for phase 64 +0.1
+PASS phase-442-locked: target correct for phase 64 +5

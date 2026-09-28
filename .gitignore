@@ -1,0 +1,42 @@
+# Publish source and explicitly reviewed templates/reports only. Recordings,
+# personal projects, settings backups, test renders, and credentials stay local.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/DESIGN.md
+!/Build and install in REAPER.lua
+!/Configure X32 recording.lua
+!/Prepare scratch guitar and vocal.lua
+!/Scripts/
+!/Effects/
+!/Templates/
+!/Tests/
+!/Tuner/
+
+/Scripts/*
+!/Scripts/*.lua
+/Effects/*
+!/Effects/*.jsfx
+/Templates/*
+!/Templates/Solo Studio - Drums.RPP
+!/Templates/Solo Studio - One instrument.RPP
+!/Templates/Solo Studio - One person band.RPP
+!/Templates/Solo Studio - Ethan X32.RPP
+
+/Tests/*
+!/Tests/*.lua
+!/Tests/*.py
+!/Tests/README.md
+/Tuner/*
+!/Tuner/README.md
+!/Tuner/DESIGN.md
+!/Tuner/Tests/
+/Tuner/Tests/*
+!/Tuner/Tests/*.lua
+!/Tuner/Tests/*.py
+!/Tuner/Tests/README.md
+!/Tuner/Tests/results.txt
+!/Tuner/Tests/integration-results.txt
+!/Tuner/Tests/measurements.json
+!/Tuner/Tests/production-sha256.txt
