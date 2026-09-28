@@ -6,6 +6,7 @@ The standalone interaction checks need Lua 5.3 or newer. From the repository roo
 lua "$PWD/Tests/Visual timeline interactions.lua"
 lua "$PWD/Tests/Take deletion.lua"
 lua "$PWD/Tests/Take selection.lua"
+lua "$PWD/Tests/Recorded tempo.lua"
 lua "$PWD/Tests/Panel tempo interactions.lua"
 lua 'Tests/Section stop helper.lua'
 lua 'Tests/Lead-in restoration.lua'
@@ -45,3 +46,5 @@ The timeline checks cover aligned take clips, gaps, partial passes, selection wi
 Multiple-selection checks cover Cmd toggles, Shift ranges across offscreen rows, changing scope, neighboring selection after deletion, and preserving selection on failure. Batch deletion checks verify all take identities before mutation, rollback the whole batch on failure, and native nine-microphone deletion/Undo in one step.
 
 `Native comp preview.lua` runs inside the visual fixture. It checks nine-microphone passage previews, source and comp preservation, fresh item identities, cleanup/recovery, rollback after a failed copy, committing during playback, and Undo without resurrecting temporary lanes. The runner also checks deferred preview lifetime and Stop cleanup. Its log reports when the audio device does not advance the playhead; transport-state assertions alone do not verify audible switching. Panel and timeline interaction checks cover clip/section bounds, the pinned Comp row, Use in comp, return to comp, and arrow-key comparisons.
+
+`Recorded tempo.lua` checks captured vs current BPM, microphone scope, loop passes, independent Stop handling, consecutive takes, unknown/mixed data, tempo maps, mid-recording tempo changes, stale jobs, and the actual Record/Stop integration. `Native recorded tempo.lua` runs in the visual fixture to check clip metadata on nine microphones, manual labelling/Undo, comp and split inheritance, and native project serialization. These native fixtures create silent items and do not capture live microphone input.

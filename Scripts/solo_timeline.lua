@@ -172,7 +172,8 @@ return function(M,S,ui)
   button('<',x+w-94,y+30,42,32,function()pan(-0.5)end)
   button('>',x+w-46,y+30,46,32,function()pan(0.5)end)
   text('Bars / '..seconds(view_start)..' - '..seconds(view_end),x,y+74,3,C.muted)
-  text('Cmd-click: toggle takes / Shift-click: range / Wheel: scroll',x+315,y+74,3,C.muted,w-425)
+  text('Cmd-click: toggle / Shift-click: range / Wheel: scroll',x+315,y+74,3,C.muted,w-565)
+  button('Tempo...',x+w-236,y+69,108,25,ui.tempo_menu,nil,enabled and #takes>0)
   button('Up',x+w-118,y+69,50,25,function()take_scroll=math.max(0,take_scroll-1)end)
   button('Down',x+w-62,y+69,62,25,function()take_scroll=take_scroll+1 end)
   local gutter=188
@@ -269,7 +270,9 @@ return function(M,S,ui)
     clips,a,b=spans(row)
     text((row.favorite and '* 'or '')..take_name(row),x+12,ry+5,1,C.text,gutter-20)
     local previewing=audition and audition.key==row.key
-    text(previewing and 'Previewing passage' or row.playing and 'Playing' or (row.note~='' and row.note or duration(a,b)),x+12,ry+26,3,previewing and C.gold or row.playing and C.blue or C.muted,gutter-20)
+    local tempo=row.tempo or {label='Tempo ?'}
+    local suffix=previewing and ' / preview' or row.playing and ' / playing' or tempo.different and ' / different' or ''
+    text(tempo.label..suffix,x+12,ry+26,3,(tempo.different or previewing) and C.gold or row.playing and C.blue or C.muted,gutter-20)
    end
    for _,clip in ipairs(clips)do
     local left=math.max(box.x,to_x(clip.s));local right=math.min(box.x+box.w,to_x(clip.e))
@@ -277,7 +280,10 @@ return function(M,S,ui)
      color(live and C.record or row.playing and {0.28,0.49,0.62}or {0.30,0.39,0.47})
      gfx.rect(left,ry+5,right-left,34,1)
      if is_selected then color(C.text);gfx.rect(left,ry+5,right-left,34,0)end
-     if right-left>65 then text(duration(clip.s,clip.e),left+8,ry+14,3,C.text,right-left-16)end
+     if right-left>65 then
+      local tempo=row and row.tempo and row.tempo.clips and row.tempo.clips[clip.item]
+      text((tempo and tempo..' / 'or '')..duration(clip.s,clip.e),left+8,ry+14,3,C.text,right-left-16)
+     end
      if row then take_hits[#take_hits+1]={x=left,y=ry+5,w=right-left,h=34,row=row,clip=clip}end
     end
    end
@@ -301,6 +307,7 @@ return function(M,S,ui)
    local _,a,b=spans(chosen)
    if target then a,b=target.s,target.e end
    detail=take_name(chosen)..': selected passage '..fmt(a)..' - '..fmt(b)..' / '..duration(a,b)
+   if chosen.tempo then detail=detail..' / recorded: '..chosen.tempo.label..(chosen.tempo.different and ' (different from song)'or '')end
    if chosen.note~='' then detail=detail..' / '..chosen.note end
   end
   if g and g.moved then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end

@@ -107,6 +107,16 @@ The temporary reduction affects REAPER's hardware playback outputs. Track faders
 - **Click sound...** opens REAPER's metronome settings. Choose the **Waveform shape**, change the A/B frequencies, or select **Sample** and browse to your own click audio. **Sample presets** saves combinations you want to reuse. **Count-in...** opens the same window at its count-in controls.
 - Tempo, click volume, sound, and count-in are saved with the project. Opening Solo Studio does not reset them.
 
+### Recorded tempo on takes
+
+New recordings started through Solo Studio capture the song tempo before recording and attach it to every kept microphone clip. Full-song, section, Another take, and loop passes are covered, even if the panel closes before Stop. The label remains with the clip when you split it or copy it into a comp; changing the song tempo does not relabel old takes. These are project/item labels, not edits to the original WAV files. Capturing the label adds a **Solo Studio: store recorded tempo** entry to REAPER's Undo history; undoing that entry removes the label, while the recording remains.
+
+Both **Timeline** and **Takes** display the recorded BPM. Gold **different** labels identify known fixed-tempo takes that differ from the current fixed song tempo. Open **Tempo... → Select takes with different tempo**, review the highlighted takes, then use **Delete N takes**. This uses the existing whole-take deletion and Undo behavior, across the recording set. In Takes view, selection applies to the currently filtered list; Timeline includes all source takes for the instrument. Comps and temporary previews are excluded.
+
+Older recordings without captured metadata show **Tempo ?**. **Tempo... → Set recorded BPM for selected takes...** lets you supply a tempo you know; it changes labels only and supports multiple takes with one Undo. **Select takes with unknown tempo** helps find these recordings. Solo Studio does not infer their recording tempo from today's song tempo or analyze the audio to guess it. Recordings started directly in REAPER outside Solo Studio do not automatically get this label.
+
+Tempo-map recordings retain their map and show **Tempo map**. If the project tempo changes during a recording, the label shows **Tempo changed**. Mixed, unknown, and mapped tempos are excluded from automatic mismatch selection; known BPM comparisons use a 0.005 BPM tolerance.
+
 ### Example X32 Producer setup
 
 Use **File → Project templates → Solo Studio - Ethan X32** for a new song. The original local setup also has a configured **Starter song**, which is not distributed. Save each new song in its own folder. This personal template has a dedicated scratch vocal/guitar pair, nine drum mics, electric guitar, acoustic guitar, vocals, and bass.

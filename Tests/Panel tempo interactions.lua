@@ -6,7 +6,7 @@ local function fixture(initial_view)
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
   local P={current=function()return f.preview end,cancel=function()f.preview=nil end,close=function()f.preview=nil end,poll=function()end,
     start=function(key,s,e)f.preview={key=key,s=s,e=e};for _,row in ipairs(f.rows)do if row.key==key then call('audition',row.lane)end end end}
-  local M={preview=function()return P end,cancel_preview=function()P.cancel()end,ns='test',use_in_comp=function(key,s,e)P.cancel();call('comp',{key=key,s=s,e=e})end,listen_comp=function()call('back',true)end,require_tracks=function()return {'track'}end,validate_lane=function(_,lane,range)for _,row in ipairs(f.rows)do if row.lane==lane then assert(row.items[1].s<=range[1]and row.items[1].e>=range[2]);return end end;error('Missing lane')end,tracks=function()return {'track'}end,lanes=function()return f.rows end,
+  local M={stopped=function()assert(not f.recording)end,finish_recorded_tempo=function()end,preview=function()return P end,cancel_preview=function()P.cancel()end,ns='test',use_in_comp=function(key,s,e)P.cancel();call('comp',{key=key,s=s,e=e})end,listen_comp=function()call('back',true)end,require_tracks=function()return {'track'}end,validate_lane=function(_,lane,range)for _,row in ipairs(f.rows)do if row.lane==lane then assert(row.items[1].s<=range[1]and row.items[1].e>=range[2]);return end end;error('Missing lane')end,tracks=function()return {'track'}end,lanes=function()return f.rows end,
     audition=function(lane)call('audition',lane)end,
     delete_takes=function(rows)
       if f.delete_fail then error('Simulated failure')end
@@ -41,6 +41,7 @@ local function fixture(initial_view)
   g.init=function(_,w,h)g.w=w;g.h=h end
   g.dock=function()return 0 end
   g.getchar=function()return f.key or 0 end
+  g.showmenu=function()return f.menu_choice or 0 end
   g.drawstr=function(s)f.labels[#f.labels+1]=s end
   local env=setmetatable({reaper=R,gfx=g,dofile=function(path)
     if path:match('solo_core.lua$') then return M end
@@ -140,4 +141,13 @@ f.timeline.select(f.rows[2],{s=10,e=14},11);f.timeline.take_action('preview');f.
 check(not f.preview and f.playing,'Back to comp cancels preview while keeping playback active')
 f.timeline.select(f.rows[2],{s=10,e=14},11);f.key=1919379572;f.frame();f.key=nil
 check(f.preview.key=='Full'and f.preview.s==10 and f.preview.e==14,'Arrow-key comparison preserves the selected passage when switching source takes')
+f=fixture('timeline');f.rows={take('Current',0),take('Slow',1),take('Unknown',2),take('Mixed',3)}
+f.rows[1].tempo={label='120 BPM',bpm=120};f.rows[2].tempo={label='100 BPM',bpm=100,different=true};f.rows[3].tempo={unknown=true,label='Tempo ?'};f.rows[4].tempo={label='Mixed tempo',mixed=true,unknown=true};f.frame()
+f.menu_choice=1;f.timeline.tempo_menu()
+check(f.timeline.selection_count()==1 and f.timeline.selected('Slow')and #f.calls==0,'Tempo menu selects only known mismatches without deleting anything')
+f.timeline.take_action('delete');check(f.calls[1][2]=='Slow'and #f.rows==3,'Existing batch delete removes the selected tempo mismatch')
+f.menu_choice=2;f.timeline.tempo_menu()
+check(f.timeline.selection_count()==1 and f.timeline.selected('Unknown'),'Unknown-tempo selection excludes mixed takes with some known clips')
+f.menu_choice=1;f.timeline.tempo_menu();f.frame()
+check(f.timeline.selection_count()==0,'No tempo matches leaves an empty selection instead of selecting the first take')
 print(passed..' panel interaction checks passed.')

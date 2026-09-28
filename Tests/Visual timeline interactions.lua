@@ -3,7 +3,7 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local total=0
 local function check(ok,label)assert(ok,label);total=total+1;print('PASS: '..label)end
 local function fixture()
- local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={},takes={},draws={},active_set='drums'}
+ local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={},takes={},draws={},labels={},active_set='drums'}
  local serial=0
  reaper={
   ValidatePtr2=function(_,it)return not it.deleted end,
@@ -30,7 +30,7 @@ local function fixture()
  local S=dofile(root..'/Scripts/solo_sections.lua')(M)
  gfx={mouse_x=0,mouse_y=0}
  for _,fn in ipairs({'rect','line'})do gfx[fn]=function(...)f.draws[#f.draws+1]={kind=fn,args={...}}end end
- local ui={colors={muted={},text={},line={},blue={},record={},gold={}},text=function()end,color=function()end,
+ local ui={tempo_menu=function()f.action='tempo'end,colors={muted={},text={},line={},blue={},record={},gold={}},text=function(label)f.labels[#f.labels+1]=label end,color=function()end,
   button=function(label,_,_,_,_,fn,_,enabled)if enabled~=false then f.buttons[label]=fn end end,
   comp=function()return f.comp end,preview=function()return f.preview end,target=function()return f.target end,
   rows=function()return f.takes end,chosen=function()return f.chosen end,
@@ -134,4 +134,7 @@ f.mouse(3,true,true,463)
 check(f.clip.s==0 and f.clip.e==8 and math.abs(f.position-3)<1e-8,'Clip selection passes exact clip and clicked musical position')
 f.preview=nil;f.comp=nil;f.takes[1].items[1].deleted=true;f.takes[2].items[1].deleted=true
 check(pcall(f.draw),'A native deletion between refreshes cannot crash timeline drawing')
+f=fixture();f.takes={take('Slower',0,8)};f.takes[1].tempo={label='100 BPM',different=true,clips={[f.takes[1].items[1]]='100 BPM'}};f.draw()
+local label=false;for _,s in ipairs(f.labels)do if s=='100 BPM / different'then label=true end end
+check(label and f.buttons['Tempo...']~=nil,'Timeline exposes the tempo menu and displays a known mismatch')
 print(total..' visual timeline checks passed.')

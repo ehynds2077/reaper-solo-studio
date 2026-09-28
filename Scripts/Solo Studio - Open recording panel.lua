@@ -39,6 +39,26 @@ local function refresh_takes()
  end
  rows=S.filter_takes(all_rows)
 end
+local function tempo_menu()
+ M.stopped();M.finish_recorded_tempo();refresh_takes()
+ local selected=selected_rows()
+ local choice=gfx.showmenu('Select takes with different tempo|Select takes with unknown tempo|'..(#selected==0 and '#'or '')..'Set recorded BPM for selected takes...')
+ if choice==1 or choice==2 then
+  P.cancel();local matching={}
+  for _,row in ipairs(candidates())do
+   local t=row.tempo or {unknown=true}
+   if choice==1 and t.different or choice==2 and t.unknown and not t.mixed then matching[#matching+1]=row end
+  end
+  selection.replace(matching);clip_target=nil
+  status=#matching..' takes selected '..(choice==1 and 'with a different recorded tempo' or 'without a known recorded tempo')..'. Review the selection, then Delete takes.'
+  if choice==1 and #matching==0 then status='No known tempo mismatches here. Unknown, mixed, and tempo-map takes are not selected.'end
+ elseif choice==3 then
+  assert(#selected>0,'Select at least one take.')
+  local bpm=#selected==1 and selected[1].tempo and selected[1].tempo.bpm
+  local ok,value=R.GetUserInputs('Label '..#selected..' selected take(s)',1,'Known recording BPM (label only):,extrawidth=200',bpm and tostring(bpm)or '')
+  if ok then M.recorded_tempo().assign(selected,tonumber(value));refresh_takes();status='Recorded tempo labels saved. Audio and the song tempo are unchanged.'end
+ end
+end
 local function target_range(row)
  if clip_target and clip_target.key==row.key then return clip_target.s,clip_target.e end
  local section=S.mode()=='section' and S.active()
@@ -218,7 +238,7 @@ local function section_sidebar(x,w,recording)
 end
 V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=color,run=run,
  changed=function(message)P.cancel();clip_target=nil;status=message;lastrefresh=0;selection.reset();scroll=0 end,
- rows=function()return all_rows end,chosen=chosen,take_action=take_action,
+ rows=function()return all_rows end,chosen=chosen,take_action=take_action,tempo_menu=tempo_menu,
  comp=function()return comp_row end,preview=P.current,
  target=function()local row=chosen();if row and #selected_rows()==1 then local s,e=target_range(row);if e>s then return {s=s,e=e}end end end,
  selected=selection.has,selection_count=function()return #selected_rows()end,select=select_take})
@@ -228,6 +248,7 @@ local function refresh()
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
   local set=M.get('active');local previous={}
+  if not recording then M.finish_recorded_tempo()end
   if set~=lastset then P.cancel();clip_target=nil;selection.reset();review_focus=nil end
   if set==lastset then for _,row in ipairs(all_rows)do previous[row.key]=true end end
   tracks=M.tracks();refresh_takes();sections=S.list()
@@ -334,6 +355,7 @@ local function frame()
   end,nil,not recording)
   local selected_count=#selected_rows();local single=not recording and selected_count==1
   text((S.mode()=='section' and 'Section takes' or 'Takes')..(selected_count>1 and (' / '..selected_count..' selected')or ''),24,381,4)
+  button('Tempo...',w-430,371,100,34,tempo_menu,nil,not recording and #rows>0)
   button('Preview',w-322,371,94,34,function()take_action('preview')end,C.blue,single)
   button('Previous',w-220,371,92,34,function()select_step(-1) end)
   button('Next',w-120,371,96,34,function()select_step(1) end)
@@ -356,8 +378,9 @@ local function frame()
     if row.playing then color(C.blue);gfx.rect(24,y,4,38,1) end
     local name=row.name:match('^%d+$') and 'Take '..row.name or row.name
     text(name,39,y+10,1,C.text,175)
-    text(row.favorite and 'Favorite' or '',220,y+11,3,C.gold)
-    text(row.note~='' and row.note or 'Select, then Preview or Use in comp',315,y+11,3,row.note~='' and C.text or C.muted,w-350)
+    local tempo=row.tempo or {label='Tempo ?'}
+    text(tempo.label..(tempo.different and ' / different' or ''),220,y+11,3,tempo.different and C.gold or C.muted,200)
+    text((row.favorite and '* 'or '')..(row.note~='' and row.note or 'Select, then Preview or Use in comp'),425,y+11,3,row.note~='' and C.text or C.muted,w-460)
     if not recording then buttons[#buttons+1]={x=24,y=y,w=w-48,h=38,fn=function()select_take(row)end}end
    end
   end

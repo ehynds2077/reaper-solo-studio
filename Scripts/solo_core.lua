@@ -2,7 +2,15 @@
 local R = reaper
 local M = {ns = 'SoloStudio_v1'}
 local module_dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
-local section_module,preview_module
+local section_module,preview_module,recorded_tempo_module
+function M.recorded_tempo()
+  if not recorded_tempo_module then recorded_tempo_module=dofile(module_dir..'/solo_recorded_tempo.lua')(M)end
+  return recorded_tempo_module
+end
+function M.finish_recorded_tempo()
+  local _,job=R.GetProjExtState(0,M.ns,'recorded_tempo.job')
+  if job~=''then M.recorded_tempo().finish(R.EnumProjects(-1,''))end
+end
 function M.preview()
   if not preview_module then preview_module=dofile(module_dir..'/solo_comp_preview.lua')(M)end
   return preview_module
@@ -32,7 +40,7 @@ function M.stopped()
   if R.GetPlayState() & 4 ~= 0 then error('Finish recording before changing takes or the recording set.',0) end
 end
 function M.edit(name,fn)
-  M.stopped(); M.cancel_preview(); R.Undo_BeginBlock2(0); R.PreventUIRefresh(1)
+  M.stopped(); M.cancel_preview(); M.finish_recorded_tempo(); R.Undo_BeginBlock2(0); R.PreventUIRefresh(1)
   local ok,result=xpcall(fn,debug.traceback)
   R.PreventUIRefresh(-1); R.UpdateTimeline(); R.TrackList_AdjustWindows(false)
   R.Undo_EndBlock2(0,'Solo Studio: '..name,-1)
@@ -137,14 +145,20 @@ function M.record()
   local _,file=R.EnumProjects(-1,'')
   if file=='' then error('Save this project in its own folder before recording (Cmd+Shift+S).',0) end
   M.arm();local endpoint,punch=M.sections().prepare_record()
-  R.Main_OnCommand(43152,0); R.Main_OnCommand(1013,0)
-  local ok,err=pcall(M.sections().start_watch,endpoint,punch)
+  local tempo=M.recorded_tempo();local project=R.EnumProjects(-1,'')
+  tempo.begin(project,M.require_tracks())
+  local ok,err=pcall(function()
+    R.Main_OnCommand(43152,0);R.Main_OnCommand(1013,0)
+    local job=tempo.job(project);if R.GetPlayState()&4~=0 then tempo.observe(project,job)end
+    tempo.watch();M.sections().start_watch(endpoint,punch)
+  end)
   if not ok then M.stop();error(err,0)end
 end
 function M.stop()
   M.cancel_preview()
   M.sections().cancel_watch()
   if R.GetPlayState() & 4 ~= 0 then R.Main_OnCommand(40667,0) else R.OnStopButton() end
+  M.finish_recorded_tempo()
 end
 function M.another()
   M.stop()
@@ -195,7 +209,7 @@ function M.lanes()
       local name=str(tracks[1],'P_LANENAME:'..n); if name=='' then name='Take '..(n+1) end
       local key=itemstr(items[1],'GUID')
       rows[#rows+1]={lane=n,name=name,key=key,items=items,is_comp=n==comp,is_preview=itemstr(items[1],'P_EXT:SoloStudioPreview')~='',playing=R.GetMediaTrackInfo_Value(tracks[1],'C_LANEPLAYS:'..n)>0,
-        favorite=annotation('favorite.'..key)=='1',note=annotation('note.'..key)}
+        favorite=annotation('favorite.'..key)=='1',note=annotation('note.'..key),tempo=M.recorded_tempo().describe(items)}
     end
   end
   return rows

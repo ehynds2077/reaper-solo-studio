@@ -7,6 +7,11 @@ return function()
   focus=key;anchor=key;automatic=false
  end
  function Q.has(key)return keys[key]==true end
+ function Q.replace(rows)
+  Q.only(nil)
+  for _,row in ipairs(rows)do keys[row.key]=true;focus=focus or row.key end
+  anchor=focus
+ end
  function Q.rows(rows)
   local selected={};for _,row in ipairs(rows)do if keys[row.key]then selected[#selected+1]=row end end
   return selected
