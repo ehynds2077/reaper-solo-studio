@@ -54,6 +54,18 @@ the final candidate. Leave the transport stopped while it works. Rendering uses
 REAPER's native offline render dialog, which can be cancelled. Network calls and
 analysis run outside REAPER's UI thread.
 
+The agent treats the starting session as a rough, unmixed balance unless your
+direction says otherwise. Selected references are active targets for broad EQ,
+loudness, dynamic density and stereo presentation. It can make substantial changes;
+preserving a performance does not mean preserving its starting fader levels.
+Each full-mix measurement includes signed gaps from the references' median and
+their measured range, so the agent can check whether its changes move closer.
+For comparable material, the prompt starts with working tolerances of roughly
+2 LU for integrated loudness and 2 dB for broad normalized band balance. These
+are adjustable goals, not guarantees or literal EQ settings. Different arrangements
+and song sections require judgment. The agent must report remaining gaps and tool
+limits rather than claiming an unchanged rough mix is finished.
+
 Once ready, press Play and switch **Original** / **Candidate** while listening.
 The song keeps playing from the same position; keys **1** and **2** select Original
 and Candidate in the Mix tab. Keep and Revert also work during playback. Recording
@@ -104,7 +116,9 @@ the song automatically; use your normal REAPER save workflow.
   measurements are saved in the local session folder. There is no real-time RTA
   or model audio listening in this version.
 - Reference spectra are normalized energy distributions, not perceptual
-  equal-loudness curves. Mastered reference loudness is not a mix target.
+  equal-loudness curves. Reference loudness is a target, subject to the -1 dBTP
+  output ceiling, musical dynamics and available controls; reference peaks above
+  that ceiling are not copied. Mastering tools are still outside this version.
 - 24-bit render output makes clipping a failed candidate rather than preserving
   above-full-scale samples. A final true peak above -1 dBTP prevents Keep.
 - Edits/transport changes stop tool execution. Tool schemas, finite bounds and

@@ -35,6 +35,83 @@ class WorkerTests(unittest.TestCase):
         self.assertNotIn('timeline', result['loudness'])
         self.assertLessEqual(len(result['envelope_1s']), 90)
 
+    def test_reference_gaps_use_signed_medians_and_keep_reference_range(self):
+        original = {'loudness': {'integrated_lufs': -24, 'true_peak_dbtp': -6},
+                    'side_energy_fraction': .1,
+                    'bands': [{'low_hz': 60, 'high_hz': 150, 'relative_db': -4}]}
+        refs = [{'loudness': {'integrated_lufs': lu, 'true_peak_dbtp': peak},
+                 'side_energy_fraction': width,
+                 'bands': [{'low_hz': 60, 'high_hz': 150, 'relative_db': band}]}
+                for lu, peak, width, band in [(-10, .2, .3, -8), (-14, -1, .5, -10)]]
+        result = worker.reference_comparison(original, refs)
+        level = result['metrics']['integrated_lufs']
+        self.assertEqual(level['reference_median'], -12)
+        self.assertEqual(level['reference_range'], [-14, -10])
+        self.assertEqual(level['delta_to_reference'], 12)
+        self.assertEqual(result['bands'][0]['delta_to_reference'], -5)
+        self.assertAlmostEqual(result['metrics']['side_energy_fraction']['delta_to_reference'], .3)
+        # Source measurements, including a hot reference's peak, are not normalized or rewritten.
+        self.assertEqual(refs[0]['loudness']['true_peak_dbtp'], .2)
+        self.assertEqual(original['loudness']['integrated_lufs'], -24)
+
+    def test_reference_gaps_handle_missing_metrics_and_incompatible_bands(self):
+        self.assertIsNone(worker.reference_comparison({}, []))
+        result = worker.reference_comparison(
+            {'loudness': {'integrated_lufs': None},
+             'bands': [{'low_hz': 20, 'high_hz': 60, 'relative_db': -10}]},
+            [{'loudness': {'integrated_lufs': -12, 'loudness_range_lu': None},
+              'bands': [{'low_hz': 30, 'high_hz': 60, 'relative_db': -5}]},
+             {'loudness': {'integrated_lufs': float('nan'), 'true_peak_dbtp': float('inf')},
+              'lr_correlation': True}])
+        level = result['metrics']['integrated_lufs']
+        self.assertIsNone(level['current'])
+        self.assertIsNone(level['delta_to_reference'])
+        self.assertEqual(level['reference_count'], 1)
+        self.assertNotIn('true_peak_dbtp', result['metrics'])
+        self.assertNotIn('lr_correlation', result['metrics'])
+        self.assertNotIn('loudness_range_lu', result['metrics'])
+        self.assertEqual(result['bands'], [])
+        json.dumps(result, allow_nan=False)
+
+    def test_reference_gaps_reach_model_and_refresh_after_actual_measurements(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            worker.write(path/'config.json', {'bounds': [0, 8], 'references': ['chosen'], 'rounds': 2})
+            worker.write(path/'reference.json', {
+                'title': 'Reference', 'source_name': 'private-source.wav',
+                'loudness': {'integrated_lufs': -12, 'true_peak_dbtp': -1},
+                'bands': [{'low_hz': 60, 'high_hz': 150, 'relative_db': -9}]})
+            requests = []
+            def api(route, payload):
+                requests.append(json.loads(json.dumps(payload)))
+                if len(requests) == 1:
+                    return {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
+                        {'id': 'meter', 'function': {'name': 'measure_mix', 'arguments': '{}'}}]}}]}
+                return {'choices': [{'message': {'role': 'assistant', 'content': 'Measured result.'}}]}
+            session = worker.Session(path, api)
+            session.bridge = lambda name, args: {'tracks': []} if name == 'inspect_project' else {'path': str(path/'render.wav')}
+            measurements = [{'duration_seconds': 8,
+                             'loudness': {'integrated_lufs': lu, 'true_peak_dbtp': -2},
+                             'bands': [{'low_hz': 60, 'high_hz': 150, 'relative_db': band}]}
+                            for lu, band in [(-24, -3), (-15, -7), (-15, -7)]]
+            lib = {'references': [{'id': 'chosen', 'profile': str(path/'reference.json')},
+                                  {'id': 'unused', 'profile': str(path/'must-not-read.json')}]}
+            with patch.object(worker, 'library', return_value=lib), \
+                 patch.object(worker, 'analyze_audio', side_effect=measurements), \
+                 patch('charts.render_charts'):
+                self.assertEqual(session.run(), 'review')
+            context = json.loads(requests[0]['messages'][1]['content'])
+            before = context['original']['reference_comparison']
+            self.assertEqual(before['metrics']['integrated_lufs']['delta_to_reference'], 12)
+            self.assertEqual(before['bands'][0]['delta_to_reference'], -6)
+            tools = [m for m in requests[1]['messages'] if m['role'] == 'tool']
+            after = json.loads(tools[0]['content'])['reference_comparison']
+            self.assertEqual(after['metrics']['integrated_lufs']['delta_to_reference'], 3)
+            self.assertEqual(after['bands'][0]['delta_to_reference'], -2)
+            self.assertNotIn('private-source.wav', json.dumps(requests))
+            self.assertEqual(worker.read(path/'measurements.json')[-1]['reference_comparison'], after)
+            self.assertEqual(len(context['references']), 1)
+
     def test_actual_file_bridge_and_cancel(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp);worker.write(path/'config.json', {})
