@@ -10,6 +10,13 @@ local function fixture(initial_view)
     for _,row in ipairs(f.rows)do row.playing=row.lane==lane end
   end
   local M={stopped=function()assert(not f.recording)end,finish_recorded_tempo=function()end,cancel_preview=function()end,ns='test',
+    history=function(redo)
+      local label=redo and f.redo_label or f.undo_label
+      if not label or label==''then return end
+      call(redo and 'redo'or 'undo',label)
+      if redo then f.undo_label=label;f.redo_label=nil else f.redo_label=label;f.undo_label=nil end
+      return label
+    end,
     stop=function()f.playing=false end,
     use_in_comp=function(key,s,e)activate(99);call('comp',{key=key,s=s,e=e})end,
     listen_comp=function()assert(f.saved_comp);activate(99);call('back',true)end,
@@ -38,6 +45,7 @@ local function fixture(initial_view)
     set_volume=function(v)f.volume=v;call('volume',v)end,
     set_click_db=function(v)call('db',v)end,sound_settings=function()call('sounds',true)end}
   local R={ValidatePtr2=function()return true end,EnumProjects=function()return f.project end,
+    Undo_CanUndo2=function()return f.undo_label end,Undo_CanRedo2=function()return f.redo_label end,
     time_precise=function()f.clock=f.clock+1;return f.clock end,
     GetExtState=function(_,key)return key=='panel_view' and f.view or ''end,SetExtState=function()end,
     OnPlayButton=function()f.playing=true end,GetPlayState=function()return f.recording and 4 or f.playing and 1 or 0 end,
@@ -56,7 +64,9 @@ local function fixture(initial_view)
   local env=setmetatable({reaper=R,gfx=g,dofile=function(path)
     if path:match('solo_core.lua$') then return M end
     if path:match('solo_tempo.lua$') then return T end
-    if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,draw=function()end,mouse=function()end,wheel=function()end}end end
+    if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,
+      cancel_drag=function()local had=f.pending_drag;f.pending_drag=false;return had end,history_changed=function()f.history_refreshed=true end,
+      draw=function()end,mouse=function()end,wheel=function()end}end end
     if path:match('solo_tracks_view.lua$')then return function()return {reset=function()f.track_reset=true end,draw=function()f.track_drawn=true end,wheel=function(delta)f.track_wheel=delta end}end end
     if path:match('solo_take_selection.lua$')then return dofile(path)end
     error('Unexpected module '..path)
@@ -70,6 +80,21 @@ local function fixture(initial_view)
   f.gfx=g;return f
 end
 local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..name)end
+local hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.playing=true;hf.click(260,40)
+check(hf.calls[1][1]=='undo'and hf.history_refreshed and hf.playing,'Undo button reverses the native edit, refreshes the timeline, and preserves playback')
+hf.click(346,40);check(hf.calls[2][1]=='redo','Redo button reapplies the native boundary edit')
+hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.key=26;hf.frame();hf.key=nil
+check(hf.calls[1][1]=='undo','Cmd/Ctrl+Z works while the panel has focus')
+hf.gfx.mouse_cap=8;hf.key=26;hf.frame();hf.key=nil
+check(hf.calls[2][1]=='redo','Shift+Cmd/Ctrl+Z redoes while the panel has focus')
+hf=fixture();hf.redo_label='Solo Studio: move comp boundary';hf.key=25;hf.frame()
+check(hf.calls[1][1]=='redo','Ctrl+Y also performs Redo')
+hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.pending_drag=true;hf.key=26;hf.frame();hf.key=nil
+check(#hf.calls==0 and not hf.pending_drag,'Undo during a drag cancels the preview before touching committed history')
+hf=fixture();hf.click(260,40);hf.key=26;hf.frame();hf.key=nil
+check(#hf.calls==0 and #hf.errors==0,'Empty history disables Undo and shortcuts are harmless')
+hf=fixture();hf.undo_label='Solo Studio: move comp boundary';hf.recording=true;hf.click(260,40);hf.key=26;hf.frame()
+check(#hf.calls==0,'Recording blocks both Undo buttons and shortcuts')
 local tf=fixture('tracks')
 check(tf.track_drawn,'The saved Tracks tab opens the project-track interface')
 tf.gfx.mouse_wheel=-120;tf.frame();check(tf.track_wheel==-1,'The Tracks tab routes scrolling to project tracks')

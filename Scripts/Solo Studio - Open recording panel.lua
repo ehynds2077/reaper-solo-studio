@@ -113,6 +113,17 @@ local function track_view()
   changed=function(message)status=message;lastrefresh=0;selection.reset();clip_target=nil end})end
  return K
 end
+local function history(redo)
+ M.stopped()
+ assert(not X or not X.busy(),'Wait for the current mix operation before using Undo or Redo.')
+ if V.cancel_drag()or drag then drag=nil;status='Pending edit cancelled.';return end
+ local label=M.history(redo)
+ if label then
+  clip_target=nil;tracks=M.tracks();refresh_takes();sections=S.list();selection.sync(candidates())
+  V.history_changed();lastrefresh=0
+  status=(redo and 'Redid: 'or'Undid: ')..label:gsub('^Solo Studio: ','')
+ end
+end
 local function slider(id,x,y,w,value,fn,enabled)
  enabled=enabled~=false
  value=drag and drag.id==id and drag.value or value
@@ -290,6 +301,11 @@ local function frame()
   local w=gfx.w-300;local active=M.get('active');local recording=R.GetPlayState() & 4 ~= 0
   text('Solo Studio',24,20,2)
   text(recording and 'Recording' or (#tracks>0 and M.get('set.'..active..'.name')..'  /  '..#tracks..' track'..(#tracks>1 and 's' or '') or 'Your recording workspace'),25,57,3,recording and C.gold or C.muted)
+  local undo_label,redo_label=R.Undo_CanUndo2(0),R.Undo_CanRedo2(0)
+  local history_enabled=not recording and (not X or not X.busy())
+  button('Undo',224,24,76,32,function()history(false)end,nil,history_enabled and (undo_label or '')~='')
+  button('Redo',308,24,76,32,function()history(true)end,nil,history_enabled and (redo_label or '')~='')
+  text(undo_label and undo_label~=''and ('Undo: '..undo_label:gsub('^Solo Studio: ',''))or 'No earlier edits',224,61,3,C.muted,w-548)
   button('Tuner',w-308,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
   button('Save project',w-225,24,115,32,function()R.Main_OnCommand(40026,0) end)
   button('Dock',w-98,24,72,32,function()gfx.dock(gfx.dock(-1)&1==1 and 0 or 1) end)
@@ -415,7 +431,7 @@ local function frame()
   end
   color(C.line);gfx.line(24,gfx.h-78,gfx.w-24,gfx.h-78)
   text(status,25,gfx.h-64,3,C.text,gfx.w-50)
-  text('Space: play/stop   R: record   N: another take   Left/Right: takes   F: favorite   B: transition   M: mix',25,gfx.h-36,3,C.muted,w-50)
+  text('Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo   Shift+Cmd/Ctrl+Z: redo',25,gfx.h-36,3,C.muted,w-50)
  end
  local down=gfx.mouse_cap&1==1
  local consumed=view=='timeline' and V.mouse(down,down and not mouse_down,R.GetPlayState()&4~=0)
@@ -445,6 +461,9 @@ local function frame()
   gfx.mouse_wheel=0
  end
  local ch=gfx.getchar()
+ if ch==26 or ch==25 then
+  run(function()history(ch==25 or gfx.mouse_cap&8~=0)end);ch=0
+ end
  if ch==27 and V.cancel()then ch=0 end
  if view=='mix' and X and X.key(ch)then ch=0 end
  if ch==109 or ch==77 then run(function()change_view('mix')end)

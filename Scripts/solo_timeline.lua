@@ -31,6 +31,16 @@ return function(M,S,ui)
   if wide_view then back();return true end
   return false
  end
+ function V.cancel_drag()
+  local had=gesture~=nil;gesture=nil;last_click=nil;return had
+ end
+ function V.history_changed()
+  V.cancel_drag();take_hits={};comp_hits={}
+  -- Native Undo can replace item pointers. Keep the zoom, but discard stale hits.
+  if focus and focus.key and ui.comp_edges then
+   for _,edge in ipairs(ui.comp_edges())do if edge.key==focus.key then focus.pos=edge.pos;break end end
+  end
+ end
  function V.fit()
   focus=nil;wide_view=nil;last_click=nil
   local minimum=R.TimeMap_GetMeasureInfo(0,16)

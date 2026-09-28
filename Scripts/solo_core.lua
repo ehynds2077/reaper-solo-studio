@@ -78,6 +78,16 @@ function M.edit(name,fn)
   if not ok then error(result,0) end
   return result
 end
+function M.history(redo)
+  M.stopped()
+  local project=R.EnumProjects(-1,'')
+  local label=(redo and R.Undo_CanRedo2 or R.Undo_CanUndo2)(project)
+  if not label or label==''then return end
+  -- Do not wrap Undo in M.edit: that would create a new entry and discard Redo.
+  local result=(redo and R.Undo_DoRedo2 or R.Undo_DoUndo2)(project)
+  assert(result~=0,'REAPER could not '..(redo and 'redo' or 'undo')..' this edit.')
+  return label
+end
 function M.selected()
   local t={}; for i=0,R.CountSelectedTracks(0)-1 do t[#t+1]=R.GetSelectedTrack(0,i) end; return t
 end
