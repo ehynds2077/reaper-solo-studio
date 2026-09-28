@@ -54,8 +54,11 @@ the final candidate. Leave the transport stopped while it works. Rendering uses
 REAPER's native offline render dialog, which can be cancelled. Network calls and
 analysis run outside REAPER's UI thread.
 
-Once ready, select **Original** or **Candidate**, then use Play to audition. Stop
-before switching. These buttons switch actual project levels; **this A/B is not
+Once ready, press Play and switch **Original** / **Candidate** while listening.
+The song keeps playing from the same position; keys **1** and **2** select Original
+and Candidate in the Mix tab. Keep and Revert also work during playback. Recording
+locks these controls, and **Give feedback…** still requires stopped transport.
+These buttons switch actual project levels; **this A/B is not
 loudness matched**. LUFS readouts make that difference visible. **Give feedback…**
 continues from the current candidate while retaining the original rollback point.
 **Keep mix** accepts a measured candidate below or equal to -1 dBTP. A candidate
@@ -72,7 +75,8 @@ zero-dB endpoints. Check the full song before committing a mix based on one pass
 
 Closing the panel normally cancels and reverts an unfinished mix when its project
 is active and stopped. Otherwise the local journal remains for recovery. Return
-to the original project, reopen Mix, and Revert. A second project cannot start a
+to the original project and reopen Mix. A completed candidate resumes review;
+an interrupted pass must be reverted. A second project cannot start a
 new session while the first has an unresolved journal. Keep/revert does not save
 the song automatically; use your normal REAPER save workflow.
 

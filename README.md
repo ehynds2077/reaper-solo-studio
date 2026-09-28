@@ -41,7 +41,8 @@ and create a reversible candidate mix. The local worker can adjust track levels
 and pan, add EQ/compression, write separate trim automation, render through
 REAPER, and compare measured loudness, spectrum, dynamics and stereo balance.
 Chat and progress appear after starting; **Give feedback…** refines the candidate.
-Use **Original / Candidate**, then **Keep mix** or **Revert**. Audio stays local;
+Switch **Original / Candidate** while the song plays (keys **1 / 2** in Mix),
+then **Keep mix** or **Revert**. Audio stays local;
 project metadata and measured profiles go to the chosen OpenRouter provider.
 
 AI mixing has a separate Python/FFmpeg setup and requires an OpenRouter key.

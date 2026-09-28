@@ -7,6 +7,8 @@ lua 'Tests/Visual timeline interactions.lua'
 lua 'Tests/Panel tempo interactions.lua'
 lua 'Tests/Section stop helper.lua'
 lua 'Tests/Lead-in restoration.lua'
+lua "$PWD/Tests/Mix comparison.lua"
+lua "$PWD/Tests/Mix review controls.lua"
 ```
 
 For the native REAPER checks, first generate their synthetic audio:
@@ -28,3 +30,10 @@ It restores the original project and verifies its track count, media count,
 tempo, region count, and record arming.
 
 The tuner has its own [DSP validation workbench](../Tuner/Tests/README.md).
+
+`Run mix playback checks.lua` tests repeated Original/Candidate switches, Keep,
+and Revert during real playback in a separate project with no hardware sends.
+Generate `Tests/mix-tone.wav` using the command in the [mixing checks](../Mix/README.md#validation)
+first. It requires a working audio device, writes `Tests/mix-playback-checks.txt`,
+and checks that the user's original project remains unchanged. Run it with
+**Run**, leaving Actions open (see the mixing README for the macOS accessibility caveat).

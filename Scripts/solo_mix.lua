@@ -26,6 +26,15 @@ return function(M,ui)
  local phase='intro';local session;local state;local foreign_session=false;local status='Choose a reference and direction, then create a candidate mix.'
  local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
  local model_x,model_y=24,215
+ local function recover_review(recovered)
+  local f=io.open(recovered.path..'/cancel','w');if f then f:close()end
+  local saved=read(recovered.path..'/status.json',{events=J.array()})
+  -- A completed worker can be reviewed again; interrupted work must still be reverted.
+  if saved.state=='review'or saved.state=='review_warning'then
+   status='Candidate recovered. Play and switch Original / Candidate to compare.'
+  else saved.state='recovery';status='Unfinished session recovered. Revert restores its faders and removes its added effects.'end
+  return saved
+ end
  local old=R.GetExtState(M.ns,'mix_session')
  if old~=''then
   session=B.recover(old)
@@ -35,9 +44,7 @@ return function(M,ui)
    if foreign_session then status='Another project has an unfinished mix. Return to that project and reopen Mix to revert it.'end
   end
   if session then
-   local f=io.open(old..'/cancel','w');if f then f:close()end
-   phase='session';state=read(old..'/status.json',{events=J.array()});state.state='recovery'
-   status='Unfinished session recovered. Revert restores its faders and removes its added effects.'
+   phase='session';state=recover_review(session)
   end
  end
  local function save_config()config.references=selected;J.write(data..'/settings.json',config)end
@@ -70,11 +77,12 @@ return function(M,ui)
   if importing then local v=read(data..'/import-result.json');if v then importing=false;status=v.error or ('Reference saved: '..v.title);lib=read(data..'/library.json',lib)end end
   if foreign_session then
    local recovered=B.recover(old)
-   if recovered then session=recovered;foreign_session=false;phase='session';state=read(old..'/status.json',{events=J.array()});state.state='recovery';status='Unfinished mix recovered. Revert before starting a new pass.'end
+   if recovered then session=recovered;foreign_session=false;phase='session';state=recover_review(session)end
   end
   if not session or session.finished then return end
   if state and state.state=='recovery'then return end
   local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
+  if state and (state.state=='review'or state.state=='review_warning')then status='Play and switch Original / Candidate to compare. Keep the mix when you are happy with it.'end
   if X.busy()then
    local ok,err=pcall(B.guard,session,true)
    if not ok then cancelled();state.state='error';state.events=state.events or J.array();state.events[#state.events+1]={role='status',text=tostring(err)};status='Session paused by a project or transport change. Stop transport and Revert when ready.';return end
@@ -200,11 +208,11 @@ return function(M,ui)
     text('Original: '..metric(first.loudness.integrated_lufs)..' LUFS  /  '..metric(first.loudness.true_peak_dbtp)..' dBTP',x+355,y+58,3,C.muted)
     if last and #measurements>1 then text('Candidate: '..metric(last.loudness.integrated_lufs)..' LUFS  /  '..metric(last.loudness.true_peak_dbtp)..' dBTP',x+730,y+58,3,C.blue)end
    end
-   local stopped=R.GetPlayState()==0
-   button('Original',x,y+85,105,32,function()B.compare(session,'original')end,session.mode=='original'and C.blue or nil,not busy and stopped)
-   button('Candidate',x+114,y+85,110,32,function()B.compare(session,'candidate')end,session.mode=='candidate'and C.blue or nil,not busy and stopped)
-   button('Keep mix',x+235,y+85,104,32,function()finish(false)end,nil,not busy and stopped and state and state.state=='review'and session.mode=='candidate')
-   button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,stopped)
+   local transport=R.GetPlayState();local stopped=transport==0;local reviewing=not busy and transport&4==0
+   button('Original',x,y+85,105,32,function()B.compare(session,'original')end,session.mode=='original'and C.blue or nil,reviewing)
+   button('Candidate',x+114,y+85,110,32,function()B.compare(session,'candidate')end,session.mode=='candidate'and C.blue or nil,reviewing)
+   button('Keep mix',x+235,y+85,104,32,function()finish(false)end,nil,reviewing and state and state.state=='review'and session.mode=='candidate')
+   button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,reviewing or stopped)
    button('Show analysis files',x+510,y+85,169,32,function()R.ExecProcess('/usr/bin/open '..quote(session.path),-1)end)
    button('Give feedback…',x+690,y+85,155,32,function()
     B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
@@ -217,7 +225,7 @@ return function(M,ui)
      launch({'--session',session.path});status='Refining the current candidate with your feedback.'
     end
    end,nil,not busy and stopped and state and (state.state=='review'or state.state=='review_warning'))
-   text('A/B changes project settings at their actual levels. Stop playback before switching.',x,y+126,3,C.muted)
+   text('A/B switches live at actual mix levels.  1: Original  /  2: Candidate  /  Space: play or stop',x,y+126,3,C.muted)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
    if show_graphs and #measurements>1 then
     local plots={{x=x,y=y+177,w=(w-45)/2,h=h-230},{x=x+(w+25)/2,y=y+177,w=(w-45)/2,h=h-230}}
@@ -263,6 +271,10 @@ return function(M,ui)
   end
  end
  function X.key(ch)
+  if phase=='session'and (ch==49 or ch==50)then
+   if not X.busy()and R.GetPlayState()&4==0 then ui.run(function()B.compare(session,ch==49 and 'original'or 'candidate')end)end
+   return true
+  end
   if ch==13 and phase=='intro'then phase='setup';return true end
   if phase=='setup'and (ch==111 or ch==79)then ui.run(choose_model);return true end
   return false

@@ -80,9 +80,11 @@ function B.recover(path)
  data.path=path;data.project=p;data.version=R.GetProjectStateChangeCount(p);data.renders=0
  return data
 end
-function B.guard(s,check_version)
+function B.guard(s,check_version,allow_playback)
  assert(R.EnumProjects(-1,'')==s.project,'Project switched. Session stopped; return to its project to revert.')
- assert(R.GetPlayState()==0,'Transport started. Stop playback/recording before continuing.')
+ local transport=R.GetPlayState()
+ assert(transport&4==0,'Finish recording before changing the mix.')
+ assert(allow_playback or transport==0,'Stop playback before continuing the mixing pass.')
  if check_version then
   assert(R.GetProjectStateChangeCount(s.project)==s.version,'Project was edited outside the mixer. Session stopped; review or revert its changes.')
   for id,expected in pairs(s.expected)do
@@ -230,24 +232,36 @@ function B.execute(s,name,a)
  if not ok then error(result)end;return result
 end
 function B.compare(s,mode)
- B.guard(s,true)
+ assert(mode=='original'or mode=='candidate','Choose Original or Candidate')
+ B.guard(s,true,true)
  if mode==s.mode then return end
+ -- Resolve everything before changing any controls, including when resuming a journal.
+ local tracks,effects={},{}
+ for _,row in ipairs(s.original)do tracks[row.id]=track(row.id,s.project)end
+ for _,row in ipairs(s.owned)do
+  local tr=track(row.track,s.project)
+  effects[#effects+1]={track=tr,index=fx_index(tr,row.id),row=row}
+ end
  if mode=='original'then
   s.candidate={}
-  for _,row in ipairs(s.original)do local tr=track(row.id,s.project);s.candidate[row.id]={volume=R.GetMediaTrackInfo_Value(tr,'D_VOL'),pan=R.GetMediaTrackInfo_Value(tr,'D_PAN')}end
+  for _,row in ipairs(s.original)do local tr=tracks[row.id];s.candidate[row.id]={volume=R.GetMediaTrackInfo_Value(tr,'D_VOL'),pan=R.GetMediaTrackInfo_Value(tr,'D_PAN')}end
+  for _,fx in ipairs(effects)do fx.row.candidate_enabled=R.TrackFX_GetEnabled(fx.track,fx.index)end
  end
  local values=mode=='original'and s.original or s.candidate
- assert(values,'No candidate snapshot')
+ for _,row in ipairs(s.original)do
+  local v=mode=='original'and row or (values and values[row.id])
+  assert(v and type(v.volume)=='number'and type(v.pan)=='number','No candidate snapshot')
+ end
  R.Undo_BeginBlock2(s.project)
  for _,row in ipairs(s.original)do
-  local tr=track(row.id,s.project);local v=mode=='original'and row or values[row.id]
+  local tr=tracks[row.id];local v=mode=='original'and row or values[row.id]
   R.SetMediaTrackInfo_Value(tr,'D_VOL',v.volume);R.SetMediaTrackInfo_Value(tr,'D_PAN',v.pan)
  end
- for _,row in ipairs(s.owned)do local tr=track(row.track,s.project);R.TrackFX_SetEnabled(tr,fx_index(tr,row.id),mode=='candidate')end
+ for _,fx in ipairs(effects)do R.TrackFX_SetEnabled(fx.track,fx.index,mode=='candidate'and fx.row.candidate_enabled~=false)end
  s.mode=mode;R.Undo_EndBlock2(s.project,'Solo Studio compare '..mode,-1);remember(s);R.UpdateArrange()
 end
 function B.revert(s)
- B.guard(s,false);local conflicts=0
+ B.guard(s,false,true);local conflicts=0
  R.Undo_BeginBlock2(s.project)
  for _,row in ipairs(s.original)do
   local ok,tr=pcall(track,row.id,s.project)
@@ -266,7 +280,7 @@ function B.revert(s)
  return conflicts
 end
 function B.keep(s)
- B.guard(s,true);assert(s.mode=='candidate','Select Candidate before keeping');s.finished=true;journal(s)
+ B.guard(s,true,true);assert(s.mode=='candidate','Select Candidate before keeping');s.finished=true;journal(s)
 end
 B.track=track
 return B
