@@ -13,6 +13,7 @@
 !/Templates/
 !/Tests/
 !/Tuner/
+!/ReferenceLab/
 
 /Scripts/*
 !/Scripts/*.lua
@@ -40,3 +41,9 @@
 !/Tuner/Tests/integration-results.txt
 !/Tuner/Tests/measurements.json
 !/Tuner/Tests/production-sha256.txt
+
+# Reference music, manifests, cached profiles, and reports stay private/local.
+/ReferenceLab/*
+!/ReferenceLab/*.py
+!/ReferenceLab/README.md
+!/ReferenceLab/requirements.txt
