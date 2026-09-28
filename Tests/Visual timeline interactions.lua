@@ -6,7 +6,8 @@ local function fixture()
  local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={},takes={},draws={},active_set='drums'}
  local serial=0
  reaper={
-  GetMediaItemInfo_Value=function(it,key)return key=='D_POSITION' and it.s or it.e-it.s end,
+  ValidatePtr2=function(_,it)return not it.deleted end,
+  GetMediaItemInfo_Value=function(it,key)assert(not it.deleted,'Stale item');return key=='D_POSITION' and it.s or it.e-it.s end,
   EnumProjects=function()return f.project end,GetProjectLength=function()return 32 end,
   GetPlayState=function()return f.recording and 4 or 0 end,GetCursorPosition=function()return f.cursor end,
   SetEditCurPos2=function(_,p)f.cursor=p end,Main_OnCommand=function()end,GetSetRepeat=function()end,
@@ -31,15 +32,16 @@ local function fixture()
  for _,fn in ipairs({'rect','line'})do gfx[fn]=function(...)f.draws[#f.draws+1]={kind=fn,args={...}}end end
  local ui={colors={muted={},text={},line={},blue={},record={},gold={}},text=function()end,color=function()end,
   button=function(label,_,_,_,_,fn,_,enabled)if enabled~=false then f.buttons[label]=fn end end,
+  comp=function()return f.comp end,preview=function()return f.preview end,target=function()return f.target end,
   rows=function()return f.takes end,chosen=function()return f.chosen end,
   selected=function(key)return f.selected and f.selected[key] or f.chosen and f.chosen.key==key end,
   selection_count=function()return f.selected_count or (f.chosen and 1 or 0)end,
-  select=function(row)f.chosen=row end,take_action=function(action)f.action=action end,
+  select=function(row,clip,position)f.chosen=row;f.clip=clip;f.position=position end,take_action=function(action)f.action=action end,
   changed=function(message)f.message=message end,
   run=function(fn)local ok,err=pcall(fn);if not ok then f.errors[#f.errors+1]=err end end}
  local V=dofile(root..'/Scripts/solo_timeline.lua')(M,S,ui)
  f.S,f.V=S,V
- function f.draw()f.buttons={};f.draws={};V.draw(24,215,1152,430,f.recording)end
+ function f.draw()f.buttons={};f.draws={};V.draw(24,215,1152,476,f.recording)end
  function f.mouse(t,down,pressed,y)
   gfx.mouse_x=212+t/36*964;gfx.mouse_y=y or 365
   V.mouse(down,pressed or false,f.recording)
@@ -86,30 +88,30 @@ local function take(key,s,e)
 end
 f=fixture();f.S.create(0,8,'Verse');f.S.create(8,16,'Chorus');f.S.select(f.S.list()[1].key)
 f.takes={take('Short pass',2,6),take('Later pass',12,14)};f.draw()
-check(f.buttons.Audition==nil,'Take actions disabled until a take is chosen')
-f.mouse(4,true,true,417)
+check(f.buttons.Preview==nil,'Take actions disabled until a take is chosen')
+f.mouse(4,true,true,463)
 check(f.chosen==f.takes[1] and not f.action and f.S.active().s==0,'Clicking a partial take selects without auditioning or changing section')
 f.draw();f.buttons['Delete take']()
 check(f.action=='delete','Timeline delete control routes to the selected take')
 local aligned=false
 for _,shape in ipairs(f.draws)do local a=shape.args
- if shape.kind=='rect' and a[2]==407 and a[4]==34 then
+ if shape.kind=='rect' and a[2]==453 and a[4]==34 then
   aligned=math.abs(a[1]-(212+2/36*964))<1e-7 and math.abs(a[3]-4/36*964)<1e-7
  end
 end
 check(aligned,'Take start and duration use the same ruler coordinates as song sections')
-f.mouse(13,true,true,463)
+f.mouse(13,true,true,509)
 check(f.chosen==f.takes[2],'Takes outside the selected section remain visible and selectable')
 f.takes[2].items={{s=8,e=10},{s=12,e=14}};f.draw()
 local clips=0
-for _,shape in ipairs(f.draws)do if shape.kind=='rect' and shape.args[2]==453 and shape.args[4]==34 and shape.args[5]==1 then clips=clips+1 end end
+for _,shape in ipairs(f.draws)do if shape.kind=='rect' and shape.args[2]==499 and shape.args[4]==34 and shape.args[5]==1 then clips=clips+1 end end
 check(clips==2,'Split takes draw separate clips with their real gap')
 f=fixture();for i=1,9 do f.takes[i]=take('Take '..i,0,8)end;f.draw()
-f.mouse(2,false,false,417);f.V.wheel(-1);f.draw();f.mouse(2,true,true,417)
+f.mouse(2,false,false,463);f.V.wheel(-1);f.draw();f.mouse(2,true,true,463)
 check(f.chosen==f.takes[2],'Wheel over lanes scrolls takes instead of panning the song')
-f.active_set='guitar';f.chosen=nil;f.takes={take('Guitar',4,8)};f.draw();f.mouse(5,true,true,417)
+f.active_set='guitar';f.chosen=nil;f.takes={take('Guitar',4,8)};f.draw();f.mouse(5,true,true,463)
 check(f.chosen==f.takes[1],'Switching instruments resets lane scroll and displays only that set')
-f.recording=true;f.draw();f.chosen=nil;f.mouse(5,true,true,417)
+f.recording=true;f.draw();f.chosen=nil;f.mouse(5,true,true,463)
 check(f.chosen==nil and f.buttons['Delete take']==nil,'Recording locks take selection and deletion')
 f=fixture();f.takes={take('Outside',40,44)};f.draw()
 local outside=false
@@ -120,6 +122,16 @@ f.chosen=f.takes[2];f.selected={First=true,Second=true};f.selected_count=2;f.dra
 local outlines=0
 for _,shape in ipairs(f.draws)do if shape.kind=='rect'and shape.args[4]==34 and shape.args[5]==0 then outlines=outlines+1 end end
 check(outlines==2,'Timeline highlights every selected take')
-check(f.buttons.Audition==nil and f.buttons['Keep passage']==nil and f.buttons['Delete 2 takes']~=nil,'Timeline exposes batch Delete and disables single-take actions for multiple selection')
+check(f.buttons.Preview==nil and f.buttons['Use in comp']==nil and f.buttons['Delete 2 takes']~=nil,'Timeline exposes batch Delete and disables single-take actions for multiple selection')
 f.buttons['Delete 2 takes']();check(f.action=='delete','Timeline batch delete routes through the shared selection action')
+check(f.buttons['Play comp']==nil,'Empty comp cannot be played')
+f.comp=take('Comp',0,8);reaper.GetSetMediaItemInfo_String=function()return true,'First'end;f.draw()
+check(f.buttons['Play comp']~=nil,'Saved comp has a dedicated playback control')
+f.mouse(2,true,true,417);check(f.action=='back','Clicking the pinned comp lane activates saved comp')
+f.selected_count=1;f.selected=nil;f.chosen=f.takes[1];f.target={s=2,e=6};f.preview={key='First',name='First',s=2,e=6};f.draw()
+check(f.buttons['Back to comp']~=nil and f.buttons['Use in comp']~=nil,'Preview exposes separate commit and return controls')
+f.mouse(3,true,true,463)
+check(f.clip.s==0 and f.clip.e==8 and math.abs(f.position-3)<1e-8,'Clip selection passes exact clip and clicked musical position')
+f.preview=nil;f.comp=nil;f.takes[1].items[1].deleted=true;f.takes[2].items[1].deleted=true
+check(pcall(f.draw),'A native deletion between refreshes cannot crash timeline drawing')
 print(total..' visual timeline checks passed.')

@@ -4,7 +4,7 @@ return function(M,S,ui)
  local V={};local C=ui.colors;local text,button,color=ui.text,ui.button,ui.color
  local view_start,view_end=0,nil
  local box,gesture,regions
- local take_box,take_hits,take_scroll,take_visible=nil,{},0,1
+ local take_box,comp_box,take_hits,take_scroll,take_visible=nil,nil,{},0,1
  local last_set,last_selected,record_start
  local lane_height=46
  local palette={{0.29,0.48,0.63},{0.37,0.51,0.42},{0.56,0.43,0.29},{0.48,0.40,0.58},{0.30,0.51,0.53}}
@@ -16,7 +16,7 @@ return function(M,S,ui)
   return table.concat(out,'|')
  end
  function V.reset()
-  view_start=0;view_end=nil;gesture=nil;box=nil;take_box=nil;take_hits={};take_scroll=0
+  view_start=0;view_end=nil;gesture=nil;box=nil;take_box=nil;comp_box=nil;take_hits={};take_scroll=0
   last_set=nil;last_selected=nil;record_start=nil
  end
  function V.cancel()local had=gesture~=nil;gesture=nil;return had end
@@ -93,9 +93,13 @@ return function(M,S,ui)
   return a,b,changes,valid
  end
  function V.mouse(down,pressed,recording)
-  if recording then gesture=nil;return inside(gfx.mouse_x,gfx.mouse_y) or contains(take_box,gfx.mouse_x,gfx.mouse_y)end
+  if recording then gesture=nil;return inside(gfx.mouse_x,gfx.mouse_y) or contains(comp_box,gfx.mouse_x,gfx.mouse_y) or contains(take_box,gfx.mouse_x,gfx.mouse_y)end
+  if pressed and not gesture and contains(comp_box,gfx.mouse_x,gfx.mouse_y)then
+   if ui.comp() or ui.preview() then ui.run(function()ui.take_action('back')end)end
+   return true
+  end
   if pressed and not gesture and contains(take_box,gfx.mouse_x,gfx.mouse_y)then
-   for _,hit in ipairs(take_hits)do if contains(hit,gfx.mouse_x,gfx.mouse_y)then ui.select(hit.row);break end end
+   for _,hit in ipairs(take_hits)do if contains(hit,gfx.mouse_x,gfx.mouse_y)then ui.select(hit.row,hit.clip,to_time(gfx.mouse_x));break end end
    return true
   end
   if gesture then
@@ -142,9 +146,11 @@ return function(M,S,ui)
  local function spans(row)
   local result={};local start,finish=math.huge,0
   for _,item in ipairs(row.items)do
+   if R.ValidatePtr2(0,item,'MediaItem*')then
    local a=R.GetMediaItemInfo_Value(item,'D_POSITION');local b=a+R.GetMediaItemInfo_Value(item,'D_LENGTH')
    start=math.min(start,a);finish=math.max(finish,b)
-   if b>a then result[#result+1]={s=a,e=b}end
+   if b>a then result[#result+1]={s=a,e=b,item=item}end
+   end
   end
   return result,start==math.huge and 0 or start,finish
  end
@@ -152,6 +158,7 @@ return function(M,S,ui)
   if not view_end then V.fit()end
   regions=S.list();local active=S.active();local enabled=not recording
   local takes=ui.rows();local chosen=ui.chosen();local selected_count=ui.selection_count();local set=M.get('active')
+  local comp=ui.comp();local audition=ui.preview();local target=ui.target()
   if set~=last_set then take_scroll=0;last_selected=nil;last_set=set;record_start=nil end
   text('Song timeline',x,y,4)
   text('Click a section to record it. Drag its center to move, or an edge to resize.',x+158,y+3,3,C.muted,w-158)
@@ -170,7 +177,8 @@ return function(M,S,ui)
   button('Down',x+w-62,y+69,62,25,function()take_scroll=take_scroll+1 end)
   local gutter=188
   box={x=x+gutter,y=y+99,w=w-gutter,h=88}
-  take_box={x=x,y=box.y+box.h,w=w,h=math.max(lane_height,y+h-102-(box.y+box.h))}
+  comp_box={x=x,y=box.y+box.h,w=w,h=lane_height}
+  take_box={x=x,y=comp_box.y+comp_box.h,w=w,h=math.max(lane_height,y+h-102-(comp_box.y+comp_box.h))}
   take_hits={};take_visible=math.max(1,math.floor(take_box.h/lane_height))
   local count=#takes+(recording and 1 or 0)
   local selected_index
@@ -185,7 +193,7 @@ return function(M,S,ui)
    take_scroll=math.max(0,count-take_visible)
   elseif not recording then record_start=nil end
   take_scroll=math.max(0,math.min(take_scroll,count-take_visible))
-  color({0.12,0.14,0.17});gfx.rect(x,box.y,w,box.h+take_box.h,1)
+  color({0.12,0.14,0.17});gfx.rect(x,box.y,w,box.h+comp_box.h+take_box.h,1)
   text(M.get('set.'..set..'.name')~='' and M.get('set.'..set..'.name')or 'Choose an instrument',x+8,box.y+4,1,C.text,gutter-16)
   text(#takes..' takes / '..#M.tracks()..' tracks',x+8,box.y+27,3,C.muted,gutter-16)
   text('Song sections',x+8,box.y+60,3,C.muted,gutter-16)
@@ -223,6 +231,26 @@ return function(M,S,ui)
   if #regions==0 and not(g and g.moved)then
    text('Drag here to create a section, or use New section... for an exact length.',box.x+16,box.y+49,1,C.muted,box.w-32)
   end
+  local cy=comp_box.y
+  color({0.19,0.26,0.24});gfx.rect(x,cy,w,lane_height-2,1)
+  text('Comp',x+12,cy+5,1,C.text,gutter-20)
+  text(audition and 'Preview / click to return' or comp and (comp.playing and 'Playing / saved choices' or 'Click to play') or 'Your chosen passages',x+12,cy+26,3,audition and C.gold or C.muted,gutter-20)
+  for _,px in ipairs(ticks)do color(C.line);gfx.line(px,cy,px,cy+lane_height-2)end
+  local function comp_clip(a,b,label,tint)
+   local left=math.max(box.x,to_x(a));local right=math.min(box.x+box.w,to_x(b))
+   if right>left then
+    color(tint);gfx.rect(left,cy+5,right-left,34,1)
+    color(C.text);gfx.rect(left,cy+5,right-left,34,0)
+    if right-left>45 then text(label,left+8,cy+14,3,C.text,right-left-16)end
+   end
+  end
+  if comp then
+   for _,clip in ipairs(spans(comp))do
+    local _,name=R.GetSetMediaItemInfo_String(clip.item,'P_EXT:SoloStudioSourceName','',false)
+    comp_clip(clip.s,clip.e,name~='' and ('Take '..name):gsub('^Take (%D)','%1') or 'Kept passage',{0.28,0.43,0.36})
+   end
+  elseif not audition then text('Click a take clip below, then Use in comp.',box.x+16,cy+14,3,C.muted,box.w-32)end
+  if audition then comp_clip(audition.s,audition.e,'Preview: '..audition.name,{0.52,0.39,0.17})end
   for i=take_scroll+1,math.min(count,take_scroll+take_visible)do
    local row=takes[i];local live=not row;local ry=take_box.y+(i-take_scroll-1)*lane_height
    local is_selected=row and ui.selected(row.key)
@@ -240,8 +268,8 @@ return function(M,S,ui)
    else
     clips,a,b=spans(row)
     text((row.favorite and '* 'or '')..take_name(row),x+12,ry+5,1,C.text,gutter-20)
-    text(row.playing and 'Playing' or (row.note~='' and row.note or duration(a,b)),x+12,ry+26,3,row.playing and C.blue or C.muted,gutter-20)
-    take_hits[#take_hits+1]={x=x,y=ry,w=w,h=lane_height-2,row=row}
+    local previewing=audition and audition.key==row.key
+    text(previewing and 'Previewing passage' or row.playing and 'Playing' or (row.note~='' and row.note or duration(a,b)),x+12,ry+26,3,previewing and C.gold or row.playing and C.blue or C.muted,gutter-20)
    end
    for _,clip in ipairs(clips)do
     local left=math.max(box.x,to_x(clip.s));local right=math.min(box.x+box.w,to_x(clip.e))
@@ -250,7 +278,13 @@ return function(M,S,ui)
      gfx.rect(left,ry+5,right-left,34,1)
      if is_selected then color(C.text);gfx.rect(left,ry+5,right-left,34,0)end
      if right-left>65 then text(duration(clip.s,clip.e),left+8,ry+14,3,C.text,right-left-16)end
+     if row then take_hits[#take_hits+1]={x=left,y=ry+5,w=right-left,h=34,row=row,clip=clip}end
     end
+   end
+   if row then take_hits[#take_hits+1]={x=x,y=ry,w=w,h=lane_height-2,row=row}end
+   if is_selected and selected_count==1 and target then
+    local left=math.max(box.x,to_x(target.s));local right=math.min(box.x+box.w,to_x(target.e))
+    if right>left then color(C.gold);gfx.rect(left,ry+3,right-left,38,0);gfx.rect(left,ry+39,right-left,3,1)end
    end
    if is_selected then color(C.gold);gfx.rect(x,ry,3,lane_height-2,1)end
   end
@@ -260,23 +294,26 @@ return function(M,S,ui)
   end
   local px=to_x(S.position());if px>=box.x and px<=box.x+box.w then color(C.gold);gfx.line(px,box.y,px,take_box.y+take_box.h);gfx.rect(px-3,box.y,6,7,1)end
   color(C.line);gfx.line(box.x,box.y,box.x,take_box.y+take_box.h)
-  local detail='Select a take to inspect it. Delete take removes the whole pass from this set; audio files stay on disk.'
+  local detail='Click a take clip, then Use in comp to keep it. Preview compares it with the saved comp.'
   if selected_count>1 then
    detail=selected_count..' takes selected. Delete removes these whole passes across the recording set. Cmd+Z in REAPER restores them.'
   elseif chosen then
    local _,a,b=spans(chosen)
-   detail=take_name(chosen)..': '..fmt(a)..' - '..fmt(b)..' / '..duration(a,b)..' span / '..seconds(b-a)
+   if target then a,b=target.s,target.e end
+   detail=take_name(chosen)..': selected passage '..fmt(a)..' - '..fmt(b)..' / '..duration(a,b)
    if chosen.note~='' then detail=detail..' / '..chosen.note end
   end
   if g and g.moved then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end
   text(detail,x,y+h-97,3,g and not g.valid and C.record or C.muted,w-155)
   text(count>0 and (take_scroll+1)..'-'..math.min(count,take_scroll+take_visible)..' of '..count..' lanes' or '',x+w-145,y+h-97,3,C.muted,145)
   local ay=y+h-74;local single=enabled and selected_count==1
-  for _,spec in ipairs({{'Audition',0,96,'audition',C.blue},{'Favorite',104,96,'favorite'},{'Take note',208,105,'note'},
-   {'Rename',321,90,'rename'},{'Keep passage',419,136,'comp'},{selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',563,160,'delete',C.record}})do
-   button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],enabled and (spec[4]=='delete' and selected_count>0 or single))
+  for _,spec in ipairs({{'Use in comp',0,132,'comp',C.blue},{'Preview',140,96,'preview'},
+   {audition and 'Back to comp' or 'Play comp',244,132,'back'},{'Favorite',384,86,'favorite'},{'Take note',478,94,'note'},
+   {'Rename',580,84,'rename'},{selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',672,160,'delete',C.record}})do
+   local available=spec[4]=='back' and (comp~=nil or audition~=nil) or spec[4]~='back' and (spec[4]=='delete' and selected_count>0 or single)
+   button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],enabled and available)
   end
-  text('Delete whole pass / Undo in REAPER',x+739,ay+8,3,C.muted,w-739)
+  text('Left / Right: preview another take',x+848,ay+8,3,C.muted,w-848)
   local iy=y+h-33
   text('Section',x,iy+8,3,C.muted)
   if active then

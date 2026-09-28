@@ -1,21 +1,23 @@
 -- Runs the actual panel against a fake gfx surface, without controlling REAPER.
 local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0
-local function fixture()
-  local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={}}
+local function fixture(initial_view)
+  local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={},sections={},view=initial_view or 'review'}
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
-  local M={ns='test',tracks=function()return {'track'}end,lanes=function()return f.rows end,
+  local P={current=function()return f.preview end,cancel=function()f.preview=nil end,close=function()f.preview=nil end,poll=function()end,
+    start=function(key,s,e)f.preview={key=key,s=s,e=e};for _,row in ipairs(f.rows)do if row.key==key then call('audition',row.lane)end end end}
+  local M={preview=function()return P end,cancel_preview=function()P.cancel()end,ns='test',use_in_comp=function(key,s,e)P.cancel();call('comp',{key=key,s=s,e=e})end,listen_comp=function()call('back',true)end,require_tracks=function()return {'track'}end,validate_lane=function(_,lane,range)for _,row in ipairs(f.rows)do if row.lane==lane then assert(row.items[1].s<=range[1]and row.items[1].e>=range[2]);return end end;error('Missing lane')end,tracks=function()return {'track'}end,lanes=function()return f.rows end,
     audition=function(lane)call('audition',lane)end,
     delete_takes=function(rows)
       if f.delete_fail then error('Simulated failure')end
-      local keys={};for _,row in ipairs(rows)do keys[#keys+1]=row.key end
+      P.cancel();local keys={};for _,row in ipairs(rows)do keys[#keys+1]=row.key end
       call('delete',table.concat(keys,','))
       for i=#f.rows,1,-1 do for _,key in ipairs(keys)do if f.rows[i].key==key then table.remove(f.rows,i);break end end end
     end,
     get=function(key)return key=='active' and f.set or 'Scratch'end,
     sets=function()return {{id='scratch',name='Scratch'}}end,message=function(s)f.errors[#f.errors+1]=s end}
-  M.sections=function()return {recover_leadin=function()end,filter_takes=function(rows)if not f.filter then return rows end;local out={};for _,row in ipairs(rows)do if f.filter[row.key]then out[#out+1]=row end end;return out end,list=function()return {}end,
-    mode=function()return ''end,active=function()return nil end,label=function()return 'Full song'end,
+  M.sections=function()return {recover_leadin=function()end,filter_takes=function(rows)if not f.filter then return rows end;local out={};for _,row in ipairs(rows)do if f.filter[row.key]then out[#out+1]=row end end;return out end,list=function()return f.sections end,
+    mode=function()return f.section and 'section' or ''end,active=function()return f.section end,label=function()return 'Full song'end,
     looping=function()return false end,snapping=function()return true end}end
   local T={min_bpm=20,max_bpm=300,bpm=function()return f.bpm end,
     tempo_enabled=function()return not f.recording and not f.tempo_map end,
@@ -25,11 +27,11 @@ local function fixture()
     format_db=function(v)return tostring(v)end,
     set_volume=function(v)f.volume=v;call('volume',v)end,
     set_click_db=function(v)call('db',v)end,sound_settings=function()call('sounds',true)end}
-  local R={EnumProjects=function()return f.project end,
+  local R={ValidatePtr2=function()return true end,EnumProjects=function()return f.project end,
     time_precise=function()f.clock=f.clock+1;return f.clock end,
-    GetExtState=function(_,key)return key=='panel_view' and 'review' or ''end,SetExtState=function()end,
-    GetPlayState=function()return f.recording and 4 or 0 end,
-    GetMediaTrackInfo_Value=function()return 0 end,
+    GetExtState=function(_,key)return key=='panel_view' and f.view or ''end,SetExtState=function()end,
+    OnPlayButton=function()f.playing=true end,GetPlayState=function()return f.recording and 4 or f.playing and 1 or 0 end,
+    GetMediaTrackInfo_Value=function()return 0 end,GetMediaItemInfo_Value=function(it,k)return k=='D_POSITION' and it.s or it.e-it.s end,
     GetToggleCommandStateEx=function()return 0 end,
     GetSet_LoopTimeRange2=function()return 0,0 end,
     atexit=function()end,defer=function(fn)f.frame=fn end}
@@ -43,7 +45,7 @@ local function fixture()
   local env=setmetatable({reaper=R,gfx=g,dofile=function(path)
     if path:match('solo_core.lua$') then return M end
     if path:match('solo_tempo.lua$') then return T end
-    if path:match('solo_timeline.lua$') then return function()return {reset=function()end,cancel=function()return false end}end end
+    if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,draw=function()end,mouse=function()end,wheel=function()end}end end
     if path:match('solo_take_selection.lua$')then return dofile(path)end
     error('Unexpected module '..path)
   end},{__index=_G})
@@ -53,7 +55,7 @@ local function fixture()
     f.frame()
   end
   function f.click(x,y,mods)f.mouse(x,y,true,mods);f.mouse(x,y,false,mods)end
-  return f
+  f.gfx=g;return f
 end
 local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..name)end
 local f=fixture()
@@ -74,7 +76,7 @@ f=fixture();f.tempo_map=true;f.mouse(140,256,true);f.mouse(250,256,false)
 check(#f.calls==0,'Tempo-map project disables tempo slider')
 f=fixture();f.mouse(750,230,true);f.mouse(750,230,false)
 check(#f.calls==1 and f.calls[1][1]=='sounds','Click sound button opens native sound settings')
-local function take(key,lane,playing)return {key=key,lane=lane,name=key,note='',playing=playing,favorite=false}end
+local function take(key,lane,playing)return {key=key,lane=lane,name=key,note='',playing=playing,favorite=false,items={{s=0,e=8}}}end
 f=fixture();f.rows={take('Short take',0,false),take('Playing take',1,true)};f.frame()
 f.mouse(400,435,true);f.mouse(400,435,false)
 check(#f.calls==0,'Take-list click selects a partial take without switching audio')
@@ -120,4 +122,22 @@ check(f.calls[1][2]=='Last'and #f.rows==2,'Filtered-out takes are not silently r
 f=fixture();f.rows={take('First',0),take('Middle',1),take('Last',2)};f.frame()
 f.click(400,435);f.click(400,519,4);f.set='guitar';f.rows={take('Guitar',0)};f.frame();f.click(540,579)
 check(f.calls[1][2]=='Guitar','Changing instruments clears the previous multiselection')
+f=fixture('timeline');f.rows={take('Full',0),take('Partial',1)};f.rows[1].items[1].e=24;f.rows[2].items={{s=10,e=14}}
+f.sections={{s=0,e=8},{s=8,e=16},{s=16,e=24}};f.section=f.sections[1];f.frame()
+f.timeline.select(f.rows[2],{s=10,e=14},11)
+f.timeline.take_action('preview')
+check(f.preview.key=='Partial'and f.preview.s==10 and f.preview.e==14,'Clicking a partial clip previews its actual bounds, even outside the recording section')
+f.timeline.select(f.rows[1],{s=0,e=24},12)
+check(f.preview.key=='Full'and f.preview.s==8 and f.preview.e==16,'Clicking another clip during preview compares its clicked song section')
+f.timeline.take_action('comp')
+local committed=f.calls[#f.calls][2]
+check(not f.preview and committed.key=='Full'and committed.s==8 and committed.e==16,'Use in comp commits the selected clip range and ends temporary preview')
+local comp=take('Comp',2,true);comp.is_comp=true;local temporary=take('Temporary',3,true);temporary.is_preview=true
+f.rows[#f.rows+1]=comp;f.rows[#f.rows+1]=temporary;f.frame()
+check(#f.timeline.rows()==2 and f.timeline.comp()==comp,'Saved comp and temporary playback lane stay out of source take selection')
+f.timeline.take_action('back');check(f.calls[#f.calls][1]=='back'and f.playing,'Play comp activates saved choices and starts playback when stopped')
+f.timeline.select(f.rows[2],{s=10,e=14},11);f.timeline.take_action('preview');f.timeline.take_action('back')
+check(not f.preview and f.playing,'Back to comp cancels preview while keeping playback active')
+f.timeline.select(f.rows[2],{s=10,e=14},11);f.key=1919379572;f.frame();f.key=nil
+check(f.preview.key=='Full'and f.preview.s==10 and f.preview.e==14,'Arrow-key comparison preserves the selected passage when switching source takes')
 print(passed..' panel interaction checks passed.')

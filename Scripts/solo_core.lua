@@ -2,7 +2,15 @@
 local R = reaper
 local M = {ns = 'SoloStudio_v1'}
 local module_dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
-local section_module
+local section_module,preview_module
+function M.preview()
+  if not preview_module then preview_module=dofile(module_dir..'/solo_comp_preview.lua')(M)end
+  return preview_module
+end
+function M.cancel_preview(project)
+  local _,journal=R.GetProjExtState(project or 0,M.ns,'comp.preview')
+  if journal~='' then M.preview().cancel(project)end
+end
 function M.sections()
   if not section_module then section_module=dofile(module_dir..'/solo_sections.lua')(M) end
   return section_module
@@ -24,7 +32,7 @@ function M.stopped()
   if R.GetPlayState() & 4 ~= 0 then error('Finish recording before changing takes or the recording set.',0) end
 end
 function M.edit(name,fn)
-  M.stopped(); R.Undo_BeginBlock2(0); R.PreventUIRefresh(1)
+  M.stopped(); M.cancel_preview(); R.Undo_BeginBlock2(0); R.PreventUIRefresh(1)
   local ok,result=xpcall(fn,debug.traceback)
   R.PreventUIRefresh(-1); R.UpdateTimeline(); R.TrackList_AdjustWindows(false)
   R.Undo_EndBlock2(0,'Solo Studio: '..name,-1)
@@ -110,7 +118,7 @@ function M.capture(name)
   return id
 end
 function M.choose_set(id)
-  M.stopped(); put('active',id); M.select_tracks(M.require_tracks()); R.TrackList_AdjustWindows(false)
+  M.stopped(); M.cancel_preview(); put('active',id); M.select_tracks(M.require_tracks()); R.TrackList_AdjustWindows(false)
 end
 function M.arm()
   local tracks=M.require_tracks(); M.stopped()
@@ -134,6 +142,7 @@ function M.record()
   if not ok then M.stop();error(err,0)end
 end
 function M.stop()
+  M.cancel_preview()
   M.sections().cancel_watch()
   if R.GetPlayState() & 4 ~= 0 then R.Main_OnCommand(40667,0) else R.OnStopButton() end
 end
@@ -170,15 +179,22 @@ function M.covers(items,s,e)
   end
   return false
 end
+function M.comp_lane(tr)
+  local ids={};for _,id in ipairs(split(str(tr,'P_EXT:SoloStudioComp')))do ids[id]=true end
+  for i=0,R.CountTrackMediaItems(tr)-1 do local it=R.GetTrackMediaItem(tr,i)
+    if ids[itemstr(it,'GUID')]then return R.GetMediaItemInfo_Value(it,'I_FIXEDLANE')end
+  end
+end
+function M.row_for_key(key)for _,row in ipairs(M.lanes())do if row.key==key then return row end end end
 function M.lanes()
   local tracks=M.tracks(); if #tracks==0 then return {} end
-  local rows={}; local count=math.floor(R.GetMediaTrackInfo_Value(tracks[1],'I_NUMFIXEDLANES'))
+  local rows={};local comp=M.comp_lane(tracks[1]);local count=math.floor(R.GetMediaTrackInfo_Value(tracks[1],'I_NUMFIXEDLANES'))
   for n=0,count-1 do
     local items=M.lane_items(tracks[1],n)
     if #items>0 then
       local name=str(tracks[1],'P_LANENAME:'..n); if name=='' then name='Take '..(n+1) end
       local key=itemstr(items[1],'GUID')
-      rows[#rows+1]={lane=n,name=name,key=key,items=items,playing=R.GetMediaTrackInfo_Value(tracks[1],'C_LANEPLAYS:'..n)>0,
+      rows[#rows+1]={lane=n,name=name,key=key,items=items,is_comp=n==comp,is_preview=itemstr(items[1],'P_EXT:SoloStudioPreview')~='',playing=R.GetMediaTrackInfo_Value(tracks[1],'C_LANEPLAYS:'..n)>0,
         favorite=annotation('favorite.'..key)=='1',note=annotation('note.'..key)}
     end
   end
@@ -188,7 +204,7 @@ function M.row_for_lane(lane) for _,row in ipairs(M.lanes()) do if row.lane==lan
 -- Remove project items, never their source files. Keep empty native lanes so
 -- source/comp lane indices remain aligned across microphones.
 function M.delete_takes(takes)
-  M.stopped()
+  M.stopped();M.cancel_preview()
   assert(type(takes)=='table' and #takes>0,'Select at least one take to delete.')
   local tracks=M.require_tracks();local live={};local lanes={};local total=0
   for _,row in ipairs(M.lanes())do live[row.lane]=row end
@@ -239,10 +255,10 @@ function M.validate_lane(tracks,lane,range)
   local kinds=0; for _ in pairs(counts) do kinds=kinds+1 end
   if kinds>1 then error('The microphone tracks have different lane counts. Align their take lanes before comparing.',0) end
 end
-function M.audition(lane)
-  local tracks=M.require_tracks(); M.stopped()
+function M.audition(lane,whole_lane)
+  local tracks=M.require_tracks(); M.stopped();M.cancel_preview()
   local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
-  M.validate_lane(tracks,lane,e>s and {s,e} or nil)
+  M.validate_lane(tracks,lane,not whole_lane and e>s and {s,e} or nil)
   local old={}
   for i,tr in ipairs(tracks) do old[i]={}; for n=0,R.GetMediaTrackInfo_Value(tr,'I_NUMFIXEDLANES')-1 do old[i][n]=R.GetMediaTrackInfo_Value(tr,'C_LANEPLAYS:'..n) end end
   M.edit('audition take',function()
@@ -299,16 +315,31 @@ function M.add_instrument(kind,names)
   end)
   M.capture(kind); return tracks
 end
-function M.comp(lane)
-  M.stopped(); if R.GetPlayState()~=0 then error('Stop playback before committing a comp section.',0) end
-  local tracks=M.require_tracks(); local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
-  if e<=s then error('Select the passage you want to keep in the timeline first.',0) end
+function M.listen_comp()
+  M.stopped();M.cancel_preview()
+  local tracks=M.require_tracks();local lane=M.comp_lane(tracks[1])
+  assert(lane,'Build a comp with Use in comp first.')
+  for _,tr in ipairs(tracks)do assert(M.comp_lane(tr)==lane,'The comp lanes do not match across the microphones.')end
+  M.audition(lane,true)
+end
+function M.use_in_comp(key,s,e)
+  M.stopped();M.cancel_preview()
+  local row=assert(M.row_for_key(key),'This take changed. Select it again.')
+  assert(not row.is_comp and not row.is_preview,'Select a source take.')
+  M.comp(row.lane,{s,e})
+end
+function M.comp(lane,range)
+  M.stopped();M.cancel_preview()
+  local tracks=M.require_tracks();local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
+  if range then s,e=range[1],range[2]end
+  assert(type(s)=='number' and type(e)=='number' and s==s and e==e and s>=0 and e<math.huge and e-s>0.00001,'Select a non-empty passage to use in the comp.')
+  local source_row=assert(M.row_for_lane(lane),'Select a source take.')
   M.validate_lane(tracks,lane,{s,e})
   local saved_tracks=M.selected(); local razor={}; local originals={};local chunks={};local comp_lanes={};local existing=0
   for i=0,R.CountTracks(0)-1 do local tr=R.GetTrack(0,i); razor[tr]=str(tr,'P_RAZOREDITS_EXT') end
   for i,tr in ipairs(tracks) do
     originals[i]=M.lane_items(tr,lane)[1]
-    local _,chunk=R.GetTrackStateChunk(tr,'',false);chunks[tr]=chunk
+    local ok,chunk=R.GetTrackStateChunk(tr,'',false);assert(ok,'Could not prepare the comp edit.');chunks[tr]=chunk
     local ids={};for _,id in ipairs(split(str(tr,'P_EXT:SoloStudioComp'))) do ids[id]=true end
     for j=0,R.CountTrackMediaItems(tr)-1 do local it=R.GetTrackMediaItem(tr,j)
       if ids[itemstr(it,'GUID')] then comp_lanes[i]=R.GetMediaItemInfo_Value(it,'I_FIXEDLANE');break end
@@ -320,6 +351,10 @@ function M.comp(lane)
   M.edit('keep selected passage',function()
     local ok,err=xpcall(function()
       M.select_tracks(tracks)
+      for _,tr in ipairs(tracks)do for _,it in ipairs(M.lane_items(tr,lane))do
+        R.GetSetMediaItemInfo_String(it,'P_EXT:SoloStudioSource',source_row.key,true)
+        R.GetSetMediaItemInfo_String(it,'P_EXT:SoloStudioSourceName',source_row.name,true)
+      end end
       if existing==0 then R.Main_OnCommand(42797,0) end
       for tr in pairs(razor) do R.GetSetMediaTrackInfo_String(tr,'P_RAZOREDITS_EXT','',true) end
       local before={}
@@ -340,6 +375,9 @@ function M.comp(lane)
         if not comp_lanes[i] or not M.covers(M.lane_items(tr,comp_lanes[i]),s,e) then error('REAPER did not create the requested comp on every microphone. The original tracks have been restored.',0) end
         local ids={};for _,it in ipairs(M.lane_items(tr,comp_lanes[i])) do ids[#ids+1]=itemstr(it,'GUID') end
         R.GetSetMediaTrackInfo_String(tr,'P_EXT:SoloStudioComp',table.concat(ids,'\n'),true)
+        R.GetSetMediaTrackInfo_String(tr,'P_LANENAME:'..comp_lanes[i],'Comp',true)
+        R.SetMediaTrackInfo_Value(tr,'C_LANEPLAYS:'..comp_lanes[i],1)
+        assert(R.GetMediaTrackInfo_Value(tr,'C_LANEPLAYS:'..comp_lanes[i])==1,'Could not activate the comp on every microphone.')
       end
     end,debug.traceback)
     if not ok then for tr,chunk in pairs(chunks) do R.SetTrackStateChunk(tr,chunk,false) end end

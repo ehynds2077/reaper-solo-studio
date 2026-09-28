@@ -13,12 +13,13 @@ local log=assert(io.open(root..'/Tests/visual-section-checks.txt','w'));local co
 local function check(value,label)assert(value,label);count=count+1;log:write('PASS: '..label..'\n');log:flush()end
 local function cleanup()
  if R.ValidatePtr(project,'ReaProject*')then
-  R.SelectProjectInstance(project);R.OnStopButton();R.Main_SaveProjectEx(project,filename,8);R.Main_OnCommand(40860,0)
+  R.SelectProjectInstance(project);R.OnStopButton();M.cancel_preview(project);R.Main_SaveProjectEx(project,filename,8);R.Main_OnCommand(40860,0)
  end
  R.SelectProjectInstance(original)
  check(R.CountMediaItems(0)==snapshot.items and R.CountTracks(0)==snapshot.tracks and R.CountProjectMarkers(0)==snapshot.markers and R.Master_GetTempo()==snapshot.tempo,'User song media, tracks, regions, and tempo preserved')
  log:write(count..' native visual-section checks passed.\n');log:close()
 end
+local preview
 local ok,err=xpcall(function()
  M.add_instrument('Scratch guitar + vocal',{'Test guitar','Test vocal'})
  local intro=S.create(0,8,'Intro');local verse=S.create(8,24,'Verse');local chorus=S.create(24,40,'Chorus')
@@ -43,7 +44,23 @@ local ok,err=xpcall(function()
  dofile(root..'/Tests/Native take lanes.lua')(M,S,check,root)
  R.SetExtState(M.ns,'panel_view','timeline',false)
  R.Main_SaveProjectEx(project,filename,8)
+ preview=dofile(root..'/Tests/Native comp preview.lua')(M,check)
 end,debug.traceback)
 if not ok then log:write('FAIL: '..err..'\n');cleanup();R.ShowMessageBox(err,'Visual section checks failed',0);return end
-dofile(root..'/Scripts/Solo Studio - Open recording panel.lua')
-R.atexit(cleanup)
+local started=R.time_precise();local position=R.GetPlayPosition()
+local function finish()
+ local success,failure=xpcall(function()
+  local cancelled,reason=preview.poll();if cancelled then log:write('Preview cancellation: '..tostring(reason)..'\n');log:flush()end
+  if R.time_precise()-started<2 then R.defer(finish);return end
+  log:write('Playback: '..R.GetPlayState()..' / '..R.GetPlayPosition()..' / initial '..position..'\n');log:flush()
+  check(preview.current()~=nil and R.GetPlayState()&1~=0,'Preview survives deferred frames without stopping the transport')
+  if R.GetPlayPosition()<=position then log:write('NOTE: Audio device did not advance the playhead; transport continuity verified, audible switching needs live monitoring.\n')end
+  R.OnStopButton();preview.poll()
+  check(preview.current()==nil and M.get('comp.preview')=='','Stopping playback cleans up the preview')
+  R.SetMediaTrackInfo_Value(R.GetMasterTrack(0),'B_MUTE',0)
+  dofile(root..'/Scripts/Solo Studio - Open recording panel.lua')
+  R.atexit(cleanup)
+ end,debug.traceback)
+ if not success then preview.close();log:write('FAIL: '..failure..'\n');cleanup();R.ShowMessageBox(failure,'Comp playback checks failed',0)end
+end
+finish()
