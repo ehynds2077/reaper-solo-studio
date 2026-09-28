@@ -10,8 +10,9 @@ local lastproject,rows,tracks,lastrefresh=nil,{},{},0
 local buttons={}
 local sliders,drag={},nil
 local section_scroll,sections=0,{}
-local view=R.GetExtState(M.ns,'panel_view')=='review' and 'review' or 'timeline'
-local V
+local saved_view=R.GetExtState(M.ns,'panel_view')
+local view=(saved_view=='review' or saved_view=='mix') and saved_view or 'timeline'
+local V,X
 local function color(c) gfx.set(c[1],c[2],c[3],1) end
 local function text(s,x,y,font,c,w)
  gfx.setfont(font or 1); color(c or C.text);gfx.x=x;gfx.y=y
@@ -39,6 +40,10 @@ local function button(label,x,y,w,h,fn,tint,enabled)
  gfx.setfont(1);local tw,th=gfx.measurestr(label)
  text(label,x+math.max(8,(w-tw)/2),y+(h-th)/2,1,enabled and C.text or C.muted,w-16)
  if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn} end
+end
+local function mix()
+ if not X then X=dofile(dir..'/solo_mix.lua')(M,{colors=C,text=text,button=button,color=color}) end
+ return X
 end
 local function slider(id,x,y,w,value,fn,enabled)
  enabled=enabled~=false
@@ -144,9 +149,9 @@ local function refresh()
 end
 gfx.init('Solo Studio | Record & review',1200,730,tonumber(R.GetExtState(M.ns,'dock')) or 0)
 gfx.setfont(1,'Helvetica',16);gfx.setfont(2,'Helvetica',28,98);gfx.setfont(3,'Helvetica',13);gfx.setfont(4,'Helvetica',19,98)
-R.atexit(function()R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
+R.atexit(function()if X then X.close() end;R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
 local function frame()
- refresh();buttons={};sliders={};color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
+ refresh();if X then X.poll() end;buttons={};sliders={};color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
  if gfx.w<1180 or gfx.h<(view=='timeline' and 710 or 650) then
   V.reset()
   text('Make this panel at least 1180 x 710 to show the song timeline.',20,25,1)
@@ -180,14 +185,17 @@ local function frame()
   button('+ Instrument',w-130,152,106,33,add_instrument)
   color(C.line);gfx.line(24,201,w-24,201)
   local sx=w+12
-  button('Song timeline',sx,24,128,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
-  button('Takes & click',sx+136,24,128,33,function()change_view('review')end,view=='review' and C.blue or nil)
+  button('Timeline',sx,24,88,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
+  button('Takes',sx+96,24,80,33,function()change_view('review')end,view=='review' and C.blue or nil)
+  button('Mix',sx+184,24,80,33,function()change_view('mix')end,view=='mix' and C.blue or nil)
   text('Record: '..S.label(),sx,73,3,C.muted,264)
   button('Full song',sx,101,264,33,function()S.full_song();status='Ready to record the whole song. Stop & keep when finished.'end,S.mode()=='full' and C.blue or nil,not recording)
   button('One pass',sx,152,128,33,function()S.set_loop(false)end,not S.looping() and C.blue or nil,not recording)
   button('Loop takes',sx+136,152,128,33,function()S.set_loop(true)end,S.looping() and C.blue or nil,not recording)
   if view=='timeline' then
    V.draw(24,215,gfx.w-48,gfx.h-300,recording)
+  elseif view=='mix' then
+   mix().draw(24,215,gfx.w-48,gfx.h-300)
   else
   local tempo_enabled=T.tempo_enabled()
   local bpm=drag and drag.id=='tempo' and math.floor(T.min_bpm+drag.value*(T.max_bpm-T.min_bpm)+0.5) or T.bpm()
@@ -260,7 +268,7 @@ local function frame()
   end
   color(C.line);gfx.line(24,gfx.h-78,gfx.w-24,gfx.h-78)
   text(status,25,gfx.h-64,3,C.text,gfx.w-50)
-  text('Space: play/stop   R: record   N: another take   Left/Right: takes   F: favorite   B: transition',25,gfx.h-36,3,C.muted,w-50)
+  text('Space: play/stop   R: record   N: another take   Left/Right: takes   F: favorite   B: transition   M: mix',25,gfx.h-36,3,C.muted,w-50)
  end
  local down=gfx.mouse_cap&1==1
  local consumed=view=='timeline' and V.mouse(down,down and not mouse_down,R.GetPlayState()&4~=0)
@@ -284,12 +292,15 @@ local function frame()
  if gfx.mouse_wheel~=0 then
   local delta=gfx.mouse_wheel>0 and 1 or -1
   if view=='timeline' then V.wheel(delta)
+  elseif view=='mix' then mix().wheel(delta)
   elseif gfx.mouse_x>gfx.w-300 then section_scroll=section_scroll-delta else scroll=scroll-delta end
   gfx.mouse_wheel=0
  end
  local ch=gfx.getchar()
  if ch==27 and V.cancel()then ch=0 end
- if ch==32 then run(play) elseif ch==114 or ch==82 then run(M.record)
+ if view=='mix' and X and X.key(ch)then ch=0 end
+ if ch==109 or ch==77 then run(function()change_view('mix')end)
+ elseif ch==32 then run(play) elseif ch==114 or ch==82 then run(M.record)
  elseif ch==110 or ch==78 then run(M.another)
  elseif ch==1818584692 then run(function()select_step(-1) end)
  elseif ch==1919379572 then run(function()select_step(1) end)

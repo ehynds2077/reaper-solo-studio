@@ -34,6 +34,20 @@ Press **Cmd+Option+Shift+P** from REAPER's arrangement to open the panel. Or, in
 
 On macOS, installed scripts live in `~/Library/Application Support/REAPER/Scripts/Solo Studio`. This repository holds their editable source, templates, and checks. Original settings backups remain local and are not included here.
 
+## Mix with AI
+
+Open **Mix → Mix with AI** to connect OpenRouter, choose saved reference analyses,
+and create a reversible candidate mix. The local worker can adjust track levels
+and pan, add EQ/compression, write separate trim automation, render through
+REAPER, and compare measured loudness, spectrum, dynamics and stereo balance.
+Chat and progress appear after starting; **Give feedback…** refines the candidate.
+Use **Original / Candidate**, then **Keep mix** or **Revert**. Audio stays local;
+project metadata and measured profiles go to the chosen OpenRouter provider.
+
+AI mixing has a separate Python/FFmpeg setup and requires an OpenRouter key.
+See [Mix installation, workflow, safeguards and limitations](Mix/README.md).
+Existing recording, comping and tuner tools work without the mixing worker.
+
 ## A recording session
 
 1. Start from **File → Project templates → Solo Studio - One person band**, **One instrument**, or **Drums**. Save the project into its own folder before recording. New audio goes into `Media` within that folder.
@@ -45,7 +59,7 @@ On macOS, installed scripts live in `~/Library/Application Support/REAPER/Script
 
 ### Visual song timeline
 
-Open **Song timeline** at the upper right of Solo Studio. The horizontal ruler shows bars; colored blocks are song sections. The gold line is the cursor/playhead. **Takes & click** returns to take review, tempo, and metronome controls.
+Open **Song timeline** at the upper right of Solo Studio. The horizontal ruler shows bars; colored blocks are song sections. The gold line is the cursor/playhead. **Takes** returns to take review, tempo, and metronome controls; **Mix** opens the mixing workspace.
 
 - **Create visually:** drag across empty timeline space from the desired start to the desired end. A preview shows the bounds and duration. Releasing creates and selects the section; click its name below to rename it.
 - **Create with an exact length:** click **New section...**, enter a name, start bar, and length in bars. Example: `Verse`, start `9`, length `8` ends at bar `17`.

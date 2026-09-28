@@ -14,6 +14,7 @@
 !/Tests/
 !/Tuner/
 !/ReferenceLab/
+!/Mix/
 
 /Scripts/*
 !/Scripts/*.lua
@@ -47,3 +48,8 @@
 !/ReferenceLab/*.py
 !/ReferenceLab/README.md
 !/ReferenceLab/requirements.txt
+
+/Mix/*
+!/Mix/*.py
+!/Mix/*.command
+!/Mix/README.md

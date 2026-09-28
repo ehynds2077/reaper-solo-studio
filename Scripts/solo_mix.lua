@@ -1,0 +1,266 @@
+-- Native Mix tab; network and analysis run in a separate Python process.
+local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
+local B=dofile(dir..'/solo_mix_bridge.lua');local J=B.json;local R=reaper
+return function(M,ui)
+ local X={};local text,button,color,C=ui.text,ui.button,ui.color,ui.colors
+ local data=(os.getenv('HOME')or '')..'/Library/Application Support/Solo Studio/Mix'
+ R.RecursiveCreateDirectory(data..'/sessions',0)
+ local worker_dir=dir..'/Mix'
+ local worker_file=io.open(worker_dir..'/worker.py','r')
+ if worker_file then worker_file:close()else worker_dir=dir..'/../Mix'end
+ local function quote(s)assert(not s:find('[\r\n"]'),'Unsupported path');return '"'..s..'"'end
+ local function launch(args)
+  local command='/usr/bin/python3 '..quote(worker_dir..'/worker.py')
+  for _,a in ipairs(args)do command=command..' '..quote(a)end
+  local result=R.ExecProcess(command,-1);assert(result,'Could not start Python worker')
+ end
+ local function read(path,default)local ok,value=pcall(J.read,path);return ok and value or default end
+ local config=read(data..'/settings.json',{})
+ config.model=config.model or 'anthropic/claude-sonnet-4.5'
+ config.direction=config.direction or 'Natural indie rock. Clear vocals, punchy drums, preserve dynamics and performance.'
+ config.rounds=config.rounds or 8;config.stop_after_usd=config.stop_after_usd or 2
+ local lib=read(data..'/library.json',{references=J.array(),default=''})
+ local selected=config.references or (lib.default~=''and J.array({lib.default})or J.array())
+ local phase='intro';local session;local state;local foreign_session=false;local status='Choose a reference and direction, then create a candidate mix.'
+ local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
+ local old=R.GetExtState(M.ns,'mix_session')
+ if old~=''then
+  session=B.recover(old)
+  if not session then
+   local snapshot=read(old..'/snapshot.json')
+   foreign_session=snapshot and not snapshot.finished or false
+   if foreign_session then status='Another project has an unfinished mix. Return to that project and reopen Mix to revert it.'end
+  end
+  if session then
+   local f=io.open(old..'/cancel','w');if f then f:close()end
+   phase='session';state=read(old..'/status.json',{events=J.array()});state.state='recovery'
+   status='Unfinished session recovered. Revert restores its faders and removes its added effects.'
+  end
+ end
+ local function save_config()config.references=selected;J.write(data..'/settings.json',config)end
+ local function connection()return read(data..'/connection.json',{connected=false,message='Connect your OpenRouter account to begin.'})end
+ local function bounds()
+  local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
+  if full_song or e<=s then s=0;e=R.GetProjectLength(0)end
+  return {s,e}
+ end
+ local function cancelled()
+  if session then local f=assert(io.open(session.path..'/cancel','w'));f:close()end
+ end
+ function X.busy()return session and not session.finished and state and state.state=='running'end
+ function X.pending()return foreign_session or (session and not session.finished)end
+ local function finish(revert)
+  assert(session,'No session');cancelled()
+  if revert then
+   local conflicts=B.revert(session)
+   status=conflicts>0 and ('Reverted; preserved '..conflicts..' fader/pan controls you changed manually.')or 'Original mix restored. Recordings and existing effects are preserved.'
+  else
+   assert(state and state.state=='review','Only a measured candidate with peaks at or below -1 dBTP can be kept.')
+   B.keep(session);status='Candidate kept. Save your REAPER project when you are ready.'
+  end
+  R.SetExtState(M.ns,'mix_session','',true);session=nil;phase='intro';state=nil
+ end
+ function X.poll()
+  if R.time_precise()-lastpoll<.2 then return end;lastpoll=R.time_precise()
+  if checking then local c=read(data..'/connection.json');if c then checking=false;status=c.message end end
+  if importing then local v=read(data..'/import-result.json');if v then importing=false;status=v.error or ('Reference saved: '..v.title);lib=read(data..'/library.json',lib)end end
+  if foreign_session then
+   local recovered=B.recover(old)
+   if recovered then session=recovered;foreign_session=false;phase='session';state=read(old..'/status.json',{events=J.array()});state.state='recovery';status='Unfinished mix recovered. Revert before starting a new pass.'end
+  end
+  if not session or session.finished then return end
+  if state and state.state=='recovery'then return end
+  local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
+  if X.busy()then
+   local ok,err=pcall(B.guard,session,true)
+   if not ok then cancelled();state.state='error';state.events=state.events or J.array();state.events[#state.events+1]={role='status',text=tostring(err)};status='Session paused by a project or transport change. Stop transport and Revert when ready.';return end
+   if state.updated and os.time()-state.updated>420 then cancelled();state.state='error';status='Worker timed out. Revert the candidate before starting again.';return end
+  end
+  local req=read(session.path..'/request.json')
+  if req and req.id~=handled and X.busy()then
+   handled=req.id
+   local ok,result=pcall(B.execute,session,req.name,req.arguments)
+   local response=ok and {result=result}or {error=tostring(result):match('^[^\n]+'),fatal=false}
+   J.write(session.path..'/response-'..req.id..'.json',response)
+  end
+ end
+ local function start()
+  assert(not X.pending(),'Keep or revert the current session first.')
+  assert(connection().connected,'Connect and refresh OpenRouter first.')
+  local range=bounds();assert(range[2]-range[1]>=3,'Choose at least three seconds of recorded audio.')
+  assert(range[2]-range[1]<=600,'Choose an excerpt up to ten minutes long.')
+  local id=R.genGuid():gsub('[^%w]','');local path=data..'/sessions/'..id
+  R.RecursiveCreateDirectory(path,0);session=B.begin(path,range);handled='';chat_scroll=0
+  save_config();local job={model=config.model,direction=config.direction,rounds=config.rounds,
+   stop_after_usd=config.stop_after_usd,references=selected,bounds=range}
+  J.write(path..'/config.json',job);R.SetExtState(M.ns,'mix_session',path,true)
+  state={state='running',events=J.array(),measurements=J.array(),updated=os.time()};phase='session'
+  local ok,err=pcall(launch,{'--session',path});if not ok then state.state='error';error(err)end
+  status='Mixing the selected passage. Leave transport stopped until the candidate is ready.'
+ end
+ local function refs_menu()
+  lib=read(data..'/library.json',lib);local choices={'No reference — natural balance'}
+  for _,row in ipairs(lib.references)do
+   local chosen=false;for _,id in ipairs(selected)do if id==row.id then chosen=true end end
+   choices[#choices+1]=(chosen and '!'or '')..row.title:gsub('[|#!<>]',' ')
+  end
+  local n=gfx.showmenu(table.concat(choices,'|'))
+  if n==1 then selected=J.array()elseif n>1 then
+   local id=lib.references[n-1].id;local nextids=J.array();local found=false
+   for _,v in ipairs(selected)do if v==id then found=true else nextids[#nextids+1]=v end end
+   if not found then assert(#nextids<2,'Choose up to two references. Deselect one first.');nextids[#nextids+1]=id end
+   selected=nextids
+  end
+  save_config()
+ end
+ local function import_reference()
+  local ok,path=R.GetUserFileNameForRead('','Choose a reference recording','')
+  if ok then
+   os.remove(data..'/import-result.json');importing=true;status='Analyzing the reference locally…'
+   launch({'--reference',path,'--result',data..'/import-result.json'})
+  end
+ end
+ local function advanced()
+  local ok,value=R.GetUserInputs('OpenRouter settings',3,'Model ID,Maximum model rounds (1-20),Stop after reported cost USD,extrawidth=220',config.model..','..config.rounds..','..config.stop_after_usd)
+  if ok then
+   local model,rounds,cost=value:match('^([^,]+),([^,]+),([^,]+)$');rounds=tonumber(rounds);cost=tonumber(cost)
+   assert(model and model:match('^[%w_%.%-]+/[%w_%.:%-]+$'),'Enter an OpenRouter model ID with tool support.')
+   assert(rounds and rounds%1==0 and rounds>=1 and rounds<=20,'Rounds must be 1–20.')
+   assert(cost and cost>0 and cost<=20,'Reported cost threshold must be above 0 and at most $20.')
+   config.model=model;config.rounds=rounds;config.stop_after_usd=cost;save_config()
+  end
+ end
+ local function wrap(value,width)
+  gfx.setfont(3);local lines={};local line=''
+  for paragraph in (value..'\n'):gmatch('(.-)\n')do
+   for word in paragraph:gmatch('%S+')do
+    local candidate=line==''and word or line..' '..word
+    if gfx.measurestr(candidate)>width and line~=''then lines[#lines+1]=line;line=word else line=candidate end
+   end
+   lines[#lines+1]=line;line=''
+  end
+  return lines
+ end
+ local function metric(value)return type(value)=='number'and string.format('%.1f',value)or '—'end
+ function X.draw(x,y,w,h)
+  X.poll();text('Mix',x,y,2)
+  text(status,x+80,y+7,3,C.muted,w-90)
+  if phase=='intro'then
+   text('Shape a mix from your recordings.',x,y+64,4)
+   text('A measured first pass with faders, panning, effects and section automation.',x,y+103,1,C.muted)
+   text('Compare the original and candidate before you keep any changes.',x,y+132,1,C.muted)
+   button('Mix with AI',x,y+181,176,43,function()phase='setup'end,C.blue,not X.pending())
+   text('Enter: configure mix  /  Local analysis + OpenRouter decisions',x,y+249,3,C.muted)
+   text('Your audio stays on this Mac. Track names, settings, direction and analysis go to your chosen provider.',x,y+275,3,C.muted,w)
+  elseif phase=='setup'then
+   local c=connection();local right=x+w-350
+   text('Reference',x,y+57,4)
+   local names={};for _,row in ipairs(lib.references)do for _,id in ipairs(selected)do if row.id==id then names[#names+1]=row.title end end end
+   text(#names>0 and table.concat(names,' + ')or 'Natural balance · no reference',x,y+88,3,C.muted,w-380)
+   button('Choose references',x,y+116,165,33,refs_menu)
+   button(importing and 'Analyzing…'or 'Analyze new…',x+175,y+116,143,33,import_reference,nil,not importing)
+   button('Set as default',x+328,y+116,139,33,function()lib.default=selected[1]or '';J.write(data..'/library.json',lib);status='Default reference saved.'end)
+   text('Mix direction',x,y+174,4)
+   text(config.direction,x,y+207,3,C.muted,w-400)
+   button('Edit direction…',x,y+235,160,33,function()
+    local ok,value=R.GetUserInputs('Mix direction',1,'Describe the sound:,extrawidth=350',config.direction)
+    if ok then config.direction=value;save_config()end
+   end)
+   local range=bounds()
+   button(full_song and 'Scope: full song'or 'Scope: time selection',x+170,y+235,222,33,function()full_song=not full_song end)
+   text(string.format('%.1f – %.1f sec',range[1],range[2]),x+405,y+244,3,C.muted)
+   text('OpenRouter',right,y+57,4)
+   text(checking and 'Checking connection…'or (c.connected and 'Connected · analysis ready'or 'Connection required'),right,y+88,3,c.connected and C.blue or C.gold)
+   button('Connect / change key',right,y+116,210,33,function()R.ExecProcess('/usr/bin/open '..quote(worker_dir..'/Connect OpenRouter.command'),-1);status='Enter the key in Terminal, then Refresh connection here.'end)
+   button('Refresh connection',right,y+160,210,33,function()os.remove(data..'/connection.json');checking=true;launch({'--check',data..'/connection.json'})end,nil,not checking)
+   button('Advanced settings…',right,y+204,210,33,advanced)
+   text(config.model,right,y+250,3,C.muted,350)
+   text('Usage billed by OpenRouter. Cost stop is checked after each response.',x,y+301,3,C.muted,w)
+   button('Create candidate mix',x,y+333,215,40,start,C.blue,c.connected and not importing and R.GetPlayState()==0)
+   button('Back',x+227,y+333,87,40,function()phase='intro'end)
+  else
+   local busy=X.busy();local measurements=state and state.measurements or {};local first=measurements[1];local last=measurements[#measurements]
+   local label=busy and 'Working · leave transport stopped'or 'Review the candidate'
+   text(label,x,y+52,4)
+   if first then
+    text('Original: '..metric(first.loudness.integrated_lufs)..' LUFS  /  '..metric(first.loudness.true_peak_dbtp)..' dBTP',x+355,y+58,3,C.muted)
+    if last and #measurements>1 then text('Candidate: '..metric(last.loudness.integrated_lufs)..' LUFS  /  '..metric(last.loudness.true_peak_dbtp)..' dBTP',x+730,y+58,3,C.blue)end
+   end
+   local stopped=R.GetPlayState()==0
+   button('Original',x,y+85,105,32,function()B.compare(session,'original')end,session.mode=='original'and C.blue or nil,not busy and stopped)
+   button('Candidate',x+114,y+85,110,32,function()B.compare(session,'candidate')end,session.mode=='candidate'and C.blue or nil,not busy and stopped)
+   button('Keep mix',x+235,y+85,104,32,function()finish(false)end,nil,not busy and stopped and state and state.state=='review'and session.mode=='candidate')
+   button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,stopped)
+   button('Show analysis files',x+510,y+85,169,32,function()R.ExecProcess('/usr/bin/open '..quote(session.path),-1)end)
+   button('Give feedback…',x+690,y+85,155,32,function()
+    B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
+    local ok,value=R.GetUserInputs('Refine this candidate',1,'Your feedback:,extrawidth=350','')
+    if ok and value~=''then
+     os.remove(session.path..'/cancel')
+     local job=read(session.path..'/config.json');job.resume=true;job.direction=job.direction..'\nUser feedback: '..value
+     J.write(session.path..'/config.json',job)
+     state.events[#state.events+1]={role='user',text=value};state.state='running';state.updated=os.time();J.write(session.path..'/status.json',state)
+     launch({'--session',session.path});status='Refining the current candidate with your feedback.'
+    end
+   end,nil,not busy and stopped and state and (state.state=='review'or state.state=='review_warning'))
+   text('A/B changes project settings at their actual levels. Stop playback before switching.',x,y+126,3,C.muted)
+   button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
+   if show_graphs and #measurements>1 then
+    local plots={{x=x,y=y+177,w=(w-45)/2,h=h-230},{x=x+(w+25)/2,y=y+177,w=(w-45)/2,h=h-230}}
+    local curves={{p=first,c=C.muted},{p=last,c=C.blue}}
+    for _,ref in ipairs(lib.references)do for _,id in ipairs(selected)do if id==ref.id then
+     local profile=read(ref.profile);if profile then curves[#curves+1]={p=profile,c=#curves==2 and C.gold or {0.73,0.52,0.78}}end
+    end end end
+    text('Spectrum · relative band energy',plots[1].x,y+151,3,C.text)
+    text('Level envelope · RMS dBFS',plots[2].x,y+151,3,C.text)
+    for n,plot in ipairs(plots)do
+     color(C.surface);gfx.rect(plot.x,plot.y,plot.w,plot.h,1)
+     for i=0,3 do color(C.line);gfx.line(plot.x,plot.y+plot.h*i/3,plot.x+plot.w,plot.y+plot.h*i/3)end
+     for index,curve in ipairs(curves)do
+      if n==1 or index<=2 then
+       local previous;local points=n==1 and curve.p.spectrum or curve.p.envelope_1s
+       for _,point in ipairs(points or {})do
+        local value=n==1 and point.relative_db or point.rms_dbfs
+        if type(value)=='number'then
+         local px=n==1 and math.log(math.sqrt(point.low_hz*point.high_hz)/20)/math.log(1000)or point.seconds/math.max(1,curve.p.duration_seconds)
+         local py=1+math.max(-60,math.min(0,value))/60
+         local xx,yy=plot.x+px*plot.w,plot.y+plot.h*(1-py)
+         if previous then color(curve.c);gfx.line(previous[1],previous[2],xx,yy)end;previous={xx,yy}
+        end
+       end
+      end
+     end
+    end
+    text('20 Hz                                             20 kHz',plots[1].x,y+h-40,3,C.muted)
+    text('Start                                              End',plots[2].x,y+h-40,3,C.muted)
+    text('Gray: original    Blue: candidate    Gold / purple: references    Scale: 0 to -60 dB',x,y+h-18,3,C.muted,w)
+    return
+   end
+   local lines={}
+   for _,event in ipairs(state and state.events or {})do
+    local prefix=event.role=='user'and 'YOU  'or (event.role=='assistant'and 'MIX ASSISTANT  'or (event.role=='tool'and 'ACTION  'or ''))
+    for _,line in ipairs(wrap(prefix..event.text,w-35))do lines[#lines+1]=line end
+    lines[#lines+1]=''
+   end
+   local visible=math.max(3,math.floor((h-184)/20));local maxscroll=math.max(0,#lines-visible)
+   chat_scroll=math.max(0,math.min(chat_scroll,maxscroll));local start=math.max(1,#lines-visible+1-chat_scroll)
+   color(C.surface);gfx.rect(x,y+155,w,h-160,1)
+   for i=start,math.min(#lines,start+visible-1)do text(lines[i],x+12,y+166+(i-start)*20,3,C.text,w-25)end
+  end
+ end
+ function X.key(ch)
+  if ch==13 and phase=='intro'then phase='setup';return true end
+  return false
+ end
+ function X.wheel(delta)chat_scroll=math.max(0,chat_scroll+delta*3)end
+ function X.close()
+  if session and not session.finished then
+   cancelled()
+   -- Retain the journal for explicit recovery; never change another project or a recording.
+   if R.EnumProjects(-1,'')==session.project and R.GetPlayState()==0 then
+    local ok=pcall(B.revert,session);if ok then R.SetExtState(M.ns,'mix_session','',true)end
+   end
+  end
+ end
+ return X
+end

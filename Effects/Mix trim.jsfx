@@ -1,0 +1,15 @@
+desc:Solo Studio Mix Trim
+// Dedicated automation gain; leaves the user's volume envelopes intact.
+slider1:0<-12,6,0.01>Trim (dB)
+in_pin:left
+in_pin:right
+out_pin:left
+out_pin:right
+@init
+gain=1;
+@slider
+target=10^(slider1/20);
+@sample
+gain += (target-gain)*min(1,1000/srate);
+spl0*=gain;
+spl1*=gain;
