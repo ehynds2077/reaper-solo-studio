@@ -27,6 +27,12 @@ return function(M,S,check,root)
  R.Undo_DoUndo2(0)
  local restored=M.row_for_lane(1)
  check(R.CountMediaItems(0)==original and restored and restored.key==key and restored.favorite and restored.note=='Good opening, stopped early','One native Undo restores all microphones, notes, favorite, and take identity')
+ M.delete_takes({M.row_for_lane(0),M.row_for_lane(2)})
+ check(#M.lanes()==1 and R.CountMediaItems(0)==9,'Native batch deletion removes two disjoint passes across nine microphones')
+ local short=M.row_for_lane(1)
+ check(short and short.key==key and short.favorite and short.note=='Good opening, stopped early','Batch deletion preserves the unselected take and annotations')
+ R.Undo_DoUndo2(0)
+ check(#M.lanes()==3 and R.CountMediaItems(0)==original,'One native Undo restores the entire multi-take batch')
  R.GetSet_LoopTimeRange2(0,true,false,8,12,false);M.comp(0)
  local source
  for _,row in ipairs(M.lanes())do if row.key==key then source=row end end

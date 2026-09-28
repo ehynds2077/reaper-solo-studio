@@ -32,6 +32,8 @@ local function fixture()
  local ui={colors={muted={},text={},line={},blue={},record={},gold={}},text=function()end,color=function()end,
   button=function(label,_,_,_,_,fn,_,enabled)if enabled~=false then f.buttons[label]=fn end end,
   rows=function()return f.takes end,chosen=function()return f.chosen end,
+  selected=function(key)return f.selected and f.selected[key] or f.chosen and f.chosen.key==key end,
+  selection_count=function()return f.selected_count or (f.chosen and 1 or 0)end,
   select=function(row)f.chosen=row end,take_action=function(action)f.action=action end,
   changed=function(message)f.message=message end,
   run=function(fn)local ok,err=pcall(fn);if not ok then f.errors[#f.errors+1]=err end end}
@@ -113,4 +115,11 @@ f=fixture();f.takes={take('Outside',40,44)};f.draw()
 local outside=false
 for _,shape in ipairs(f.draws)do if shape.kind=='rect' and shape.args[4]==34 then outside=true end end
 check(not outside,'Clips outside the visible time range are clipped from the drawing')
+f=fixture();f.takes={take('First',0,8),take('Second',8,16)}
+f.chosen=f.takes[2];f.selected={First=true,Second=true};f.selected_count=2;f.draw()
+local outlines=0
+for _,shape in ipairs(f.draws)do if shape.kind=='rect'and shape.args[4]==34 and shape.args[5]==0 then outlines=outlines+1 end end
+check(outlines==2,'Timeline highlights every selected take')
+check(f.buttons.Audition==nil and f.buttons['Keep passage']==nil and f.buttons['Delete 2 takes']~=nil,'Timeline exposes batch Delete and disables single-take actions for multiple selection')
+f.buttons['Delete 2 takes']();check(f.action=='delete','Timeline batch delete routes through the shared selection action')
 print(total..' visual timeline checks passed.')

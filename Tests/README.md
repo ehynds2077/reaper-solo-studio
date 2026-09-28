@@ -5,6 +5,7 @@ The standalone interaction checks need Lua 5.3 or newer. From the repository roo
 ```sh
 lua "$PWD/Tests/Visual timeline interactions.lua"
 lua "$PWD/Tests/Take deletion.lua"
+lua "$PWD/Tests/Take selection.lua"
 lua "$PWD/Tests/Panel tempo interactions.lua"
 lua 'Tests/Section stop helper.lua'
 lua 'Tests/Lead-in restoration.lua'
@@ -40,3 +41,5 @@ and checks that the user's original project remains unchanged. Run it with
 **Run**, leaving Actions open (see the mixing README for the macOS accessibility caveat).
 
 The timeline checks cover aligned take clips, gaps, partial passes, selection without auditioning, scrolling, and instrument changes. Panel checks exercise selecting, auditioning, and deleting from the list, plus selecting the new pass after Stop. `Take deletion.lua` tests synchronized deletion, stale selection protection, recording locks, and rollback after a partial failure. The native visual fixture also runs `Native take lanes.lua` with nine synthetic microphone tracks, checks single-step Undo and comp preservation, then opens the timeline for inspection.
+
+Multiple-selection checks cover Cmd toggles, Shift ranges across offscreen rows, changing scope, neighboring selection after deletion, and preserving selection on failure. Batch deletion checks verify all take identities before mutation, rollback the whole batch on failure, and native nine-microphone deletion/Undo in one step.

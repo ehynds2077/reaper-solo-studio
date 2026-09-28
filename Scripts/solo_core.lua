@@ -187,19 +187,27 @@ end
 function M.row_for_lane(lane) for _,row in ipairs(M.lanes()) do if row.lane==lane then return row end end end
 -- Remove project items, never their source files. Keep empty native lanes so
 -- source/comp lane indices remain aligned across microphones.
-function M.delete_take(lane,key)
+function M.delete_takes(takes)
   M.stopped()
-  local tracks=M.require_tracks();local row=M.row_for_lane(lane)
-  assert(row and row.key==key,'This take changed. Select it again before deleting.')
+  assert(type(takes)=='table' and #takes>0,'Select at least one take to delete.')
+  local tracks=M.require_tracks();local live={};local lanes={};local total=0
+  for _,row in ipairs(M.lanes())do live[row.lane]=row end
+  for _,take in ipairs(takes)do
+    local row=live[take.lane]
+    assert(row and row.key==take.key,'A selected take changed. Select it again before deleting.')
+    if not lanes[take.lane]then lanes[take.lane]=true;total=total+1 end
+  end
   local count=R.GetMediaTrackInfo_Value(tracks[1],'I_NUMFIXEDLANES')
   local saved={}
   for _,tr in ipairs(tracks) do
     assert(R.GetMediaTrackInfo_Value(tr,'I_NUMFIXEDLANES')==count,'The microphone tracks have different lane counts. Align their take lanes before deleting.')
     local ok,chunk=R.GetTrackStateChunk(tr,'',false)
     assert(ok,'Could not prepare an undoable deletion for '..M.track_name(tr)..'.')
-    saved[#saved+1]={track=tr,chunk=chunk,items=M.lane_items(tr,lane)}
+    local items={}
+    for lane in pairs(lanes)do for _,it in ipairs(M.lane_items(tr,lane))do items[#items+1]=it end end
+    saved[#saved+1]={track=tr,chunk=chunk,items=items}
   end
-  M.edit('delete '..row.name..' across recording set',function()
+  M.edit('delete '..total..(total==1 and ' take' or ' takes')..' across recording set',function()
     local ok,err=xpcall(function()
       for _,snapshot in ipairs(saved) do
         local tr=snapshot.track;local removed={}
@@ -207,7 +215,7 @@ function M.delete_take(lane,key)
           removed[itemstr(it,'GUID')]=true
           assert(R.DeleteTrackMediaItem(tr,it),'REAPER could not remove every item in the take.')
         end
-        assert(#M.lane_items(tr,lane)==0,'REAPER left items in the deleted take.')
+        for lane in pairs(lanes)do assert(#M.lane_items(tr,lane)==0,'REAPER left items in a deleted take.')end
         local comp={}
         for _,id in ipairs(split(str(tr,'P_EXT:SoloStudioComp'))) do if not removed[id] then comp[#comp+1]=id end end
         R.GetSetMediaTrackInfo_String(tr,'P_EXT:SoloStudioComp',table.concat(comp,'\n'),true)
@@ -220,6 +228,7 @@ function M.delete_take(lane,key)
     end
   end)
 end
+function M.delete_take(lane,key)return M.delete_takes({{lane=lane,key=key}})end
 function M.validate_lane(tracks,lane,range)
   local counts={}
   for _,tr in ipairs(tracks) do

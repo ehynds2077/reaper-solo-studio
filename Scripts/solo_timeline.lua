@@ -151,7 +151,7 @@ return function(M,S,ui)
  function V.draw(x,y,w,h,recording)
   if not view_end then V.fit()end
   regions=S.list();local active=S.active();local enabled=not recording
-  local takes=ui.rows();local chosen=ui.chosen();local set=M.get('active')
+  local takes=ui.rows();local chosen=ui.chosen();local selected_count=ui.selection_count();local set=M.get('active')
   if set~=last_set then take_scroll=0;last_selected=nil;last_set=set;record_start=nil end
   text('Song timeline',x,y,4)
   text('Click a section to record it. Drag its center to move, or an edge to resize.',x+158,y+3,3,C.muted,w-158)
@@ -165,7 +165,7 @@ return function(M,S,ui)
   button('<',x+w-94,y+30,42,32,function()pan(-0.5)end)
   button('>',x+w-46,y+30,46,32,function()pan(0.5)end)
   text('Bars / '..seconds(view_start)..' - '..seconds(view_end),x,y+74,3,C.muted)
-  text('Click take: select   |   Audition: listen   |   Wheel over takes: scroll',x+315,y+74,3,C.muted,w-425)
+  text('Cmd-click: toggle takes / Shift-click: range / Wheel: scroll',x+315,y+74,3,C.muted,w-425)
   button('Up',x+w-118,y+69,50,25,function()take_scroll=math.max(0,take_scroll-1)end)
   button('Down',x+w-62,y+69,62,25,function()take_scroll=take_scroll+1 end)
   local gutter=188
@@ -225,7 +225,7 @@ return function(M,S,ui)
   end
   for i=take_scroll+1,math.min(count,take_scroll+take_visible)do
    local row=takes[i];local live=not row;local ry=take_box.y+(i-take_scroll-1)*lane_height
-   local is_selected=row and chosen and row.key==chosen.key
+   local is_selected=row and ui.selected(row.key)
    color(is_selected and {0.22,0.31,0.38}or {0.16,0.19,0.23});gfx.rect(x,ry,w,lane_height-2,1)
    if active then
     local a=math.max(box.x,to_x(active.s));local b=math.min(box.x+box.w,to_x(active.e))
@@ -261,7 +261,9 @@ return function(M,S,ui)
   local px=to_x(S.position());if px>=box.x and px<=box.x+box.w then color(C.gold);gfx.line(px,box.y,px,take_box.y+take_box.h);gfx.rect(px-3,box.y,6,7,1)end
   color(C.line);gfx.line(box.x,box.y,box.x,take_box.y+take_box.h)
   local detail='Select a take to inspect it. Delete take removes the whole pass from this set; audio files stay on disk.'
-  if chosen then
+  if selected_count>1 then
+   detail=selected_count..' takes selected. Delete removes these whole passes across the recording set. Cmd+Z in REAPER restores them.'
+  elseif chosen then
    local _,a,b=spans(chosen)
    detail=take_name(chosen)..': '..fmt(a)..' - '..fmt(b)..' / '..duration(a,b)..' span / '..seconds(b-a)
    if chosen.note~='' then detail=detail..' / '..chosen.note end
@@ -269,12 +271,12 @@ return function(M,S,ui)
   if g and g.moved then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end
   text(detail,x,y+h-97,3,g and not g.valid and C.record or C.muted,w-155)
   text(count>0 and (take_scroll+1)..'-'..math.min(count,take_scroll+take_visible)..' of '..count..' lanes' or '',x+w-145,y+h-97,3,C.muted,145)
-  local ay=y+h-74;local available=enabled and chosen~=nil
+  local ay=y+h-74;local single=enabled and selected_count==1
   for _,spec in ipairs({{'Audition',0,96,'audition',C.blue},{'Favorite',104,96,'favorite'},{'Take note',208,105,'note'},
-   {'Rename',321,90,'rename'},{'Keep passage',419,136,'comp'},{'Delete take',563,116,'delete',C.record}})do
-   button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],available)
+   {'Rename',321,90,'rename'},{'Keep passage',419,136,'comp'},{selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',563,160,'delete',C.record}})do
+   button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],enabled and (spec[4]=='delete' and selected_count>0 or single))
   end
-  text('Delete whole pass / Undo in REAPER',x+698,ay+8,3,C.muted,w-698)
+  text('Delete whole pass / Undo in REAPER',x+739,ay+8,3,C.muted,w-739)
   local iy=y+h-33
   text('Section',x,iy+8,3,C.muted)
   if active then
