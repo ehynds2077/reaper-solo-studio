@@ -6,6 +6,7 @@ local B={json=J}
 local function finite(v,lo,hi)assert(type(v)=='number'and v==v and v>=lo and v<=hi,'Value outside allowed range');return v end
 local function db(v)return v>0 and 20*math.log(v,10)or -150 end
 local function track(guid,proj)
+ if guid=='MASTER'then return R.GetMasterTrack(proj)end
  for i=0,R.CountTracks(proj)-1 do local tr=R.GetTrack(proj,i);if R.GetTrackGUID(tr)==guid then return tr end end
  error('Track no longer exists')
 end
@@ -103,14 +104,20 @@ function B.inspect(s)
  for i=0,10000 do local ok,isregion,start,ending,name=R.EnumProjectMarkers3(s.project,i);if ok==0 then break end
   if isregion then regions[#regions+1]={name=name,start_seconds=start,end_seconds=ending}end
  end
- return {tracks=list_tracks(s.project),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,
-  master_volume_db=db(R.GetMediaTrackInfo_Value(R.GetMasterTrack(s.project),'D_VOL'))}
+ local master=R.GetMasterTrack(s.project);local effects=J.array()
+ for i=0,R.TrackFX_GetCount(master)-1 do local _,name=R.TrackFX_GetFXName(master,i,'');effects[#effects+1]={name=name,enabled=R.TrackFX_GetEnabled(master,i)}end
+ return {tracks=list_tracks(s.project),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,
+  capabilities={mix_tools_version=2,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
+  master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))},
+  master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
 local function render(s)
- s.renders=s.renders+1;assert(s.renders<=24,'Render limit reached')
+ s.renders=s.renders+1;assert(s.renders<=40,'Render limit reached')
  local numbers={RENDER_SETTINGS=0,RENDER_BOUNDSFLAG=0,RENDER_STARTPOS=s.bounds[1],RENDER_ENDPOS=s.bounds[2],
   RENDER_CHANNELS=2,RENDER_TAILFLAG=0,RENDER_ADDTOPROJ=0,RENDER_DITHER=0,RENDER_NORMALIZE=0,RENDER_SRATE=48000}
- local pattern='render-'..s.renders
+ -- A recovered bridge starts its counter again. Unique names also make a cancelled
+ -- render fail instead of accidentally accepting an earlier WAV as fresh analysis.
+ local pattern='render-'..s.renders..'-'..R.genGuid():gsub('[^%w]','')
  local strings={RENDER_FORMAT='ZXZhdxgAAA==',RENDER_FORMAT2='',RENDER_FILE=s.path,RENDER_PATTERN=pattern}
  local oldn,olds={},{}
  for k in pairs(numbers)do oldn[k]=R.GetSetProjectInfo(s.project,k,0,false)end
@@ -131,6 +138,7 @@ function B.execute(s,name,a)
  if name=='inspect_project'then return B.inspect(s)end
  if name=='measure_mix'then return render(s)end
  if name=='measure_track'then
+  assert(a.track~='MASTER','Use measure_mix to measure the master output')
   local tr=track(a.track,s.project);assert(R.GetMediaTrackInfo_Value(tr,'B_MUTE')==0,'Track is muted')
   local solos={};for i=0,R.CountTracks(s.project)-1 do local t=R.GetTrack(s.project,i);solos[i]={track=t,value=R.GetMediaTrackInfo_Value(t,'I_SOLO')};R.SetMediaTrackInfo_Value(t,'I_SOLO',0)end
   R.SetMediaTrackInfo_Value(tr,'I_SOLO',2)
@@ -144,8 +152,7 @@ function B.execute(s,name,a)
   if name=='set_track_mix'then
    local tr=track(a.track,s.project);local baseline
    for _,row in ipairs(s.original)do if row.id==a.track then baseline=row end end
-   assert(baseline,'Unknown original track');finite(a.volume_db,-60,6);finite(a.pan,-1,1)
-   assert(a.volume_db<=db(baseline.volume)+6.00001,'Maximum fader boost is 6 dB above the original')
+   assert(baseline,'Unknown original track; master fader is read-only');finite(a.volume_db,-90,24);finite(a.pan,-1,1)
    assert(not active_envelope(tr,'<VOLENV2')and not active_envelope(tr,'<PANENV2'),'Existing volume/pan automation is protected; use trim automation instead')
    local _,_,_,mode=R.GetTrackUIPan(tr);assert(mode==0 or mode==3,'Dual/stereo pan tracks require manual adjustment')
    R.SetMediaTrackInfo_Value(tr,'D_VOL',10^(a.volume_db/20));R.SetMediaTrackInfo_Value(tr,'D_PAN',a.pan)
@@ -169,10 +176,11 @@ function B.execute(s,name,a)
    return {parameters=params,total_parameters=R.TrackFX_GetNumParams(tr,idx),next_start=(start+#params<R.TrackFX_GetNumParams(tr,idx))and (start+#params)or J.null}
   elseif name=='configure_compressor'then
    local tr,idx,row=own(s,a.track,a.effect);assert(row.plugin:find('ReaComp',1,true),'This adapter requires ReaComp')
-   finite(a.threshold_db,-36,-3);finite(a.ratio,1,8);finite(a.attack_ms,.1,100);finite(a.release_ms,10,1000)
+   finite(a.threshold_db,-60,0);finite(a.ratio,1,20);finite(a.attack_ms,.1,200);finite(a.release_ms,10,3000)
+   local makeup=finite(a.makeup_db or 0,0,6)
    local values={{0,'Threshold',10^(a.threshold_db/20)/2,a.threshold_db},{1,'Ratio',(a.ratio-1)/99,a.ratio},
     {2,'Attack',a.attack_ms/500,a.attack_ms},{3,'Release',a.release_ms/5000,a.release_ms},
-    {10,'Dry',0},{11,'Wet',.5},{15,'Auto Make Up Gain',0}}
+    {10,'Dry',0},{11,'Wet',10^(makeup/20)/2,makeup},{15,'Auto Make Up Gain',0}}
    for _,v in ipairs(values)do local _,label=R.TrackFX_GetParamName(tr,idx,v[1],'');assert(label==v[2],'ReaComp parameter layout differs from the validated adapter')end
    local old={};for _,v in ipairs(values)do old[v[1]]=R.TrackFX_GetParamNormalized(tr,idx,v[1])end
    local good,why=pcall(function()
@@ -182,11 +190,36 @@ function B.execute(s,name,a)
     end
    end)
    if not good then for i,v in pairs(old)do R.TrackFX_SetParamNormalized(tr,idx,i,v)end;error(why)end
-   return {threshold_db=a.threshold_db,ratio=a.ratio,attack_ms=a.attack_ms,release_ms=a.release_ms,makeup_db=0}
+   return {threshold_db=a.threshold_db,ratio=a.ratio,attack_ms=a.attack_ms,release_ms=a.release_ms,makeup_db=makeup}
+  elseif name=='configure_limiter'then
+   local tr,idx,row=own(s,a.track,a.effect)
+   assert(row.plugin=='VST3: Pro-L 2 (FabFilter)'or row.plugin=='VST: FabFilter Pro-L 2 (FabFilter)','This adapter requires FabFilter Pro-L 2')
+   finite(a.gain_db,0,24);finite(a.ceiling_db,-12,-1)
+   -- Calibrated on installed Pro-L 2. Verify labels and physical readbacks before accepting changes.
+   local values={{0,'Gain',a.gain_db/30,a.gain_db},{10,'True Peak Limiting',1,'On'},
+    {15,'Unity Gain',0,'Off'},{17,'Bypass',0,'Not Bypassed'},
+    {18,'Output Level',(a.ceiling_db+30)/30,a.ceiling_db},{9,'Oversampling',.25,'2x'}}
+   local old={}
+   for _,v in ipairs(values)do
+    local _,label=R.TrackFX_GetParamName(tr,idx,v[1],'');assert(label==v[2],'Pro-L 2 parameter layout differs from the validated adapter')
+    assert(not R.GetFXEnvelope(tr,idx,v[1],false),'Automated limiter parameters are protected')
+    old[v[1]]=R.TrackFX_GetParamNormalized(tr,idx,v[1])
+   end
+   local good,why=pcall(function()
+    for _,v in ipairs(values)do
+     assert(R.TrackFX_SetParamNormalized(tr,idx,v[1],v[3]),'Pro-L 2 rejected a parameter')
+     local _,formatted=R.TrackFX_GetFormattedParamValue(tr,idx,v[1],'')
+     if type(v[4])=='number'then
+      local actual=tonumber(formatted:match('[+-]?[%d%.]+'));assert(actual and math.abs(actual-v[4])<=.02,'Limiter dB value did not match readback')
+     else assert(formatted==v[4],'Limiter mode did not match readback')end
+    end
+   end)
+   if not good then for i,v in pairs(old)do R.TrackFX_SetParamNormalized(tr,idx,i,v)end;error(why)end
+   return {gain_db=a.gain_db,ceiling_db=a.ceiling_db,true_peak=true,oversampling='2x',next_step='Render measure_mix to verify final loudness and true peak, including the master fader.'}
   elseif name=='configure_eq'then
    local tr,idx,row=own(s,a.track,a.effect);assert(row.plugin:find('ReaEQ',1,true),'This adapter requires ReaEQ')
    local band=({low_shelf=1,bell=2,high_shelf=4})[a.band];assert(band,'Unknown EQ band')
-   finite(a.band_index,0,1);assert(a.band_index%1==0,'Integer band index required');finite(a.frequency_hz,40,15000);finite(a.gain_db,-6,6)
+   finite(a.band_index,0,1);assert(a.band_index%1==0,'Integer band index required');finite(a.frequency_hz,20,20000);finite(a.gain_db,-12,12)
    local old={};for i=0,R.TrackFX_GetNumParams(tr,idx)-1 do old[i]=R.TrackFX_GetParamNormalized(tr,idx,i)end
    local good,why=pcall(function()
     assert(R.TrackFX_SetEQParam(tr,idx,band,a.band_index,0,a.frequency_hz,false),'EQ frequency could not be set')

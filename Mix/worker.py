@@ -145,24 +145,27 @@ def schema(name, description, properties, required):
                        'required': required, 'additionalProperties': False}}}
 
 
-TRACK = {'type': 'string', 'description': 'Exact track GUID returned by inspect_project'}
+TRACK = {'type': 'string', 'description': 'Exact track GUID returned by inspect_project, or MASTER for session-owned master effects'}
 FX = {'type': 'string', 'description': 'Exact effect GUID returned by add_effect'}
 TOOLS = [
-    schema('inspect_project', 'Read tracks, routing, regions, existing effects and available plugins.', {}, []),
-    schema('set_track_mix', 'Set absolute fader dB and pan (-1 left, 1 right). Max +6 dB above original; automated controls are protected.',
-           {'track': TRACK, 'volume_db': number(-60, 6), 'pan': number(-1, 1)}, ['track', 'volume_db', 'pan']),
-    schema('add_effect', 'Append one effect. Use exact plugin name from available_plugins. ReaEQ/ReaComp preferred; UADx/FabFilter optional. Only newly added effects can be changed.',
+    schema('inspect_project', 'Read tracks, master, routing, regions, available plugins and session_effects IDs. Reuse these owned effects on refinement instead of adding duplicates.', {}, []),
+    schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. Master fader and automated controls are protected.',
+           {'track': TRACK, 'volume_db': number(-90, 24), 'pan': number(-1, 1)}, ['track', 'volume_db', 'pan']),
+    schema('add_effect', 'Append one effect on a track or MASTER. Use exact installed plugin name. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Only session-added effects can be changed. Put the master limiter last.',
            {'track': TRACK, 'plugin': {'type': 'string'}}, ['track', 'plugin']),
     schema('inspect_effect', 'Read parameter indices, raw ranges, normalized values and formatted values of a newly added effect.',
            {'track': TRACK, 'effect': FX, 'start_parameter': {'type': 'integer', 'minimum': 0}}, ['track', 'effect']),
-    schema('configure_compressor', 'Configure a newly added ReaComp in physical units using a verified adapter. Unity output, no automatic makeup gain.',
-           {'track': TRACK, 'effect': FX, 'threshold_db': number(-36, -3), 'ratio': number(1, 8),
-            'attack_ms': number(.1, 100), 'release_ms': number(10, 1000)},
+    schema('configure_compressor', 'Configure a newly added ReaComp, including explicit makeup gain. Threshold should act on the source level, not a generic preset. Re-measure dynamics and loudness.',
+           {'track': TRACK, 'effect': FX, 'threshold_db': number(-60, 0), 'ratio': number(1, 20),
+            'attack_ms': number(.1, 200), 'release_ms': number(10, 3000), 'makeup_db': number(0, 6)},
            ['track', 'effect', 'threshold_db', 'ratio', 'attack_ms', 'release_ms']),
+    schema('configure_limiter', 'Configure session-added FabFilter Pro-L 2 on MASTER (or a track): gain in dB, true-peak ceiling, true-peak limiting ON, 2x oversampling, unity gain OFF. Raise gain toward the measured LUFS gap, re-render, and refine. Existing user FX are untouched.',
+           {'track': TRACK, 'effect': FX, 'gain_db': number(0, 24), 'ceiling_db': number(-12, -1)},
+           ['track', 'effect', 'gain_db', 'ceiling_db']),
     schema('configure_eq', 'Set frequency and gain of an existing band in a newly added ReaEQ. Broad default bandwidth. Use low_shelf/high_shelf index 0, or bell index 0/1.',
            {'track': TRACK, 'effect': FX, 'band': {'type': 'string', 'enum': ['low_shelf', 'bell', 'high_shelf']},
             'band_index': {'type': 'integer', 'minimum': 0, 'maximum': 1},
-            'frequency_hz': number(40, 15000), 'gain_db': number(-6, 6)},
+            'frequency_hz': number(20, 20000), 'gain_db': number(-12, 12)},
            ['track', 'effect', 'band', 'band_index', 'frequency_hz', 'gain_db']),
     schema('set_effect_parameter', 'Set a parameter on a newly added effect. Use inspection/readback, never assume normalized units. Change <=0.20 per call; render after processing changes.',
            {'track': TRACK, 'effect': FX, 'parameter': {'type': 'integer', 'minimum': 0}, 'normalized': number(0, 1)}, ['track', 'effect', 'parameter', 'normalized']),
@@ -257,6 +260,32 @@ def reference_comparison(profile, references):
                               'peak is context only; output must stay at or below -1 dBTP.'}
 
 
+def reference_issues(profile, references):
+    """Completion feedback, not a claim that metric matching guarantees a good mix."""
+    loudness = profile.get('loudness', {})
+    if any(not isinstance(loudness.get(key), (int, float)) or
+           isinstance(loudness.get(key), bool) or not math.isfinite(loudness[key])
+           for key in ('integrated_lufs', 'true_peak_dbtp')):
+        return ['Rendered audio is silent or unmeasurable. Diagnose the signal path before continuing; this is not a reference match.']
+    comparison = reference_comparison(profile, references)
+    if comparison is None:
+        return []
+    issues = []
+    level = comparison['metrics'].get('integrated_lufs', {})
+    delta = level.get('delta_to_reference')
+    if delta is not None and abs(delta) > 2:
+        issues.append('Loudness %.1f LUFS vs reference %.1f LUFS (%.1f LU %s).' % (
+            level['current'], level['reference_median'], abs(delta), 'quieter' if delta > 0 else 'louder'))
+    bands = sorted((b for b in comparison['bands'] if b['delta_to_reference'] is not None),
+                   key=lambda b: abs(b['delta_to_reference']), reverse=True)
+    for band in bands[:3]:
+        delta = band['delta_to_reference']
+        if abs(delta) > 2:
+            issues.append('%g–%g Hz normalized band energy is %.1f dB %s the reference.' % (
+                band['low_hz'], band['high_hz'], abs(delta), 'below' if delta > 0 else 'above'))
+    return issues
+
+
 def analyze_audio(path, out, title):
     from analyze import analyze
     profile, _ = analyze({'path': str(path), 'title': title, 'group': 'Mix session'}, out)
@@ -323,9 +352,21 @@ the starting balance is finished or invent reference measurements.
 Preserve timing and phase relationships. No edits of items, takes, inputs, routing
 or existing plugins. Do not hard-pan individual close drum microphones; keep related
 mics coherent. Avoid boost cascades through folders. Stop on silent/empty projects.
-Keep all gain/parameter limits and the -1 dBTP ceiling. Master FX editing is not
-available: do not evade limits by stacking gain plugins or boosting every routing
-stage. If a limit prevents the target, state the exact remaining gap and limitation.
+You CAN rebalance faders up to +24 dB, EQ by up to +/-12 dB, set ReaComp makeup,
+and add your own EQ/compressor/limiter on MASTER. Existing plugins remain read-only.
+session_effects lists the effect IDs owned by this session, including earlier
+passes. Inspect and reconfigure them; do not stack duplicate processors on resume.
+After source balance and tonal work, use master compression if needed and append
+FabFilter Pro-L 2 last. configure_limiter provides calibrated gain, true-peak
+limiting and ceiling. Use this final level stage to approach reference LUFS;
+do not pull the whole mix back simply because transient peaks limit a fader boost.
+Start limiter drive from the measured loudness deficit, render, then refine it.
+Reference-like density may require substantial peak reduction. Evaluate crest,
+tonal balance and dynamics after processing. A 10+ LU gap is unfinished work, not
+an excuse for "restrained" processing. Scratch track names do not justify lighter
+processing: mix the populated tracks as the source material the user supplied.
+Keep the -1 dBTP output ceiling. Do not stack limiters or boost every routing stage.
+The master fader stays fixed; compensate for its value and verify rendered output.
 Use the configure_eq/configure_compressor physical-unit adapters for new ReaEQ/ReaComp instances where useful. Optional installed FabFilter/UADx plugins require
 inspection of actual parameter names and formatted values; do not guess units.
 Do not change a parameter if you cannot establish its mapping. Work incrementally.
@@ -349,6 +390,9 @@ class Session:
         self.nonce = uuid.uuid4().hex[:12]
         self.measurements = previous.get('measurements', [])
         self.references = []
+        self.reference_issues = []
+        self.responses = []
+        self.completion_reason = ''
         self.cost = 0.0
         self.state = 'running'
 
@@ -360,13 +404,14 @@ class Session:
             self.events.append({'role': role, 'text': str(text)[:6000]})
         write(self.dir / 'status.json', {'state': self.state, 'updated': time.time(),
             'events': self.events[-120:], 'calls': self.calls, 'cost_usd': self.cost,
-            'measurements': self.measurements})
+            'measurements': self.measurements, 'reference_issues': self.reference_issues,
+            'responses': self.responses, 'completion_reason': self.completion_reason})
 
     def bridge(self, name, args):
         if self.cancelled():
             raise RuntimeError('Session cancelled')
         self.calls += 1
-        if self.calls > 80:
+        if self.calls > 160:
             raise RuntimeError('Tool-call limit reached')
         ident = self.nonce + '-' + str(self.calls)
         write(self.dir / 'request.json', {'id': ident, 'name': name, 'arguments': args})
@@ -388,7 +433,10 @@ class Session:
         self.publish('Rendering and measuring ' + label + '…')
         rendered = self.bridge('measure_track', {'track': track_id}) if track_id else self.bridge('measure_mix', {})
         if 'error' in rendered:
-            raise RuntimeError(rendered['error'])
+            # A bad GUID or muted source is a recoverable tool error. Fatal bridge
+            # errors still raise in bridge(), and invalid/incomplete WAVs below
+            # still stop the pass. Let the model correct a rejected tool request.
+            raise ValueError(rendered['error'])
         path = Path(rendered['path']).resolve()
         if path.parent != self.dir.resolve() or path.suffix.lower() != '.wav':
             raise RuntimeError('Unexpected render path')
@@ -402,6 +450,7 @@ class Session:
         else:
             if self.references:
                 profile['reference_comparison'] = reference_comparison(profile, self.references)
+            self.reference_issues = reference_issues(profile, self.references)
             self.measurements.append(profile)
         write(self.dir / ('latest-track.json' if track_id else 'measurements.json'), profile if track_id else self.measurements)
         self.publish('Measured %s: %s LUFS, %s dBTP.' % (label,
@@ -414,6 +463,8 @@ class Session:
             project = self.bridge('inspect_project', {})
             if 'error' in project:
                 raise RuntimeError(project['error'])
+            if project.get('capabilities', {}).get('mix_tools_version', 0) < 2:
+                raise RuntimeError('Reopen Solo Studio to load the updated mixing controls, then start a new pass.')
             selected = set(self.config.get('references', []))
             self.references = [compact(read(row['profile'])) for row in library()['references']
                                if row['id'] in selected]
@@ -426,28 +477,77 @@ class Session:
                 'excerpt_seconds': self.config['bounds'], 'project': project,
                 'original': original, 'references': refs}, allow_nan=False)}]
             rounds = min(20, max(1, int(self.config.get('rounds', 8))))
+            empty_retries = 0
+            completion_checks = 0
+            self.completion_reason = 'round_limit'
             for turn in range(rounds):
                 if self.cancelled():
                     raise RuntimeError('Session cancelled')
                 self.publish('Waiting for OpenRouter · round %d / %d…' % (turn + 1, rounds))
                 response = self.api('/chat/completions', {'model': self.config.get('model', DEFAULT_MODEL),
                     'messages': messages, 'tools': TOOLS, 'tool_choice': 'auto',
-                    'max_tokens': 2200,
+                    'max_tokens': 8000,
                     'provider': {'require_parameters': True, 'data_collection': 'deny'}})
                 usage = response.get('usage', {})
                 self.cost += max(0, float(usage.get('cost') or 0))
-                msg = response['choices'][0]['message']
+                choice = response['choices'][0]
+                msg = choice['message']
+                content = msg.get('content')
+                has_text = isinstance(content, str) and bool(content.strip())
+                self.responses.append({'round': turn + 1, 'finish_reason': choice.get('finish_reason'),
+                    'completion_tokens': usage.get('completion_tokens'),
+                    'reasoning_tokens': (usage.get('completion_tokens_details') or {}).get('reasoning_tokens'),
+                    'tool_calls': len(msg.get('tool_calls') or []),
+                    'has_text': has_text})
                 # Preserve opaque provider reasoning metadata for tool continuity,
                 # but never display it as chat or persist the full API conversation.
-                messages.append(msg)
-                content = msg.get('content')
+                if has_text or msg.get('tool_calls'):
+                    messages.append(msg)
                 if isinstance(content, str) and content:
                     self.publish(content, 'assistant')
-                calls = msg.get('tool_calls', [])
+                calls = msg.get('tool_calls') or []
+                cost_reached = self.cost >= self.config.get('stop_after_usd', 2)
+                truncated = choice.get('finish_reason') == 'length'
+                if truncated and calls:
+                    # Never apply a partial/truncated batch, even when an early call parses.
+                    for call in calls:
+                        messages.append({'role': 'tool', 'tool_call_id': call['id'],
+                                         'content': '{"error":"Response truncated; no changes in this batch were applied. Retry a smaller batch."}'})
+                    calls = []
                 if not calls:
+                    if truncated or not isinstance(content, str) or not content.strip():
+                        self.completion_reason = 'incomplete_model_response'
+                        if empty_retries < 2 and turn + 1 < rounds and not cost_reached:
+                            empty_retries += 1
+                            self.publish('Model response was empty or truncated; retrying instead of accepting it as completion.')
+                            messages.append({'role': 'user', 'content': 'Your response was empty or truncated. Continue with a complete, smaller tool batch; do not stop or claim completion.'})
+                            continue
+                        self.publish('The model did not provide a complete response. This pass is unfinished.')
+                        break
+                    checked = self.measure('Completion check')
+                    issues = reference_issues(checked, refs)
+                    peak = checked.get('loudness', {}).get('true_peak_dbtp')
+                    if peak is None or peak > -1:
+                        issues.append('Output true peak must be measurable and at or below -1 dBTP.')
+                    if issues and completion_checks < 3 and turn + 1 < rounds and not cost_reached:
+                        completion_checks += 1
+                        self.publish('Reference targets remain off: ' + ' '.join(issues) + ' Continuing the pass.')
+                        messages.append({'role': 'user', 'content': json.dumps({
+                            'completion_check': 'The measured result is still off-target. Continue mixing with the available tools. Use MASTER processing/limiting for output density; address source balance/EQ for tonal gaps. Do not stop at a token fader change.',
+                            'remaining_gaps': issues, 'latest_measurement': checked}, allow_nan=False)})
+                        continue
+                    self.completion_reason = 'cost_limit' if cost_reached else ('reference_gap' if issues else 'measured_completion')
                     break
-                if len(calls) > 12:
-                    raise RuntimeError('Model exceeded tool batch limit')
+                if len(calls) > 32:
+                    # Reject the entire oversized batch without killing a recoverable pass.
+                    for call in calls:
+                        messages.append({'role': 'tool', 'tool_call_id': call['id'],
+                            'content': '{"error":"Batch exceeds 32 tools; none were applied. Retry as smaller batches."}'})
+                    self.publish('Requested tool batch was too large; asking the model to split it.')
+                    if cost_reached:
+                        self.completion_reason = 'cost_limit'
+                        break
+                    continue
                 for call in calls:
                     fn = call['function']; name = fn['name']
                     try:
@@ -468,23 +568,31 @@ class Session:
                     messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(result, allow_nan=False)})
                 # This is a post-response stop threshold, not a guaranteed billing cap.
                 if self.cost >= self.config.get('stop_after_usd', 2):
+                    self.completion_reason = 'cost_limit'
                     self.publish('Configured reported-cost threshold reached; stopping further requests.')
                     break
             final = self.measure('Final candidate')
+            self.reference_issues = reference_issues(final, refs)
             try:
                 from charts import render_charts
                 render_charts(self.measurements, refs, self.dir / 'comparison.png')
             except Exception:
                 self.publish('Chart export unavailable; measured JSON profiles are saved.')
             peak = final['loudness']['true_peak_dbtp']
-            if peak is None or peak > -1:
+            if final['loudness']['integrated_lufs'] is None or peak is None or peak > -1:
                 self.state = 'review_warning'
                 self.publish('Candidate needs attention: true peak exceeds -1 dBTP or audio is unmeasurable. Revert or adjust before keeping.')
             else:
                 self.state = 'review'
-                self.publish('Candidate ready. Compare Original / Candidate, then Keep or Revert.')
+                if self.reference_issues:
+                    self.publish('Pass ended with reference targets still off: ' + ' '.join(self.reference_issues) + ' Audition, give feedback, or revert; this is not a completed reference match.')
+                elif self.completion_reason in ('incomplete_model_response', 'round_limit', 'cost_limit'):
+                    self.publish('Pass stopped (' + self.completion_reason.replace('_', ' ') + '). Measured candidate available for review; further work may be needed.')
+                else:
+                    self.publish('Candidate ready. Compare Original / Candidate, then Keep or Revert.')
         except Exception as error:
             self.state = 'cancelled' if self.cancelled() else 'error'
+            self.completion_reason = self.state
             # Errors from network are sanitized above; never log headers or request bodies.
             self.publish(str(error))
         return self.state

@@ -7,11 +7,17 @@ import unittest
 from unittest.mock import patch
 import worker
 
+PROJECT = {'tracks': [], 'capabilities': {'mix_tools_version': 2}}
+
 
 class WorkerTests(unittest.TestCase):
     def test_argument_validation(self):
         specs = {t['function']['name']: t['function']['parameters'] for t in worker.TOOLS}
         worker.validate({'track': 'guid', 'volume_db': -3, 'pan': .2}, specs['set_track_mix'])
+        worker.validate({'track': 'guid', 'volume_db': 18, 'pan': .2}, specs['set_track_mix'])
+        worker.validate({'track': 'MASTER', 'effect': 'fx', 'gain_db': 18, 'ceiling_db': -1.2}, specs['configure_limiter'])
+        with self.assertRaises(ValueError):
+            worker.validate({'track': 'MASTER', 'effect': 'fx', 'gain_db': 18, 'ceiling_db': 0}, specs['configure_limiter'])
         for args in ({'track':'g','volume_db':float('nan'),'pan':0},
                      {'track':'g','volume_db':3,'pan':2},
                      {'track':'g','volume_db':3,'pan':False},
@@ -89,11 +95,11 @@ class WorkerTests(unittest.TestCase):
                         {'id': 'meter', 'function': {'name': 'measure_mix', 'arguments': '{}'}}]}}]}
                 return {'choices': [{'message': {'role': 'assistant', 'content': 'Measured result.'}}]}
             session = worker.Session(path, api)
-            session.bridge = lambda name, args: {'tracks': []} if name == 'inspect_project' else {'path': str(path/'render.wav')}
+            session.bridge = lambda name, args: PROJECT if name == 'inspect_project' else {'path': str(path/'render.wav')}
             measurements = [{'duration_seconds': 8,
                              'loudness': {'integrated_lufs': lu, 'true_peak_dbtp': -2},
                              'bands': [{'low_hz': 60, 'high_hz': 150, 'relative_db': band}]}
-                            for lu, band in [(-24, -3), (-15, -7), (-15, -7)]]
+                            for lu, band in [(-24, -3), (-15, -7), (-15, -7), (-15, -7)]]
             lib = {'references': [{'id': 'chosen', 'profile': str(path/'reference.json')},
                                   {'id': 'unused', 'profile': str(path/'must-not-read.json')}]}
             with patch.object(worker, 'library', return_value=lib), \
@@ -138,6 +144,58 @@ class WorkerTests(unittest.TestCase):
                     session.measure('Candidate')
             self.assertEqual(session.measurements,[])
 
+    def test_silent_measurement_is_never_a_reference_match(self):
+        reference = {'loudness': {'integrated_lufs': -12, 'true_peak_dbtp': -1}}
+        for refs in ([], [reference]):
+            for loudness in ({'integrated_lufs': None, 'true_peak_dbtp': None},
+                             {'integrated_lufs': None, 'true_peak_dbtp': -2}):
+                issues = worker.reference_issues({'loudness': loudness}, refs)
+                self.assertTrue(issues)
+                self.assertIn('silent or unmeasurable', issues[0])
+
+    def test_invalid_track_measurement_can_be_corrected_without_aborting(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            worker.write(path/'config.json', {'bounds': [0,8], 'rounds': 3})
+            requests = []
+            def api(route, payload):
+                requests.append(json.loads(json.dumps(payload)))
+                if len(requests) == 1:
+                    return {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
+                        {'id': 'bad-track', 'function': {'name': 'measure_track',
+                         'arguments': '{"track":"not-a-real-guid"}'}}]}}]}
+                return {'choices': [{'message': {'role': 'assistant', 'content': 'Measured summary.'}}]}
+            session = worker.Session(path, api)
+            def bridge(name, args):
+                if name == 'inspect_project':
+                    return PROJECT
+                if name == 'measure_track':
+                    return {'error': 'Track no longer exists', 'fatal': False}
+                return {'path': str(path/'mix.wav')}
+            session.bridge = bridge
+            profile = {'duration_seconds': 8, 'loudness': {'integrated_lufs': -14, 'true_peak_dbtp': -2}}
+            with patch.object(worker, 'library', return_value={'references': []}), \
+                 patch.object(worker, 'analyze_audio', return_value=profile), patch('charts.render_charts'):
+                self.assertEqual(session.run(), 'review')
+            self.assertEqual(len(requests), 2)
+            self.assertIn('Track no longer exists', requests[1]['messages'][3]['content'])
+            self.assertEqual(len(session.measurements), 3)
+
+    def test_unmeasurable_final_loudness_prevents_keep_even_with_a_peak(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)
+            worker.write(path/'config.json', {'bounds': [0, 8], 'rounds': 1})
+            session = worker.Session(path, lambda *a: {'choices': [{'message': {
+                'role': 'assistant', 'content': 'Summary.'}}]})
+            session.bridge = lambda *a: PROJECT
+            with patch.object(session, 'measure', side_effect=[
+                    {'loudness': {'integrated_lufs': -14, 'true_peak_dbtp': -2}},
+                    {'loudness': {'integrated_lufs': None, 'true_peak_dbtp': -2}},
+                    {'loudness': {'integrated_lufs': None, 'true_peak_dbtp': -2}}]), \
+                 patch.object(worker, 'library', return_value={'references': []}), patch('charts.render_charts'):
+                self.assertEqual(session.run(), 'review_warning')
+            self.assertTrue(session.reference_issues)
+
     def test_tool_loop_bad_tool_readbacks_and_final_render(self):
         with tempfile.TemporaryDirectory() as temp:
             path=Path(temp);worker.write(path/'config.json', {'bounds':[0,8], 'rounds':3})
@@ -152,7 +210,7 @@ class WorkerTests(unittest.TestCase):
                         ]}}]}
                 return {'choices':[{'message':{'role':'assistant','content':'Ready for review.'}}], 'usage':{'cost':.01}}
             session=worker.Session(path, api)
-            session.bridge=lambda name,args: executed.append((name,args)) or {'tracks':[]}
+            session.bridge=lambda name,args: executed.append((name,args)) or PROJECT
             def measure(label, track_id=None):
                 profile={'title':label,'loudness':{'integrated_lufs':-18,'true_peak_dbtp':-3}}
                 session.measurements.append(profile)
@@ -161,7 +219,7 @@ class WorkerTests(unittest.TestCase):
             with patch.object(worker,'library',return_value={'references':[]}):
                 self.assertEqual(session.run(), 'review')
             self.assertEqual([e[0] for e in executed], ['inspect_project','set_track_mix'])
-            self.assertEqual(len(session.measurements),2)
+            self.assertEqual(len(session.measurements),3)
             self.assertIn('Unknown tool', requests[1]['messages'][3]['content'])
             self.assertEqual(len(requests[1]['tools']),len(worker.TOOLS))
             self.assertEqual(requests[0]['model'], 'openai/gpt-6-luna')
@@ -176,10 +234,97 @@ class WorkerTests(unittest.TestCase):
                         raise RuntimeError('API key was rejected (HTTP 401)')
                     return {'choices':[{'message':{'role':'assistant','content':'Done'}}]}
                 session=worker.Session(path,api)
-                session.bridge=lambda *a: {}
+                session.bridge=lambda *a: PROJECT
                 session.measure=lambda *a: {'loudness':{'integrated_lufs':-14,'true_peak_dbtp':peak}}
                 with patch.object(worker,'library',return_value={'references':[]}):
                     self.assertEqual(session.run(), 'error' if should_fail else 'review_warning')
+
+    def test_old_bridge_is_rejected_before_spending_api_credit(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp);worker.write(path/'config.json',{'bounds':[0,8]})
+            session=worker.Session(path,lambda *a: self.fail('Old bridge must not call API'))
+            session.bridge=lambda *a: {'tracks':[]}
+            self.assertEqual(session.run(),'error')
+            self.assertIn('Reopen Solo Studio',session.events[-1]['text'])
+
+    def run_scripted_responses(self, responses, profile, reference=None, **config):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp);worker.write(path/'config.json',{'bounds':[0,8], 'rounds':8, **config})
+            requests=[];mutations=[]
+            def api(route,payload):
+                requests.append(json.loads(json.dumps(payload)))
+                return responses[min(len(requests)-1,len(responses)-1)]
+            session=worker.Session(path,api)
+            session.bridge=lambda name,args: PROJECT if name=='inspect_project' else mutations.append((name,args)) or {'ok':True}
+            def measure(label,track_id=None):
+                current=json.loads(json.dumps(profile));session.measurements.append(current);return current
+            session.measure=measure
+            lib={'references':[]}
+            if reference:
+                worker.write(path/'ref.json',reference)
+                lib={'references':[{'id':'ref','profile':str(path/'ref.json')}]}
+                session.config['references']=['ref']
+            with patch.object(worker,'library',return_value=lib), patch('charts.render_charts'):
+                state=session.run()
+            return session,state,requests,mutations
+
+    def test_empty_or_length_response_cannot_end_a_mix_silently(self):
+        for finish in ['stop','length']:
+            responses=[{'choices':[{'finish_reason':finish,'message':{'role':'assistant','content':None}}]},
+                       {'choices':[{'finish_reason':'stop','message':{'role':'assistant','content':'Measured summary.'}}]}]
+            session,state,requests,_=self.run_scripted_responses(responses,{'loudness':{'integrated_lufs':-14,'true_peak_dbtp':-2}})
+            self.assertEqual(len(requests),2)
+            self.assertEqual(state,'review')
+            self.assertEqual(session.completion_reason,'measured_completion')
+            self.assertTrue(any('empty or truncated' in e['text'] for e in session.events))
+            self.assertGreaterEqual(requests[0]['max_tokens'],8000)
+        session,_,requests,_=self.run_scripted_responses(responses[:1],{'loudness':{'integrated_lufs':-14,'true_peak_dbtp':-2}})
+        self.assertEqual(len(requests),3)
+        self.assertEqual(session.completion_reason,'incomplete_model_response')
+        self.assertNotIn('Candidate ready.',session.events[-1]['text'])
+
+    def test_truncated_tool_batch_is_never_partially_executed(self):
+        responses=[{'choices':[{'finish_reason':'length','message':{'role':'assistant','tool_calls':[
+            {'id':'partial','function':{'name':'set_track_mix','arguments':json.dumps({'track':'g','volume_db':18,'pan':0})}}]}}]},
+            {'choices':[{'message':{'role':'assistant','content':'Summary'}}]}]
+        _,_,requests,mutations=self.run_scripted_responses(responses,{'loudness':{'integrated_lufs':-14,'true_peak_dbtp':-2}})
+        self.assertEqual(mutations,[])
+        self.assertIn('no changes',requests[1]['messages'][3]['content'])
+
+    def test_whole_session_tool_batches_do_not_hit_the_old_twelve_call_limit(self):
+        for count in (20, 33):
+            batch={'choices':[{'message':{'role':'assistant','tool_calls':[
+                {'id':str(i),'function':{'name':'set_track_mix','arguments':json.dumps({'track':'g','volume_db':i%20,'pan':0})}}
+                for i in range(count)]}}]}
+            done={'choices':[{'message':{'role':'assistant','content':'Summary'}}]}
+            _,state,requests,mutations=self.run_scripted_responses([batch,done],{'loudness':{'integrated_lufs':-14,'true_peak_dbtp':-2}})
+            self.assertEqual(state,'review')
+            self.assertEqual(len(requests),2)
+            self.assertEqual(len(mutations),count if count<=32 else 0)
+            if count>32:
+                self.assertIn('none were applied',requests[1]['messages'][3]['content'])
+
+    def test_off_target_mix_is_retried_and_reported_honestly(self):
+        done={'choices':[{'message':{'role':'assistant','content':'Done'}}]}
+        measured={'loudness':{'integrated_lufs':-22.4,'true_peak_dbtp':-3.2}}
+        ref={'loudness':{'integrated_lufs':-8.9,'true_peak_dbtp':.5}}
+        session,state,requests,_=self.run_scripted_responses([done],measured,ref)
+        self.assertEqual(len(requests),4)  # Three bounded completion challenges.
+        self.assertEqual(state,'review')  # User can still audition and keep an imperfect result.
+        self.assertEqual(session.completion_reason,'reference_gap')
+        self.assertIn('13.5 LU quieter',session.reference_issues[0])
+        self.assertIn('reference targets still off',session.events[-1]['text'])
+        self.assertIn('MASTER',requests[1]['messages'][-1]['content'])
+
+    def test_completion_retries_respect_cost_and_round_limits(self):
+        done={'choices':[{'message':{'role':'assistant','content':'Done'}}],'usage':{'cost':.25}}
+        measured={'loudness':{'integrated_lufs':-22,'true_peak_dbtp':-3}}
+        ref={'loudness':{'integrated_lufs':-9,'true_peak_dbtp':-1}}
+        session,_,requests,_=self.run_scripted_responses([done],measured,ref,stop_after_usd=.1)
+        self.assertEqual(len(requests),1)
+        self.assertEqual(session.completion_reason,'cost_limit')
+        _,_,requests,_=self.run_scripted_responses([done],measured,ref,rounds=1)
+        self.assertEqual(len(requests),1)
 
     def test_model_catalog_filters_routes_and_pins_default(self):
         now=1_790_000_000

@@ -43,5 +43,6 @@ for _,t in ipairs({4,5,6,7})do
 end
 panel(1,'review_warning');check(not buttons['Keep mix'].enabled and buttons.Original.enabled,'Peak warning still prevents Keep after recovery')
 panel(1,'running');check(not buttons['Keep mix'].enabled,'Interrupted worker recovers without accepting incomplete mix')
+panel(0,'cancelled');check(buttons['Give feedback…'].enabled and not buttons['Keep mix'].enabled,'Interrupted pass can continue from feedback without accepting unmeasured changes')
 panel(1,'review','original');check(not buttons['Keep mix'].enabled and buttons.Candidate.enabled,'Recovered Original can switch back but cannot be kept')
 print(passed..' mix review controls checks passed')

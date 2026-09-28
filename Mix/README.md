@@ -65,11 +65,23 @@ For comparable material, the prompt starts with working tolerances of roughly
 are adjustable goals, not guarantees or literal EQ settings. Different arrangements
 and song sections require judgment. The agent must report remaining gaps and tool
 limits rather than claiming an unchanged rough mix is finished.
+The loop checks a proposed completion against a fresh render and can challenge it
+up to three times when large loudness/tonal gaps remain. Empty or truncated model
+responses are retried (at most twice), not accepted as completion; truncated tool
+batches are not applied. Requests allow 8,000 output/reasoning tokens, and the same
+configured round and reported-cost limits still apply. Unreached reference targets
+remain visible in review; you can still audition and keep a result you prefer.
+Up to 32 tool calls execute sequentially per model response. An oversized batch
+gets a request to split it instead of terminating the session.
+Rejected track-measurement requests return an error for the model to correct;
+they do not terminate the whole pass. Silent or unmeasurable audio is explicitly
+reported as a failure, never as meeting the reference targets.
 
 Once ready, press Play and switch **Original** / **Candidate** while listening.
 The song keeps playing from the same position; keys **1** and **2** select Original
 and Candidate in the Mix tab. Keep and Revert also work during playback. Recording
 locks these controls, and **Give feedback…** still requires stopped transport.
+Press **G** in the Mix review to open feedback from the keyboard.
 These buttons switch actual project levels; **this A/B is not
 loudness matched**. LUFS readouts make that difference visible. **Give feedback…**
 continues from the current candidate while retaining the original rollback point.
@@ -88,7 +100,10 @@ zero-dB endpoints. Check the full song before committing a mix based on one pass
 Closing the panel normally cancels and reverts an unfinished mix when its project
 is active and stopped. Otherwise the local journal remains for recovery. Return
 to the original project and reopen Mix. A completed candidate resumes review;
-an interrupted pass must be reverted. A second project cannot start a
+an interrupted pass can be continued with **Give feedback…** or reverted.
+Refinement reuses the session's existing effect IDs and every render has a unique
+filename, including after recovery. A cancelled render cannot reuse an old WAV.
+A second project cannot start a
 new session while the first has an unresolved journal. Keep/revert does not save
 the song automatically; use your normal REAPER save workflow.
 
@@ -96,19 +111,26 @@ the song automatically; use your normal REAPER save workflow.
 
 - Project inspection includes track GUIDs, names, levels, pan, mute/solo, parents,
   sends, regions, existing FX names and a filtered installed-plugin inventory.
-- Volume is bounded to -60…+6 dB and at most +6 dB over the original. Pan supports
+- Track volume is bounded to -90…+24 dB, without a cap relative to the rough mix. Pan supports
   classic/balance modes; dual/stereo pan and existing volume/pan automation are
   protected. Separate trim automation can ride a track without replacing its
   existing volume envelope.
-- ReaEQ frequency/gain and ReaComp threshold/ratio/attack/release have physical-unit
+- ReaEQ supports 20 Hz–20 kHz and ±12 dB. ReaComp supports thresholds down to
+  -60 dB, ratios up to 20:1, and explicit 0–6 dB makeup gain. Both have physical-unit
   adapters with parameter-layout and formatted-readback validation.
+- Session-owned effects can be added to `MASTER`, including EQ, compression and
+  FabFilter Pro-L 2. Its calibrated adapter sets 0–24 dB gain, a -12…-1 dBTP
+  ceiling, true-peak limiting on, 2x oversampling and unity gain off. The master
+  fader and pre-existing master effects stay unchanged. Original/Candidate and
+  Revert include the session's master effects. The full render verifies output
+  after the master fader; a limiter setting alone does not guarantee final peaks.
 - New instances of ReaEQ, ReaComp, FabFilter and UADx VST/VST3 effects are available.
   Existing FX are read-only. Parameters are inspected in pages of 96 with actual
   names/ranges/normalized values/formatted readbacks. Each normalized move is
   limited to 0.20. The agent must establish the mapping before using it.
 - Third-party discovery is not a license/load test or a calibrated hardware
   emulation adapter. UAD DSP-only plugins, arbitrary FX, sends/routing edits,
-  item edits and master FX changes are outside this version's tools.
+  item edits and edits to pre-existing FX are outside this version's tools.
 - Full-mix and solo-in-place contribution renders run through routing and master
   processing. Solo measurements include shared returns; they are not dry stems.
 - Analysis includes integrated LUFS, true peak, LRA, RMS, crest, spectrum,
@@ -118,12 +140,14 @@ the song automatically; use your normal REAPER save workflow.
 - Reference spectra are normalized energy distributions, not perceptual
   equal-loudness curves. Reference loudness is a target, subject to the -1 dBTP
   output ceiling, musical dynamics and available controls; reference peaks above
-  that ceiling are not copied. Mastering tools are still outside this version.
+  that ceiling are not copied. Source balancing and tonal work come before final
+  master compression/limiting; matching loudness alone is not a completed mix.
 - 24-bit render output makes clipping a failed candidate rather than preserving
   above-full-scale samples. A final true peak above -1 dBTP prevents Keep.
 - Edits/transport changes stop tool execution. Tool schemas, finite bounds and
   plugin ownership are enforced in code; model instructions alone do not enforce
-  these rules. Requests have timeouts and round/tool/render limits.
+  these rules. Requests have timeouts and round limits, at most 160 bridge calls
+  per worker pass and 40 renders per bridge session.
 
 OpenRouter receives track names/settings, selected reference metrics, user mix
 direction/feedback, tool results and decision messages. Audio, source file paths,
@@ -143,6 +167,8 @@ synthetic sine, with all hardware outputs removed. It checks real native effects
 automation, fader/pan edits, render setting restoration, A/B, rollback, manual-edit
 preservation and recovery. It then runs `test_native_worker.py` through the real
 file bridge and analyzer with a scripted model response and **no network call**.
+The expanded fixture requires installed FabFilter Pro-L 2 and checks a level lift
+of more than 10 LU while retaining the -1 dBTP final peak ceiling.
 The fixture is generated with:
 
 ```
@@ -152,9 +178,10 @@ ffmpeg -f lavfi -i 'sine=frequency=1000:duration=8:sample_rate=48000' -ac 2 Test
 Live paid-model behavior requires the user's OpenRouter key and is a separate
 validation from these deterministic tests.
 
-On the development machine, 22 native integration checks passed, including the
-complete asynchronous worker/REAPER/render/analyzer/chart loop. Seven Python
-protocol tests and 47 existing recording UI/section tests also passed. During
+On the development machine, 32 native integration checks passed, including the
+complete asynchronous worker/REAPER/render/analyzer/chart loop, compressor makeup,
+master limiting, and master-FX rollback. Twenty-one Python checks cover the worker
+and completion handling; 76 Lua checks cover A/B and review controls. During
 testing, REAPER 7.55 hit a macOS accessibility crash when the Actions window was
 closed by an accessibility press on Run/close. Running the test with **Run** and
 leaving Actions open avoided that interaction. No production mixer call uses the

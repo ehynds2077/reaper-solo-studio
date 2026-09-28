@@ -29,7 +29,7 @@ return function(M,ui)
  local function recover_review(recovered)
   local f=io.open(recovered.path..'/cancel','w');if f then f:close()end
   local saved=read(recovered.path..'/status.json',{events=J.array()})
-  -- A completed worker can be reviewed again; interrupted work must still be reverted.
+  -- Completed work resumes review; interrupted work may be refined or reverted.
   if saved.state=='review'or saved.state=='review_warning'then
    status='Candidate recovered. Play and switch Original / Candidate to compare.'
   else saved.state='recovery';status='Unfinished session recovered. Revert restores its faders and removes its added effects.'end
@@ -82,7 +82,9 @@ return function(M,ui)
   if not session or session.finished then return end
   if state and state.state=='recovery'then return end
   local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
-  if state and (state.state=='review'or state.state=='review_warning')then status='Play and switch Original / Candidate to compare. Keep the mix when you are happy with it.'end
+  if state and (state.state=='review'or state.state=='review_warning')then
+   status=state.reference_issues and #state.reference_issues>0 and ('Reference target not reached: '..state.reference_issues[1])or 'Play and switch Original / Candidate to compare. Keep the mix when you are happy with it.'
+  end
   if X.busy()then
    local ok,err=pcall(B.guard,session,true)
    if not ok then cancelled();state.state='error';state.events=state.events or J.array();state.events[#state.events+1]={role='status',text=tostring(err)};status='Session paused by a project or transport change. Stop transport and Revert when ready.';return end
@@ -158,6 +160,18 @@ return function(M,ui)
   return lines
  end
  local function metric(value)return type(value)=='number'and string.format('%.1f',value)or '—'end
+ local function refine()
+  assert(not X.busy()and state,'Wait for the current pass before giving feedback.')
+  B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
+  local ok,value=R.GetUserInputs('Refine this candidate',1,'Your feedback:,extrawidth=350','')
+  if ok and value~=''then
+   os.remove(session.path..'/cancel')
+   local job=read(session.path..'/config.json');job.resume=true;job.direction=job.direction..'\nUser feedback: '..value
+   J.write(session.path..'/config.json',job)
+   state.events[#state.events+1]={role='user',text=value};state.state='running';state.updated=os.time();J.write(session.path..'/status.json',state)
+   launch({'--session',session.path});status='Refining the current candidate with your feedback.'
+  end
+ end
  function X.draw(x,y,w,h)
   X.poll();text('Mix',x,y,2)
   text(status,x+80,y+7,3,C.muted,w-90)
@@ -214,18 +228,8 @@ return function(M,ui)
    button('Keep mix',x+235,y+85,104,32,function()finish(false)end,nil,reviewing and state and state.state=='review'and session.mode=='candidate')
    button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,reviewing or stopped)
    button('Show analysis files',x+510,y+85,169,32,function()R.ExecProcess('/usr/bin/open '..quote(session.path),-1)end)
-   button('Give feedback…',x+690,y+85,155,32,function()
-    B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
-    local ok,value=R.GetUserInputs('Refine this candidate',1,'Your feedback:,extrawidth=350','')
-    if ok and value~=''then
-     os.remove(session.path..'/cancel')
-     local job=read(session.path..'/config.json');job.resume=true;job.direction=job.direction..'\nUser feedback: '..value
-     J.write(session.path..'/config.json',job)
-     state.events[#state.events+1]={role='user',text=value};state.state='running';state.updated=os.time();J.write(session.path..'/status.json',state)
-     launch({'--session',session.path});status='Refining the current candidate with your feedback.'
-    end
-   end,nil,not busy and stopped and state and (state.state=='review'or state.state=='review_warning'))
-   text('A/B switches live at actual mix levels.  1: Original  /  2: Candidate  /  Space: play or stop',x,y+126,3,C.muted)
+   button('Give feedback…',x+690,y+85,155,32,refine,nil,not busy and stopped and state~=nil)
+   text('A/B switches live at actual mix levels.  1: Original  /  2: Candidate  /  Space: play or stop  /  G: feedback',x,y+126,3,C.muted)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
    if show_graphs and #measurements>1 then
     local plots={{x=x,y=y+177,w=(w-45)/2,h=h-230},{x=x+(w+25)/2,y=y+177,w=(w-45)/2,h=h-230}}
@@ -271,6 +275,7 @@ return function(M,ui)
   end
  end
  function X.key(ch)
+  if phase=='session'and (ch==103 or ch==71)then ui.run(refine);return true end
   if phase=='session'and (ch==49 or ch==50)then
    if not X.busy()and R.GetPlayState()&4==0 then ui.run(function()B.compare(session,ch==49 and 'original'or 'candidate')end)end
    return true
