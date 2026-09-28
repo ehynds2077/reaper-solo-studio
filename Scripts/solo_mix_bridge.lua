@@ -51,7 +51,7 @@ function B.plugins()
 end
 local function journal(s)
  J.write(s.path..'/snapshot.json',{original=s.original,owned=s.owned,bounds=s.bounds,expected=s.expected,
-  candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path})
+  candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path,resolution=s.resolution})
 end
 local function remember(s)
  s.expected={}
@@ -76,9 +76,25 @@ end
 function B.recover(path)
  local data=J.read(path..'/snapshot.json');if not data or data.finished then return nil end
  local p,name=R.EnumProjects(-1,'')
- if name~=data.project_path or #data.original~=R.CountTracks(p)then return nil end
- for _,row in ipairs(data.original)do local ok=pcall(track,row.id,p);if not ok then return nil end end
+ if name~=data.project_path then return nil end
+ -- Track edits do not change ownership of a saved project. Unsaved tabs need
+ -- matching GUIDs because they all have the same empty filename.
+ local changed=#data.original~=R.CountTracks(p)
+ if name==''and #data.original==0 then return nil end
+ for _,row in ipairs(data.original)do
+  local ok,tr=pcall(track,row.id,p)
+  if not ok and name==''then return nil end
+  local expected=data.expected and data.expected[row.id]
+  if not ok or not expected then changed=true
+  elseif math.abs(R.GetMediaTrackInfo_Value(tr,'D_VOL')-expected.volume)>1e-9 or
+   math.abs(R.GetMediaTrackInfo_Value(tr,'D_PAN')-expected.pan)>1e-9 then changed=true end
+ end
+ for _,row in ipairs(data.owned)do
+  local ok=pcall(function()return fx_index(track(row.track,p),row.id)end)
+  if not ok then changed=true end
+ end
  data.path=path;data.project=p;data.version=R.GetProjectStateChangeCount(p);data.renders=0
+ data.recovery_changed=changed
  return data
 end
 function B.guard(s,check_version,allow_playback)
@@ -87,6 +103,7 @@ function B.guard(s,check_version,allow_playback)
  assert(transport&4==0,'Finish recording before changing the mix.')
  assert(allow_playback or transport==0,'Stop playback before continuing the mixing pass.')
  if check_version then
+  assert(not s.recovery_changed,'Project changed since this mix. Start a new mix from the current sound, or revert the previous pass.')
   assert(R.GetProjectStateChangeCount(s.project)==s.version,'Project was edited outside the mixer. Session stopped; review or revert its changes.')
   for id,expected in pairs(s.expected)do
    local tr=track(id,s.project)
@@ -314,6 +331,12 @@ function B.revert(s)
 end
 function B.keep(s)
  B.guard(s,true,true);assert(s.mode=='candidate','Select Candidate before keeping');s.finished=true;journal(s)
+end
+function B.archive_current(s)
+ -- End the old review without accepting its outdated measurements or touching
+ -- any audio settings. Keep its snapshots and analyses on disk for reference.
+ B.guard(s,false);assert(not s.finished,'This session is already finished')
+ s.finished=true;s.resolution='continued_from_current_mix';journal(s)
 end
 B.track=track
 return B

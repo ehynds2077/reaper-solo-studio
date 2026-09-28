@@ -42,7 +42,11 @@ and pan, add EQ/compression, write separate trim automation, render through
 REAPER, and compare measured loudness, spectrum, dynamics and stereo balance.
 Chat and progress appear after starting; **Give feedback…** refines the candidate.
 Switch **Original / Candidate** while the song plays (keys **1 / 2** in Mix),
-then **Keep mix** or **Revert**. Audio stays local;
+then **Keep mix** or **Revert**. Closing the panel preserves the unfinished pass.
+If tracks, levels, or effects changed since the last pass, **Start a new mix**
+opens setup using your current sound and preserves your manual edits. The old
+snapshots and analysis stay on disk; **Revert previous pass** is also available.
+Audio stays local;
 project metadata and measured profiles go to the chosen OpenRouter provider.
 
 AI mixing has a separate Python/FFmpeg setup and requires an OpenRouter key.

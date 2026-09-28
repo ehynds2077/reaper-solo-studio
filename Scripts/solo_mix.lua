@@ -30,7 +30,10 @@ return function(M,ui)
   local f=io.open(recovered.path..'/cancel','w');if f then f:close()end
   local saved=read(recovered.path..'/status.json',{events=J.array()})
   -- Completed work resumes review; interrupted work may be refined or reverted.
-  if saved.state=='review'or saved.state=='review_warning'then
+  if recovered.recovery_changed then
+   saved.state='stale';phase='recovery'
+   status='This project has changed since its previous AI mix.'
+  elseif saved.state=='review'or saved.state=='review_warning'then
    status='Candidate recovered. Play and switch Original / Candidate to compare.'
   else saved.state='recovery';status='Unfinished session recovered. Revert restores its faders and removes its added effects.'end
   return saved
@@ -70,6 +73,12 @@ return function(M,ui)
   end
   R.SetExtState(M.ns,'mix_session','',true);session=nil;phase='intro';state=nil
  end
+ local function restart()
+  assert(session and not X.busy(),'Wait for the current pass before starting a new mix.')
+  cancelled();B.archive_current(session)
+  R.SetExtState(M.ns,'mix_session','',true);session=nil;state=nil;phase='setup';foreign_session=false
+  status='Current mix preserved. Choose references and create a new candidate.'
+ end
  function X.poll()
   if R.time_precise()-lastpoll<.2 then return end;lastpoll=R.time_precise()
   models.poll()
@@ -80,7 +89,7 @@ return function(M,ui)
    if recovered then session=recovered;foreign_session=false;phase='session';state=recover_review(session)end
   end
   if not session or session.finished then return end
-  if state and state.state=='recovery'then return end
+  if state and (state.state=='recovery'or state.state=='stale')then return end
   local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
   if state and (state.state=='review'or state.state=='review_warning')then
    status=state.reference_issues and #state.reference_issues>0 and ('Reference target not reached: '..state.reference_issues[1])or 'Play and switch Original / Candidate to compare. Keep the mix when you are happy with it.'
@@ -182,6 +191,15 @@ return function(M,ui)
    button('Mix with AI',x,y+181,176,43,function()phase='setup'end,C.blue,not X.pending())
    text('Enter: configure mix  /  Local analysis + OpenRouter decisions',x,y+249,3,C.muted)
    text('Your audio stays on this Mac. Track names, settings, direction and analysis go to your chosen provider.',x,y+275,3,C.muted,w)
+  elseif phase=='recovery'then
+   text('Continue from your current mix',x,y+64,4)
+   text('Tracks, levels, or effects changed after the last AI pass. Its comparison is now out of date.',x,y+103,1,C.muted,w)
+   text('Start a new mix keeps everything exactly as it sounds now, including your manual edits.',x,y+139,1,C.muted,w)
+   text('The previous pass\'s snapshots and analysis stay saved on this Mac.',x,y+175,3,C.muted,w)
+   button('Start a new mix',x,y+218,190,43,restart,C.blue,R.GetPlayState()==0)
+   button('Revert previous pass',x+203,y+218,190,43,function()finish(true)end,nil,R.GetPlayState()&4==0)
+   text('Revert removes that pass\'s added effects and restores its unchanged faders; manual level/pan edits stay.',x,y+286,3,C.muted,w)
+   text('Enter: start a new mix from the current sound. Stop playback first.',x,y+322,3,C.muted,w)
   elseif phase=='setup'then
    models.ensure()
    local c=connection();local right=x+w-350
@@ -212,7 +230,7 @@ return function(M,ui)
    button('Advanced settings…',right+175,y+272,175,30,advanced)
    if models.message()then text('Offline list · retry Refresh models',right,y+315,3,C.gold,350)end
    text('Usage billed by OpenRouter. Cost stop is checked after each response.',x,y+301,3,C.muted,w)
-   button('Create candidate mix',x,y+333,215,40,start,C.blue,c.connected and not importing and R.GetPlayState()==0)
+   button('Create candidate mix',x,y+333,215,40,start,C.blue,c.connected and not importing and not X.pending()and R.GetPlayState()==0)
    button('Back',x+227,y+333,87,40,function()phase='intro'end)
   else
    local busy=X.busy();local measurements=state and state.measurements or {};local first=measurements[1];local last=measurements[#measurements]
@@ -231,6 +249,7 @@ return function(M,ui)
    button('Give feedback…',x+690,y+85,155,32,refine,nil,not busy and stopped and state~=nil)
    text('A/B switches live at actual mix levels.  1: Original  /  2: Candidate  /  Space: play or stop  /  G: feedback',x,y+126,3,C.muted)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
+   button('New mix…',x+970,y+85,118,32,restart,nil,not busy and stopped)
    if show_graphs and #measurements>1 then
     local plots={{x=x,y=y+177,w=(w-45)/2,h=h-230},{x=x+(w+25)/2,y=y+177,w=(w-45)/2,h=h-230}}
     local curves={{p=first,c=C.muted},{p=last,c=C.blue}}
@@ -275,12 +294,13 @@ return function(M,ui)
   end
  end
  function X.key(ch)
+  if ch==13 and phase=='recovery'then if R.GetPlayState()==0 then ui.run(restart)end;return true end
   if phase=='session'and (ch==103 or ch==71)then ui.run(refine);return true end
   if phase=='session'and (ch==49 or ch==50)then
    if not X.busy()and R.GetPlayState()&4==0 then ui.run(function()B.compare(session,ch==49 and 'original'or 'candidate')end)end
    return true
   end
-  if ch==13 and phase=='intro'then phase='setup';return true end
+  if ch==13 and phase=='intro'then if not X.pending()then phase='setup'end;return true end
   if phase=='setup'and (ch==111 or ch==79)then ui.run(choose_model);return true end
   return false
  end
@@ -288,10 +308,8 @@ return function(M,ui)
  function X.close()
   if session and not session.finished then
    cancelled()
-   -- Retain the journal for explicit recovery; never change another project or a recording.
-   if R.EnumProjects(-1,'')==session.project and R.GetPlayState()==0 then
-    local ok=pcall(B.revert,session);if ok then R.SetExtState(M.ns,'mix_session','',true)end
-   end
+   -- Closing/reloading the panel must not silently undo the user's mix.
+   -- The journal reopens review (or offers a fresh pass if the project changed).
   end
  end
  return X
