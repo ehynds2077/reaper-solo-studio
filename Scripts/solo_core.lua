@@ -2,7 +2,11 @@
 local R = reaper
 local M = {ns = 'SoloStudio_v1'}
 local module_dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
-local section_module,preview_module,recorded_tempo_module
+local section_module,preview_module,recorded_tempo_module,comp_edges_module
+function M.comp_edges()
+  if not comp_edges_module then comp_edges_module=dofile(module_dir..'/solo_comp_edges.lua')(M)end
+  return comp_edges_module
+end
 function M.recorded_tempo()
   if not recorded_tempo_module then recorded_tempo_module=dofile(module_dir..'/solo_recorded_tempo.lua')(M)end
   return recorded_tempo_module
@@ -144,10 +148,11 @@ function M.record()
   if R.GetPlayState() & 4 ~= 0 then M.stop(); return end
   local _,file=R.EnumProjects(-1,'')
   if file=='' then error('Save this project in its own folder before recording (Cmd+Shift+S).',0) end
-  M.arm();local endpoint,punch=M.sections().prepare_record()
-  local tempo=M.recorded_tempo();local project=R.EnumProjects(-1,'')
-  tempo.begin(project,M.require_tracks())
+  M.arm()
   local ok,err=pcall(function()
+    local endpoint,punch=M.sections().prepare_record()
+    local tempo=M.recorded_tempo();local project=R.EnumProjects(-1,'')
+    tempo.begin(project,M.require_tracks())
     R.Main_OnCommand(43152,0);R.Main_OnCommand(1013,0)
     local job=tempo.job(project);if R.GetPlayState()&4~=0 then tempo.observe(project,job)end
     tempo.watch();M.sections().start_watch(endpoint,punch)
@@ -156,8 +161,8 @@ function M.record()
 end
 function M.stop()
   M.cancel_preview()
-  M.sections().cancel_watch()
   if R.GetPlayState() & 4 ~= 0 then R.Main_OnCommand(40667,0) else R.OnStopButton() end
+  M.sections().cancel_watch()
   M.finish_recorded_tempo()
 end
 function M.another()
@@ -397,6 +402,28 @@ function M.comp(lane,range)
           end
         end
         if not comp_lanes[i] or not M.covers(M.lane_items(tr,comp_lanes[i]),s,e) then error('REAPER did not create the requested comp on every microphone. The original tracks have been restored.',0) end
+        -- Native comping may reuse a destination item's old extension fields.
+        -- Match actual source audio/timing before copying recording provenance.
+        local live_source=R.GetMediaItemInfo_Value(originals[i],'I_FIXEDLANE')
+        for _,it in ipairs(M.lane_items(tr,comp_lanes[i]))do
+          local p=R.GetMediaItemInfo_Value(it,'D_POSITION');local q=p+R.GetMediaItemInfo_Value(it,'D_LENGTH')
+          local take=R.GetActiveTake(it)
+          if take and q>s and p<e then
+            local file=R.GetMediaSourceFileName(R.GetMediaItemTake_Source(take),'')
+            local rate=R.GetMediaItemTakeInfo_Value(take,'D_PLAYRATE');local offset=R.GetMediaItemTakeInfo_Value(take,'D_STARTOFFS')
+            for _,source in ipairs(M.lane_items(tr,live_source))do
+              local st=R.GetActiveTake(source);local a=R.GetMediaItemInfo_Value(source,'D_POSITION');local b=a+R.GetMediaItemInfo_Value(source,'D_LENGTH')
+              if st and q>a and p<b and file~=''and file==R.GetMediaSourceFileName(R.GetMediaItemTake_Source(st),'')
+                and math.abs(rate-R.GetMediaItemTakeInfo_Value(st,'D_PLAYRATE'))<0.00001
+                and math.abs(offset-(R.GetMediaItemTakeInfo_Value(st,'D_STARTOFFS')+(p-a)*rate))<0.00001 then
+                for _,field in ipairs({'P_EXT:SoloStudioSource','P_EXT:SoloStudioSourceName','P_EXT:SoloStudioRecordedTempo','P_EXT:SoloStudioRecordingBounds'})do
+                  R.GetSetMediaItemInfo_String(it,field,itemstr(source,field),true)
+                end
+                break
+              end
+            end
+          end
+        end
         local ids={};for _,it in ipairs(M.lane_items(tr,comp_lanes[i])) do ids[#ids+1]=itemstr(it,'GUID') end
         R.GetSetMediaTrackInfo_String(tr,'P_EXT:SoloStudioComp',table.concat(ids,'\n'),true)
         R.GetSetMediaTrackInfo_String(tr,'P_LANENAME:'..comp_lanes[i],'Comp',true)

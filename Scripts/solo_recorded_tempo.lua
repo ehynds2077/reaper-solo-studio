@@ -59,15 +59,26 @@ return function(M)
  function Q.finish(project,token)
   if not R.ValidatePtr(project,'ReaProject*')or R.GetPlayStateEx(project)&4~=0 then return false end
   local job=Q.job(project);if not job or token and job.token~=token then return false end
-  local data=J.encode(job.tempo);local changed=false
+  local data=J.encode(job.tempo);local changed=false;local items={}
   for i=0,R.CountTracks(project)-1 do
    local tr=R.GetTrack(project,i);local before=job.tracks[R.GetTrackGUID(tr)]
    if before then for j=0,R.CountTrackMediaItems(tr)-1 do
     local it=R.GetTrackMediaItem(tr,j)
-    if not before[str(it,'GUID')]and str(it,'P_EXT:SoloStudioPreview')==''and str(it,Q.field)==''then
-     assert(R.GetSetMediaItemInfo_String(it,Q.field,data,true),'Could not save a recorded tempo.');changed=true
-    end
+    if not before[str(it,'GUID')]and str(it,'P_EXT:SoloStudioPreview')==''then items[#items+1]=it end
    end end
+  end
+  -- Native Stop can return before REAPER publishes kept loop items. Keep the
+  -- independent watcher alive briefly instead of retiring an empty job.
+  if #items==0 and job.seen then
+   local now=R.time_precise()
+   if not job.stopped_at then job.stopped_at=now;save(project,job)end
+   if now-job.stopped_at<0.5 then return false end
+  end
+  for _,it in ipairs(items)do
+   if str(it,Q.field)==''then assert(R.GetSetMediaItemInfo_String(it,Q.field,data,true),'Could not save a recorded tempo.');changed=true end
+   if job.handles and str(it,'P_EXT:SoloStudioRecordingBounds')==''then
+    changed=dofile(dir..'/solo_recording_handles.lua').tag_item(it,job.handles)or changed
+   end
   end
   R.SetExtState(M.ns,'tempo.completed.'..job.token,'1',false)
   save(project,nil)
@@ -81,6 +92,8 @@ return function(M)
  function Q.begin(project,tracks)
   Q.finish(project)
   local job={version=1,token=R.genGuid(),tempo=Q.snapshot(project),tracks={},started=R.time_precise()}
+  local _,capture=R.GetProjExtState(project,M.ns,'section.capture_settings')
+  if capture~=''then local h=dofile(dir..'/solo_recording_handles.lua').job(project);if h then job.handles={first=h.first,last=h.last}end end
   for _,tr in ipairs(tracks)do
    local before={};for i=0,R.CountTrackMediaItems(tr)-1 do before[str(R.GetTrackMediaItem(tr,i),'GUID')]=true end
    job.tracks[R.GetTrackGUID(tr)]=before
@@ -88,7 +101,7 @@ return function(M)
   save(project,job);return job.token
  end
  function Q.observe(project,job)
-  local dirty=not job.seen;job.seen=true
+  local dirty=not job.seen or job.stopped_at~=nil;job.seen=true;job.stopped_at=nil
   if not job.tempo.changed and J.encode(Q.snapshot(project))~=J.encode(job.tempo)then job.tempo.changed=true;dirty=true end
   if dirty then save(project,job)end
  end

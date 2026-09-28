@@ -60,8 +60,12 @@ local function finish()
   R.SetMediaTrackInfo_Value(R.GetMasterTrack(0),'B_MUTE',0)
   dofile(root..'/Tests/Native recorded tempo.lua')(M,check,root)
   dofile(root..'/Tests/Native comp playback toggle.lua')(M,check)
-  dofile(root..'/Scripts/Solo Studio - Open recording panel.lua')
-  R.atexit(cleanup)
+  dofile(root..'/Tests/Native comp edges.lua')(M,check,root)
+  dofile(root..'/Tests/Native section handles.lua')(M,S,check,root,function(err)
+   if err then log:write('FAIL: '..tostring(err)..'\n');cleanup();R.ShowMessageBox(tostring(err),'Recording handle checks failed',0);return end
+   dofile(root..'/Scripts/Solo Studio - Open recording panel.lua')
+   R.atexit(cleanup)
+  end)
  end,debug.traceback)
  if not success then preview.close();log:write('FAIL: '..failure..'\n');cleanup();R.ShowMessageBox(failure,'Comp playback checks failed',0)end
 end

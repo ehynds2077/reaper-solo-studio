@@ -14,7 +14,7 @@ local function poll()
   local job=Q.job(project)
   if job then
    if R.GetPlayStateEx(project)&4~=0 then Q.observe(project,job);pending=true
-   elseif job.seen then Q.finish(project,job.token)
+   elseif job.seen then if not Q.finish(project,job.token)then pending=true end
    elseif now-job.started>120 then Q.discard(project,job.token)
    else pending=true end
   end

@@ -6,6 +6,7 @@ return function(M,S,ui)
  local box,gesture,regions
  local take_box,comp_box,take_hits,take_scroll,take_visible=nil,nil,{},0,1
  local last_set,last_selected,record_start
+ local comp_hits={}
  local lane_height=46
  local palette={{0.29,0.48,0.63},{0.37,0.51,0.42},{0.56,0.43,0.29},{0.48,0.40,0.58},{0.30,0.51,0.53}}
  local function fmt(t)return R.format_timestr_pos(t,'',2)end
@@ -17,7 +18,7 @@ return function(M,S,ui)
  end
  function V.reset()
   view_start=0;view_end=nil;gesture=nil;box=nil;take_box=nil;comp_box=nil;take_hits={};take_scroll=0
-  last_set=nil;last_selected=nil;record_start=nil
+  last_set=nil;last_selected=nil;record_start=nil;comp_hits={}
  end
  function V.cancel()local had=gesture~=nil;gesture=nil;return had end
  function V.fit()
@@ -97,6 +98,15 @@ return function(M,S,ui)
   if pressed and not gesture and contains(comp_box,gfx.mouse_x,gfx.mouse_y)then
    -- Let the shared button handler receive the Comp / Take controls in the gutter.
    if gfx.mouse_x<box.x then return false end
+   for _,edge in ipairs(comp_hits)do if math.abs(gfx.mouse_x-edge.x)<=7 then
+    ui.run(function()
+     if ui.listen_mode()~='comp'then ui.take_action('listen_comp')end
+     local plan=ui.comp_edge_plan(edge.key)
+     gesture={kind='comp_edge',key=edge.key,project=R.EnumProjects(-1,''),set=M.get('active'),x=gfx.mouse_x,
+      original=plan.original,low=plan.low,high=plan.high,signature=plan.signature,plan=plan,valid=true,moved=false}
+    end)
+    return true
+   end end
    if ui.comp() then ui.run(function()ui.take_action('listen_comp')end)end
    return true
   end
@@ -108,6 +118,20 @@ return function(M,S,ui)
    local g=gesture
    if g.project~=R.EnumProjects(-1,'')then gesture=nil;return true end
    g.moved=g.moved or math.abs(gfx.mouse_x-g.x)>3
+   if g.kind=='comp_edge'then
+    if g.set~=M.get('active')then gesture=nil;return true end
+    local pos=math.max(g.low,math.min(g.high,g.original+to_time(gfx.mouse_x)-to_time(g.x)))
+    local ok,plan=pcall(ui.comp_edge_plan,g.key,pos,g.signature);g.valid=ok;g.plan=ok and plan or g.plan;g.error=not ok and tostring(plan)or nil
+    if not down then
+     gesture=nil
+     ui.run(function()
+      assert(g.valid,g.error)
+      if g.moved then ui.move_comp_edge(g.key,g.plan.pos,g.signature);ui.changed('Comp boundary moved across the recording set. Song sections and source takes are unchanged.')
+      else ui.take_action('listen_comp')end
+     end)
+    end
+    return true
+   end
    g.a,g.b,g.changes,g.valid=preview(g,gfx.mouse_x)
    if not down then
     gesture=nil
@@ -212,7 +236,7 @@ return function(M,S,ui)
    end
   end
   local g=gesture;local previews={}
-  if g and g.moved then
+  if g and g.moved and g.kind~='comp_edge'then
    if g.changes then for _,c in ipairs(g.changes)do previews[c.row.key]={s=c.s,e=c.e}end
    elseif g.row then previews[g.row.key]={s=g.a,e=g.b}end
   end
@@ -248,10 +272,27 @@ return function(M,S,ui)
     if right-left>45 then text(label,left+8,cy+14,3,C.text,right-left-16)end
    end
   end
+  comp_hits={}
   if comp then
+   local changed={}
+   if g and g.kind=='comp_edge'and g.plan then for _,change in ipairs(g.plan.changes)do changed[change.clip.item]=change end end
    for _,clip in ipairs(spans(comp))do
+    local p=changed[clip.item];if p then clip.s=p.s;clip.e=p.e end
     local _,name=R.GetSetMediaItemInfo_String(clip.item,'P_EXT:SoloStudioSourceName','',false)
     comp_clip(clip.s,clip.e,name~='' and ('Take '..name):gsub('^Take (%D)','%1') or 'Kept passage',{0.28,0.43,0.36})
+   end
+   if ui.comp_edges then for _,edge in ipairs(ui.comp_edges())do
+    local pos=g and g.kind=='comp_edge'and g.key==edge.key and g.plan.pos or edge.pos
+    local px=to_x(pos)
+    if px>=box.x and px<=box.x+box.w then
+     comp_hits[#comp_hits+1]={x=px,key=edge.key}
+     color(g and g.kind=='comp_edge'and g.key==edge.key and C.gold or C.text)
+     gfx.rect(px-2,cy+9,4,26,1)
+    end
+   end end
+   if g and g.kind=='comp_edge'then
+    local a=math.max(box.x,to_x(g.low));local b=math.min(box.x+box.w,to_x(g.high))
+    color(C.gold);gfx.line(a,cy+41,b,cy+41);gfx.line(a,cy+36,a,cy+43);gfx.line(b,cy+36,b,cy+43)
    end
   else text('Click a take clip below, then Use in comp.',box.x+16,cy+14,3,C.muted,box.w-32)end
   for i=take_scroll+1,math.min(count,take_scroll+take_visible)do
@@ -265,9 +306,9 @@ return function(M,S,ui)
    for _,px in ipairs(ticks)do color(C.line);gfx.line(px,ry,px,ry+lane_height-2)end
    local clips,a,b
    if live then
-    a=record_start;b=math.max(a,S.position());clips={{s=a,e=b}}
-    text(b>a and 'Recording...'or 'Lead-in...',x+12,ry+5,1,C.record,gutter-20)
-    text('New pass',x+12,ry+26,3,C.muted,gutter-20)
+    a=record_start;local pos=S.position();b=math.max(a,active and S.mode()=='section'and math.min(pos,active.e)or pos);clips={{s=a,e=b}}
+    text(active and S.mode()=='section'and pos>=active.e and 'Recording tail...'or b>a and 'Recording...'or 'Recording lead-in...',x+12,ry+5,1,C.record,gutter-20)
+    text(active and S.mode()=='section'and '2-bar handles / keep playing'or 'New pass',x+12,ry+26,3,C.muted,gutter-20)
    else
     clips,a,b=spans(row)
     text((row.favorite and '* 'or '')..take_name(row),x+12,ry+5,1,C.text,gutter-20)
@@ -311,7 +352,8 @@ return function(M,S,ui)
    if chosen.tempo then detail=detail..' / recorded: '..chosen.tempo.label..(chosen.tempo.different and ' (different from song)'or '')end
    if chosen.note~='' then detail=detail..' / '..chosen.note end
   end
-  if g and g.moved then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end
+  if g and g.moved and g.kind~='comp_edge'then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end
+  if g and g.kind=='comp_edge'then detail=g.valid and ('Comp edge: '..string.format('%.3f s',g.plan.pos)..' / available '..seconds(g.low)..' - '..seconds(g.high)..' | Release to apply; Esc to cancel')or g.error end
   text(detail,x,y+h-97,3,g and not g.valid and C.record or C.muted,w-155)
   text(count>0 and (take_scroll+1)..'-'..math.min(count,take_scroll+take_visible)..' of '..count..' lanes' or '',x+w-145,y+h-97,3,C.muted,145)
   local ay=y+h-74;local single=enabled and selected_count==1
@@ -320,7 +362,7 @@ return function(M,S,ui)
    local available=spec[4]=='delete' and selected_count>0 or single
    button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],enabled and available)
   end
-  text('Left / Right: select a take / Take mode follows selection',x+631,ay+8,3,C.muted,w-631)
+  text('Drag Comp edges to adjust joins / Left, Right: takes',x+631,ay+8,3,C.muted,w-631)
   local iy=y+h-33
   text('Section',x,iy+8,3,C.muted)
   if active then

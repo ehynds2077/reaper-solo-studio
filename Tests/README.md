@@ -7,6 +7,8 @@ lua "$PWD/Tests/Visual timeline interactions.lua"
 lua "$PWD/Tests/Take deletion.lua"
 lua "$PWD/Tests/Take selection.lua"
 lua "$PWD/Tests/Recorded tempo.lua"
+lua "$PWD/Tests/Comp edges.lua"
+lua "$PWD/Tests/Section recording handles.lua"
 lua "$PWD/Tests/Panel tempo interactions.lua"
 lua 'Tests/Section stop helper.lua'
 lua 'Tests/Lead-in restoration.lua'
@@ -50,3 +52,7 @@ Multiple-selection checks cover Cmd toggles, Shift ranges across offscreen rows,
 `Recorded tempo.lua` checks captured vs current BPM, microphone scope, loop passes, independent Stop handling, consecutive takes, unknown/mixed data, tempo maps, mid-recording tempo changes, stale jobs, and the actual Record/Stop integration. `Native recorded tempo.lua` runs in the visual fixture to check clip metadata on nine microphones, manual labelling/Undo, comp and split inheritance, and native project serialization. These native fixtures create silent items and do not capture live microphone input.
 
 `Native comp playback toggle.lua` verifies direct Comp / Take playback on nine microphones, partial/split takes, no transport restart or cursor jump, unchanged item chunks and tempo labels, Stop persistence, and one-step Undo of deletion plus neighbor playback. Panel and timeline checks cover the toggle placement, automatic playback on single selection in Take mode, unchanged playback in Comp mode, multiselection, keyboard browsing, recording locks, and Use in comp passage bounds.
+
+`Comp edges.lua` checks shared and outer edge edits, physical source limits, the least available microphone, stale drag protection, recording locks, and whole-set rollback. `Section recording handles.lua` checks musical bounds through tempo changes, temporary setting restoration (including closed projects), and per-pass limits in shared loop WAVs. Timeline gestures verify unsnapped edge movement, clamping, cancellation, and independence from song regions.
+
+The visual runner also runs `Native comp edges.lua` and `Native section handles.lua`. The latter records silent track outputs in its disposable project and takes about 30 seconds with a working output device; it never records hardware inputs. It verifies real media offsets and lengths, single-pass and repeated loop capture, default visible trimming, per-pass handle metadata, and restoration of pre-roll/link preferences. The panel opens only after those checks finish.

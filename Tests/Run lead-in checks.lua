@@ -62,13 +62,13 @@ local function poll()
   local peak=R.Track_GetPeakInfo(guide,0);local gain=R.GetTrackSendInfo_Value(master,1,0,'D_VOL')
   if now-began>last_log+0.25 then log:write(string.format('%s t=%.2f state=%d pos=%.3f peak=%.4f gain=%.4f\n',phase,now-began,state,pos,peak,gain));log:flush();last_log=now-began end
   if phase=='loop' then
-   if prior_pos and prior_pos>8.8 and pos<8.2 then looped=true end;prior_pos=pos
+   if prior_pos and prior_pos>12.8 and pos<4.2 then looped=true end;prior_pos=pos
    assert(state&4~=0,'Loop recording stopped unexpectedly')
    if looped and pos>8.3 then
     check(math.abs(gain-1)<0.00001,'Loop passes keep normal gain after the initial lead-in')
     check(state&4~=0,'Loop recording continues after the first section boundary')
     M.stop();next_phase('early')
-   else assert(now-began<8,'Loop did not repeat')end
+   else assert(now-began<15,'Loop did not repeat')end
    R.defer(poll);return
   elseif phase=='early' then
    if now-began>1 then
@@ -83,7 +83,7 @@ local function poll()
    next_phase('start');R.defer(poll);return
   elseif phase=='start' then
    negative=negative or pos<0
-   if state~=0 then assert(now-began<7,'Song-start recording did not finish');R.defer(poll);return end
+   if state~=0 then assert(now-began<12,'Song-start recording did not finish');R.defer(poll);return end
    check(negative and now-began>4,'Starting at bar one still has a two-bar click lead-in')
    check(math.abs(gain-1)<0.00001,'Song-start lead-in leaves playback gain unchanged')
    finish();return
@@ -97,7 +97,7 @@ local function poll()
   check(music,'Existing guide audio plays during pre-roll')
   check(dimmed,'Playback hardware sends are 6 dB quieter during the lead-in')
   check(restored,'Normal playback gain returns at the punch-in')
-  check(now-began<6.5,'Two-bar count-in and musical lead-in run together without doubling the wait')
+  check(now-began<10.5,'Lead-in, section, and two-bar tail do not add a duplicate count-in')
   check(math.abs(gain-1)<0.00001,'Playback gain restored when recording ends')
   for _,tr in ipairs(tracks)do
    local found=false

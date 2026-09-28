@@ -85,20 +85,30 @@ Switching keeps a running song at its current position. When stopped, it prepare
 1. Choose **Scratch guitar + vocal**, then **Full song**. Record the guide and use **Stop & keep** when finished.
 2. In **Takes & click**, choose the scratch take you want. Open **Song timeline** and choose **Use scratch take** to create a Song block covering the playing guide.
 3. Click the ruler at each transition, then **Split at cursor (B)**. You can also press **B** with the panel focused while listening. Select the resulting blocks and click their names to rename them Intro, Verse, Chorus, etc. Drag shared edges to refine the transitions.
-4. Click a section, choose Drums, guitar, vocals, or another recording set, then **Record section**. The section stays selected when changing instruments. **One pass** stops and keeps the take at its end; **Loop takes** repeats until **Stop & keep**. The two bars leading into the section play at 6 dB below normal alongside the click, then playback returns to normal volume when the section starts.
+4. Click a section, choose Drums, guitar, vocals, or another recording set, then **Record section**. The section stays selected when changing instruments. **One pass** records through two bars after the section; **Loop takes** repeats the section plus its two-bar handles until **Stop & keep**. The two bars leading into the section play at 6 dB below normal alongside the click, then playback returns to normal volume when the section starts.
 5. Stay in **Timeline**, switch to **Take** and click through the section's takes, and **Use in comp** to add the chosen performance to the comp. Repeat for other sections. All microphones in the recording set switch and comp together.
 
 You can instead build your arrangement directly by drawing separate blocks or using **New section...**; a scratch outline is optional. **Full song** returns to complete takes from the beginning. **Another take** repeats the chosen section or starts another full-song pass. Manual passage controls and **Clear selection** release the named-section target.
 
 Sections save as ordinary REAPER regions and also appear in its arrangement. Mapping, moving, resizing, or removing a label never moves, splits, or deletes recorded audio. Region edits can be undone from REAPER with Cmd+Z. Save the project after mapping the structure.
 
-### Musical lead-in
+### Recording handles and musical lead-in
 
-**Record section** plays the preceding two bars of your existing mix, 6 dB quieter, with the metronome. It records into the selected section and restores normal playback volume at the punch-in. **Another take** gives you the same lead-in; **Loop takes** gives it once before the first pass. Stopping early also restores the original playback level. At bar one there is no preceding audio, so you hear two bars of click.
+**Record section** captures two musical bars before the section and two bars after it. REAPER's native time-selection punch keeps the visible clip trimmed to the section; the WAV retains the extra audio. Keep playing through **Recording tail...** until the automatic stop. **Another take** does the same. **Loop takes** includes the lead-in and tail on every pass, with saved handle limits preventing an edit from reaching into a different pass in the same WAV. Full-song and manual recording retain their existing behavior.
 
-In **Count-in...**, use **Pre-roll before recording**, **Pre-roll measures: 2**, and **Start pre-roll at start of measure**. Leave **Count-in before recording** off: enabling both adds a separate click-only count-in before the musical lead-in. Pre-roll preferences belong to REAPER; click/count-in settings belong to each project. Older projects may still have the separate count-in enabled.
+The lead-in plays your existing mix 6 dB quieter alongside the click, then returns to normal level at the section start. This repeats on each loop. Capture starts explicitly at the lead-in, so there is no additional native pre-roll waiting period. At the start of the song, where there is no earlier timeline audio, the native two-bar click lead-in remains. Sections within the first two bars get only the preceding timeline audio available; earlier material is never invented. A manual early stop keeps only the audio actually captured.
 
-The temporary reduction affects REAPER's hardware playback outputs. Track faders, recorded input levels, native click settings, and your X32 direct monitoring stay as configured. If you manually change an output's gain or routing during the lead-in, Solo Studio preserves your new setting.
+Leave **Count-in before recording** off in **Click sound... / Count-in...**. Keep **Pre-roll measures: 2** for the song-start count-in. Solo Studio temporarily adjusts native pre-roll and the loop/time-selection link for section recording, and restores them on Stop, including native Stop and closing the recording project. The independent helper continues when the panel closes.
+
+Playback dimming affects hardware outputs. Track faders, recorded input gain, click volume, and X32 direct monitoring remain unchanged. Intentional output gain or routing changes during the lead-in are preserved.
+
+### Adjusting comp joins
+
+After **Use in comp**, drag a vertical edge handle on the green **Comp** row. A shared edge rolls the handoff: dragging right reveals more of the first performance; dragging left reveals more of the second. Outer edges can reveal a lead-in or tail. The gold guide shows the range available across every microphone. Comp-edge dragging does not snap to bars; use **+** to zoom for drum-hit adjustments.
+
+The drag previews locally and commits on release, with one Undo step across the recording set. **Escape** cancels a drag. Running playback continues. Source takes and the Verse/Chorus section labels stay in place, and existing overlaps are preserved. Use native REAPER controls for detailed fade shaping. The same planning/editing operations are exposed through `M.comp_edges().list()`, `.plan(key, position, signature)`, and `.move(key, position, signature)` for future automation.
+
+Older recordings can expose any handles already present in their files; missing audio cannot be recovered. Available bounds also respect per-pass recording metadata, source length, and the shortest microphone capture. Looped/stretched sources that exceed their media bounds, MIDI, or clips with take automation require REAPER's native editor.
 
 ### Tempo and click controls
 
@@ -164,7 +174,7 @@ When the Solo Studio panel has focus:
 | Left / Right | Select previous / next take; Take mode also switches playback |
 | F | Toggle favorite |
 | B | Mark a song transition |
-| Escape | Close the panel |
+| Escape | Cancel an active drag; otherwise close the panel |
 
 The corresponding independent actions work from the main REAPER window once you assign shortcuts. A MIDI footswitch can use the same actions. The **Tuner** button/action opens the custom **Solo Studio Strobe** on a silent helper track, using the selected instrument track's input or asking for its X32 USB input. See [the tuner guide](Tuner/README.md). Closing the tuner disarms its helper; instrument track monitoring stays unchanged.
 
@@ -191,3 +201,5 @@ The [Reference Lab](ReferenceLab/README.md) is a separate local analysis workben
 The legacy `Scripts/solo_comp_preview.lua` journals temporary passage previews and restores prior lane playback. Native nine-microphone checks cover preserved source/comp audio, unique copy identities, exact passage bounds, rollback, recovery, transport continuity, commit during playback, and Undo. Playhead advancement is reported separately when an audio device is available.
 
 `Tests/Native comp playback toggle.lua` checks direct Comp / Take switching on nine microphones, including partial lanes, running/stopped transport, unchanged media and tempo labels, and deletion with neighbor playback restored by one Undo. Panel checks cover automatic selection playback, multiselection, recording locks, and the removal of explicit Preview controls.
+
+`Scripts/solo_recording_handles.lua` journals temporary capture settings and records per-pass source bounds. `Scripts/solo_comp_edges.lua` plans and applies synchronized comp-edge edits. Native tests cover nine-microphone edits/Undo during playback, unchanged source takes, retained handles in comp copies, and silent output recordings with trimmed clips plus two-bar media handles in single and loop modes. Physical microphone capture still needs an interface session.

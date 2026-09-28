@@ -62,7 +62,7 @@ local ok,err=xpcall(function()
  S.select(verse.key)
  local a,b=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
  check(a==8 and b==18 and R.GetToggleCommandStateEx(0,40076)==1,'Selecting a section sets exact punch bounds')
- check(S.prepare_record()==18 and R.GetSetRepeat(-1)==0,'One-pass mode returns section stop position')
+ check(math.abs(S.prepare_record()-22)<0.00001 and R.GetSetRepeat(-1)==0,'One-pass mode stops two bars after the section')
  S.set_loop(true);check(S.prepare_record()==nil and R.GetSetRepeat(-1)==1,'Loop mode repeats without auto-stop')
  R.SetProjectMarker3(0,verse.id,true,8,18,'Verse 1',verse.color)
  check(S.active().name=='Verse 1','Native timeline renaming appears in section list')
@@ -111,7 +111,7 @@ if R.Audio_IsRunning()==0 then
  log:write('SKIP: Live recording needs a running audio device.\n');finish();return
 end
 local ready=R.time_precise()+0.5
-local deadline=ready+10
+local deadline=ready+15
 local recording_started=false
 local function poll()
  if not recording_started then

@@ -32,6 +32,12 @@ local function fixture()
  for _,fn in ipairs({'rect','line'})do gfx[fn]=function(...)f.draws[#f.draws+1]={kind=fn,args={...}}end end
  local ui={tempo_menu=function()f.action='tempo'end,colors={muted={},text={},line={},blue={},record={},gold={}},text=function(label)f.labels[#f.labels+1]=label end,color=function()end,
   button=function(label,_,_,_,_,fn,_,enabled)if enabled~=false then f.buttons[label]=fn end end,
+  comp_edges=function()return f.edges or {}end,
+  comp_edge_plan=function(key,pos,signature)
+   assert(not f.stale and (not signature or signature=='native-state'),'Comp changed')
+   return {key=key,original=8,pos=pos or 8,low=6,high=10,signature='native-state',changes={}}
+  end,
+  move_comp_edge=function(key,pos,signature)assert(signature=='native-state');f.comp_edit={key=key,pos=pos}end,
   comp=function()return f.comp end,listen_mode=function()return f.mode or 'comp'end,target=function()return f.target end,
   rows=function()return f.takes end,chosen=function()return f.chosen end,
   selected=function(key)return f.selected and f.selected[key] or f.chosen and f.chosen.key==key end,
@@ -142,4 +148,22 @@ check(pcall(f.draw),'A native deletion between refreshes cannot crash timeline d
 f=fixture();f.takes={take('Slower',0,8)};f.takes[1].tempo={label='100 BPM',different=true,clips={[f.takes[1].items[1]]='100 BPM'}};f.draw()
 local label=false;for _,s in ipairs(f.labels)do if s=='100 BPM / different'then label=true end end
 check(label and f.buttons['Tempo...']~=nil,'Timeline exposes the tempo menu and displays a known mismatch')
+local function comp_fixture()
+ local f=fixture();f.comp=take('Comp',0,16);f.edges={{key='join',pos=8}};reaper.GetSetMediaItemInfo_String=function()return true,'Source'end;f.draw();return f
+end
+f=comp_fixture();f.mouse(8,true,true,417);f.mouse(9.125,true,false,417)
+check(not f.comp_edit and #f.regions==0,'Dragging a Comp edge previews without changing audio or song regions')
+check(pcall(f.draw),'Comp-edge preview draws without section-drag assumptions')
+f.mouse(9.125,false,false,417)
+check(f.comp_edit and math.abs(f.comp_edit.pos-9.125)<1e-8 and #f.regions==0,'Releasing a Comp edge preserves precise unsnapped timing and edits only the comp')
+f=comp_fixture();f.mouse(8,true,true,417);f.mouse(18,false,false,417)
+check(f.comp_edit and f.comp_edit.pos==10,'Comp-edge dragging clamps at the available microphone handles')
+f=comp_fixture();f.mouse(8,true,true,417);f.mouse(9,true,false,417);f.V.cancel();f.mouse(9,false,false,417)
+check(not f.comp_edit,'Escape cancels a comp-edge preview without an audio edit')
+f=comp_fixture();f.mouse(8,true,true,417);f.stale=true;f.mouse(9,false,false,417)
+check(not f.comp_edit and #f.errors==1,'A changed comp invalidates an in-progress edge drag')
+f=comp_fixture();f.mouse(8,true,true,417);f.active_set='vocals';f.mouse(9,false,false,417)
+check(not f.comp_edit,'Changing instruments cancels a comp-edge drag')
+f=comp_fixture();f.mouse(8,true,true,417);f.recording=true;f.mouse(9,false,false,417)
+check(not f.comp_edit,'Recording cancels pending comp-edge changes')
 print(total..' visual timeline checks passed.')

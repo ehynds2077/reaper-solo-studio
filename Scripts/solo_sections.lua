@@ -3,8 +3,9 @@ local R=reaper
 local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 return function(M)
  local S={}
- local leadin
+ local leadin,handles
  local function lead()if not leadin then leadin=dofile(dir..'/solo_leadin.lua')end;return leadin end
+ local function capture()if not handles then handles=dofile(dir..'/solo_recording_handles.lua')end;return handles end
  local function get(k)return M.get('song.'..k)end
  local function put(k,v)M.put('song.'..k,v)end
  local function valid_range(s,e)
@@ -217,29 +218,48 @@ return function(M)
   return filtered
  end
  function S.cancel_watch()
+  capture().restore(R.EnumProjects(-1,''))
   local token=R.GetExtState(M.ns,'section_record_job'):match('^([^\t]+)')
   R.DeleteExtState(M.ns,'section_record_job',false)
   if token then
    local i=0
-   while true do local project=R.EnumProjects(i,'');if not project then break end;lead().restore(project,token);i=i+1 end
+   while true do local project=R.EnumProjects(i,'');if not project then break end;lead().restore(project,token);capture().restore(project,token);i=i+1 end
   end
  end
- function S.recover_leadin()lead().recover(R.EnumProjects(-1,''))end
+ function S.recover_leadin()local project=R.EnumProjects(-1,'');lead().recover(project);capture().recover(project)end
+ function S.record_bounds(row)
+  local beat,measure=R.TimeMap2_timeToBeats(0,row.s)
+  local before=measure>=2 and R.TimeMap2_beatsToTime(0,beat,measure-2)or 0
+  return math.max(0,before),S.end_after_bars(row.e,2)
+ end
+ local function check_handles(row)
+  local _,metro=R.get_config_var_string('projmetroen')
+  assert(tonumber(metro)and math.floor(tonumber(metro))&16==0,'Turn off Count-in before recording in Click sound / Metronome settings. The two-bar recorded lead-in supplies the count-in.')
+  if row.s==0 then
+   local ready,bars=R.get_config_var_string('prerollmeas')
+   assert(ready and tonumber(bars)==2,'Set Pre-roll measures to 2 in Click sound / Metronome settings for recording at the start of the song.')
+  end
+ end
  function S.prepare_record()
   S.cancel_watch();S.recover_leadin()
   if S.mode()=='full'then
    R.OnStopButton();S.full_song();return
   elseif S.mode()=='section'then
    local row=S.active();if not row then error('The chosen section was removed. Choose another section or Full song.',0)end
+   check_handles(row)
    R.OnStopButton();S.select(row.key)
-   if R.GetToggleCommandStateEx(0,41819)~=1 then R.Main_OnCommand(41819,0)end
-   return not S.looping() and row.e or nil,row.s
+   local first,last=S.record_bounds(row)
+   capture().prepare(R.EnumProjects(-1,''),first,last,row.s,S.looping())
+   R.GetSet_LoopTimeRange2(0,true,false,row.s,row.e,false)
+   R.SetEditCurPos2(0,first,true,false)
+   return not S.looping() and last or nil,row.s
   end
  end
  function S.start_watch(endpoint,punch)
   if not endpoint and not punch then return end
   local project=R.EnumProjects(-1,'')
-  local token=R.genGuid()
+  local prepared=capture().job(project)
+  local token=prepared and prepared.token or R.genGuid()
   R.SetProjExtState(project,M.ns,'section_watch_token',token)
   R.SetExtState(M.ns,'section_record_job',token..'\t'..string.format('%.14f',endpoint or -1)..'\t'..string.format('%.14f',punch or -1),false)
   lead().begin(project,token,punch)

@@ -246,6 +246,9 @@ V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=
  changed=function(message)clip_target=nil;status=message;lastrefresh=0;selection.reset();scroll=0 end,
  rows=function()return all_rows end,chosen=chosen,take_action=take_action,tempo_menu=tempo_menu,
  comp=function()return comp_row end,listen_mode=function()return listen_mode end,
+ comp_edges=function()return M.comp_edges().list()end,
+ comp_edge_plan=function(key,pos,signature)return M.comp_edges().plan(key,pos,signature)end,
+ move_comp_edge=function(key,pos,signature)M.comp_edges().move(key,pos,signature)end,
  target=function()local row=chosen();if row and #selected_rows()==1 then local s,e=target_range(row);if e>s then return {s=s,e=e}end end end,
  selected=selection.has,selection_count=function()return #selected_rows()end,select=select_take})
 local function refresh()
