@@ -3,9 +3,10 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local total=0
 local function check(ok,label)assert(ok,label);total=total+1;print('PASS: '..label)end
 local function fixture()
- local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={},takes={},draws={},labels={},active_set='drums'}
+ local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={},takes={},draws={},labels={},active_set='drums',clock=0}
  local serial=0
  reaper={
+  time_precise=function()return f.clock end,
   ValidatePtr2=function(_,it)return not it.deleted end,
   GetMediaItemInfo_Value=function(it,key)assert(not it.deleted,'Stale item');return key=='D_POSITION' and it.s or it.e-it.s end,
   EnumProjects=function()return f.project end,GetProjectLength=function()return 32 end,
@@ -47,11 +48,13 @@ local function fixture()
   run=function(fn)local ok,err=pcall(fn);if not ok then f.errors[#f.errors+1]=err end end}
  local V=dofile(root..'/Scripts/solo_timeline.lua')(M,S,ui)
  f.S,f.V=S,V
- function f.draw()f.buttons={};f.draws={};V.draw(24,215,1152,476,f.recording)end
- function f.mouse(t,down,pressed,y)
-  gfx.mouse_x=212+t/36*964;gfx.mouse_y=y or 365
+ function f.draw()f.buttons={};f.draws={};f.labels={};V.draw(24,215,1152,476,f.recording)end
+ function f.mouse(t,down,pressed,y,start,finish)
+  start,finish=start or 0,finish or 36
+  gfx.mouse_x=212+(t-start)/(finish-start)*964;gfx.mouse_y=y or 365
   V.mouse(down,pressed or false,f.recording)
  end
+ function f.label(value)for _,label in ipairs(f.labels)do if label==value then return true end end;return false end
  f.draw();return f
 end
 local f=fixture()
@@ -166,4 +169,45 @@ f=comp_fixture();f.mouse(8,true,true,417);f.active_set='vocals';f.mouse(9,false,
 check(not f.comp_edit,'Changing instruments cancels a comp-edge drag')
 f=comp_fixture();f.mouse(8,true,true,417);f.recording=true;f.mouse(9,false,false,417)
 check(not f.comp_edit,'Recording cancels pending comp-edge changes')
+f=fixture()
+check(not f.buttons['Zoom start']and not f.buttons['Zoom end'],'Boundary buttons require a selected passage or section')
+a=f.S.create(8,16,'Verse');f.S.select(a.key);f.draw();local edits,cursor=f.edits,f.cursor
+f.buttons['Zoom start']();f.draw()
+check(f.label('Close-up / 0:06.00 - 0:10.00')and f.buttons.Back,'Zoom start shows one musical bar on either side of the section start')
+check(f.edits==edits and f.cursor==cursor and not f.action,'Boundary zoom does not edit media, seek, or change playback')
+check(f.label('4.2')and f.label('5.4'),'Close-up ruler labels individual beats on both sides of the boundary')
+f.buttons['Zoom end']();f.draw()
+check(f.label('Close-up / 0:14.00 - 0:18.00'),'Zoom end switches directly to the other boundary')
+f.buttons.Back();f.draw()
+check(f.label('Bars / 0:00.00 - 0:36.00')and f.buttons['Fit song'],'Back restores the original wide view after switching boundaries')
+f.target={s=10,e=12};f.buttons['Zoom start']();f.draw()
+check(f.label('Close-up / 0:08.00 - 0:12.00'),'A specifically selected take passage takes priority over a different song section')
+check(f.V.cancel(),'Escape returns from close-up before closing the panel');f.draw()
+check(f.label('Bars / 0:00.00 - 0:36.00')and not f.V.cancel(),'Returning from close-up clears its Escape handler')
+f=comp_fixture();f.mouse(8,true,true,417);f.mouse(8,false,false,417);f.clock=0.15;f.mouse(8,true,true,417);f.draw()
+check(f.label('Close-up / 0:06.00 - 0:10.00')and not f.comp_edit,'Double-clicking a comp join focuses its actual boundary without an edit')
+f.mouse(8,false,false,417,6,10);f.mouse(8,true,true,417,6,10);f.mouse(8.125,false,false,417,6,10)
+check(f.comp_edit and math.abs(f.comp_edit.pos-8.125)<1e-8,'Dragging after close-up applies the small intended offset without a jump')
+f=comp_fixture();f.mouse(8,true,true,417);f.mouse(8,false,false,417);f.clock=0.6;f.mouse(8,true,true,417);f.draw()
+check(not f.buttons.Back,'Two separate slow clicks do not enter boundary zoom')
+f=fixture();a=f.S.create(8,16,'Verse');f.draw();f.mouse(8,true,true);f.mouse(8,false);f.clock=0.1;f.mouse(8,true,true);f.draw()
+check(f.label('Close-up / 0:06.00 - 0:10.00'),'Section handles support the same double-click close-up')
+f=fixture();a=f.S.create(0,8,'Intro');f.S.select(a.key);f.draw();f.buttons['Zoom start']();f.draw()
+check(f.label('Close-up / 0:00.00 - 0:02.00'),'Song-start close-up clamps at zero without inventing negative media')
+f.buttons['+']();f.draw()
+check(f.label('Close-up / 0:00.00 - 0:01.33'),'Further zoom stays anchored at the boundary even at project start')
+for _=1,12 do f.buttons['+']();f.draw()end
+check(f.label('Close-up / 0:00.00 - 0:00.04'),'Close-up supports sub-beat detail beyond the old two-second minimum')
+f.V.reset();f.draw();check(f.label('Bars / 0:00.00 - 0:36.00')and not f.buttons.Back,'Project reset clears the old close-up and return range')
+f=fixture();f.mouse(9,false,false,463);gfx.mouse_cap=16;f.V.wheel(1);f.draw()
+check(f.label('Bars / 0:03.00 - 0:27.00'),'Option-wheel zooms at the mouse over a take lane instead of scrolling takes')
+f=comp_fixture();f.mouse(8,true,true,417);gfx.mouse_cap=16;f.V.wheel(1);f.mouse(9,false,false,417)
+check(math.abs(f.comp_edit.pos-9)<1e-8,'Wheel zoom cannot change the coordinate mapping during an active drag')
+-- A different tempo and meter after bar 5: one bar each side must use the musical time map.
+f=fixture();a=f.S.create(8,14,'Meter change');f.S.select(a.key)
+reaper.TimeMap_GetMeasureInfo=function(_,m)if m<4 then return m*2,m*4,(m+1)*4,4,4,120 end;return 8+(m-4)*3,16+(m-4)*3,19+(m-4)*3,3,4,60 end
+reaper.TimeMap2_timeToBeats=function(_,t)if t<8 then local m=math.floor(t/2);return (t-m*2)*2,m,4 end;local m=math.floor((t-8)/3);return t-8-m*3,m+4,3 end
+reaper.TimeMap2_beatsToTime=function(_,b,m)return m<4 and m*2+b/2 or 8+(m-4)*3+b end
+f.draw();f.buttons['Zoom start']();f.draw()
+check(f.label('Close-up / 0:06.00 - 0:11.00'),'One-bar handles for zoom respect tempo and time-signature changes')
 print(total..' visual timeline checks passed.')

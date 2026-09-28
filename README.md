@@ -66,7 +66,8 @@ Open **Timeline** at the upper right of Solo Studio. The horizontal ruler shows 
 - **Create with an exact length:** click **New section...**, enter a name, start bar, and length in bars. Example: `Verse`, start `9`, length `8` ends at bar `17`.
 - **Adjust:** drag either edge to resize, or drag the center to move a section. A shared edge adjusts both touching sections. Overlapping moves and boundaries that would erase a neighboring section are rejected. Audio stays in place.
 - **Set exact bounds:** select a block and click **Start**, **End**, or **Length** below it. Start/end accept a whole bar or `bar.beat.hundredths`, such as `9.2.00`. Length accepts whole bars. The end is exclusive: start 1, end 9 is 8 bars.
-- **Navigate:** click the ruler to position the cursor. Use **+ / -** to zoom, **< / >** or the mouse wheel over the timeline to pan, and **Fit song** to see the arrangement. **Snap: bars** aligns dragged edits to bars; switch it off for precise times. **Escape** cancels an active drag.
+- **Edit a boundary close up:** select a section or take passage and click **Zoom start** or **Zoom end**. The view shows one musical bar on each side, with individual beats and finer ruler ticks as you zoom further. You can also double-click a white Comp edge or a song-section edge to focus that exact boundary. Drag the white **Comp** edge to adjust the audio join across every microphone; comp edges use free timing. **Back** or **Escape** restores your previous wider view. Escape cancels a pending drag first.
+- **Navigate:** click the ruler to position the cursor. Use **+ / -** to zoom further around the focused boundary, or **Option/Alt + mouse wheel** over the ruler or clips to zoom at the pointer. Use **< / >** or the mouse wheel over the timeline to pan, and **Fit song** to see the arrangement. **Snap: bars** aligns song-section edits to bars; switch it off for precise section times. Zooming leaves playback and your audio unchanged.
 
 The selected recording set’s takes appear in lanes directly under the sections, on the same ruler. One lane represents one performance across the set’s microphones. Clips show their actual position and length, including partial takes and gaps; changing the selected section does not hide other takes. The ranges come from the first track in the set, so keep microphone lanes aligned. A growing red pass shows recording progress, and the kept take is selected after Stop.
 
@@ -174,7 +175,7 @@ When the Solo Studio panel has focus:
 | Left / Right | Select previous / next take; Take mode also switches playback |
 | F | Toggle favorite |
 | B | Mark a song transition |
-| Escape | Cancel an active drag; otherwise close the panel |
+| Escape | Cancel an active drag, return from boundary close-up, or close the panel |
 
 The corresponding independent actions work from the main REAPER window once you assign shortcuts. A MIDI footswitch can use the same actions. The **Tuner** button/action opens the custom **Solo Studio Strobe** on a silent helper track, using the selected instrument track's input or asking for its X32 USB input. See [the tuner guide](Tuner/README.md). Closing the tuner disarms its helper; instrument track monitoring stays unchanged.
 

@@ -3,6 +3,7 @@ local R=reaper
 return function(M,S,ui)
  local V={};local C=ui.colors;local text,button,color=ui.text,ui.button,ui.color
  local view_start,view_end=0,nil
+ local focus,wide_view,last_click
  local box,gesture,regions
  local take_box,comp_box,take_hits,take_scroll,take_visible=nil,nil,{},0,1
  local last_set,last_selected,record_start
@@ -19,24 +20,65 @@ return function(M,S,ui)
  function V.reset()
   view_start=0;view_end=nil;gesture=nil;box=nil;take_box=nil;comp_box=nil;take_hits={};take_scroll=0
   last_set=nil;last_selected=nil;record_start=nil;comp_hits={}
+  focus=nil;wide_view=nil;last_click=nil
  end
- function V.cancel()local had=gesture~=nil;gesture=nil;return had end
+ local function back()
+  if wide_view then view_start,view_end=wide_view.s,wide_view.e end
+  focus=nil;wide_view=nil;last_click=nil
+ end
+ function V.cancel()
+  if gesture then gesture=nil;last_click=nil;return true end
+  if wide_view then back();return true end
+  return false
+ end
  function V.fit()
+  focus=nil;wide_view=nil;last_click=nil
   local minimum=R.TimeMap_GetMeasureInfo(0,16)
   local last=math.max(R.GetProjectLength(0),minimum)
   for _,r in ipairs(S.list())do last=math.max(last,r.e)end
   local _,measure=R.TimeMap2_timeToBeats(0,last)
   view_start=0;view_end=R.TimeMap_GetMeasureInfo(0,measure+2)
  end
- local function zoom(factor)
-  local center=(view_start+view_end)/2;local span=math.max(2,(view_end-view_start)*factor)
-  view_start=math.max(0,center-span/2);view_end=view_start+span
+ local function zoom(factor,anchor)
+  if gesture then return end
+  anchor=anchor or (focus and focus.pos>=view_start and focus.pos<=view_end and focus.pos)or(view_start+view_end)/2
+  local fraction=(anchor-view_start)/(view_end-view_start)
+  local span=math.max(0.04,(view_end-view_start)*factor)
+  view_start=math.max(0,anchor-span*fraction);view_end=view_start+span
  end
  local function pan(fraction)
+  if gesture then return end
   local span=view_end-view_start;view_start=math.max(0,view_start+span*fraction);view_end=view_start+span
  end
  local function to_x(t)return box.x+(t-view_start)/(view_end-view_start)*box.w end
  local function to_time(x)return view_start+math.max(0,math.min(1,(x-box.x)/box.w))*(view_end-view_start)end
+ -- Follow musical bars, including tempo and meter changes, rather than a fixed number of seconds.
+ local function shift_bar(pos,offset)
+  local beats,measure,count=R.TimeMap2_timeToBeats(0,pos);measure=measure+offset
+  if measure<0 then return 0 end
+  local _,_,_,numerator=R.TimeMap_GetMeasureInfo(0,measure)
+  return R.TimeMap2_beatsToTime(0,beats/count*numerator,measure)
+ end
+ local function close_up(pos,key)
+  if gesture then return end
+  wide_view=wide_view or {s=view_start,e=view_end}
+  focus={pos=pos,key=key}
+  view_start=shift_bar(pos,-1);view_end=shift_bar(pos,1)
+  last_click=nil
+ end
+ local function zoom_boundary(edge)
+  local range=ui.target()or S.active()
+  if range then close_up(range[edge])end
+ end
+ local function double_click(key)
+  local now=R.time_precise()
+  local previous=last_click;last_click=nil
+  return previous and previous.key==key and previous.project==R.EnumProjects(-1,'') and previous.set==M.get('active')
+   and now-previous.time<0.35 and math.abs(gfx.mouse_x-previous.x)<7 and math.abs(gfx.mouse_y-previous.y)<7
+ end
+ local function remember_click(key)
+  last_click={key=key,time=R.time_precise(),x=gfx.mouse_x,y=gfx.mouse_y,project=R.EnumProjects(-1,''),set=M.get('active')}
+ end
  local function selected()return assert(S.active(),'Click a section in the timeline first.')end
  local function ask_name()
   local row=selected();local ok,value=R.GetUserInputs('Section name',1,'Name:,extrawidth=180',row.name)
@@ -99,6 +141,7 @@ return function(M,S,ui)
    -- Let the shared button handler receive the Comp / Take controls in the gutter.
    if gfx.mouse_x<box.x then return false end
    for _,edge in ipairs(comp_hits)do if math.abs(gfx.mouse_x-edge.x)<=7 then
+    if double_click('comp:'..edge.key)then close_up(edge.pos,edge.key);return true end
     ui.run(function()
      if ui.listen_mode()~='comp'then ui.take_action('listen_comp')end
      local plan=ui.comp_edge_plan(edge.key)
@@ -126,8 +169,11 @@ return function(M,S,ui)
      gesture=nil
      ui.run(function()
       assert(g.valid,g.error)
-      if g.moved then ui.move_comp_edge(g.key,g.plan.pos,g.signature);ui.changed('Comp boundary moved across the recording set. Song sections and source takes are unchanged.')
-      else ui.take_action('listen_comp')end
+      if g.moved then
+       last_click=nil;ui.move_comp_edge(g.key,g.plan.pos,g.signature)
+       if focus then focus.pos=g.plan.pos;focus.key=g.key end
+       ui.changed('Comp boundary moved across the recording set. Song sections and source takes are unchanged.')
+      else ui.take_action('listen_comp');remember_click('comp:'..g.key)end
      end)
     end
     return true
@@ -137,7 +183,11 @@ return function(M,S,ui)
     gesture=nil
     ui.run(function()
      assert(g.signature==sig(),'Sections changed while dragging. Try the edit again.')
-     if not g.moved then if g.row then S.select(g.row.key);ui.changed('Selected '..g.row.name..' for recording.')end;return end
+     if not g.moved then if g.row then
+      S.select(g.row.key);ui.changed('Selected '..g.row.name..' for recording.')
+      if g.kind=='s'or g.kind=='e'then remember_click('section:'..g.row.key..g.kind)end
+     end;return end
+     last_click=nil
      assert(g.valid,'That range is empty or overlaps another section. Drag within the open space, or use Split at cursor.')
      if g.kind=='new'then
       local row=S.create(g.a,g.b,'Section '..(#regions+1));S.select(row.key)
@@ -154,6 +204,7 @@ return function(M,S,ui)
    return true
   end
   local row,kind=hit(gfx.mouse_x);local t=to_time(gfx.mouse_x)
+  if row and (kind=='s'or kind=='e')and double_click('section:'..row.key..kind)then close_up(row[kind]);return true end
   local low,high=0,math.huge
   if not row then for _,r in ipairs(regions)do if r.e<=t then low=math.max(low,r.e)elseif r.s>t then high=math.min(high,r.s)end end end
   local anchor=row and t or math.max(low,math.min(high,S.snap(t)))
@@ -163,6 +214,9 @@ return function(M,S,ui)
   return true
  end
  function V.wheel(delta)
+  if (gfx.mouse_cap or 0)&16~=0 and (inside(gfx.mouse_x,gfx.mouse_y)or contains(comp_box,gfx.mouse_x,gfx.mouse_y)or contains(take_box,gfx.mouse_x,gfx.mouse_y))then
+   if gfx.mouse_x>=box.x then zoom(delta>0 and 1/1.5 or 1.5,to_time(gfx.mouse_x));return true end
+  end
   if contains(take_box,gfx.mouse_x,gfx.mouse_y)then take_scroll=math.max(0,take_scroll-delta);return true end
   if not inside(gfx.mouse_x,gfx.mouse_y)then return false end
   if not gesture then pan(delta>0 and -0.12 or 0.12)end
@@ -185,20 +239,22 @@ return function(M,S,ui)
   regions=S.list();local active=S.active();local enabled=not recording
   local takes=ui.rows();local chosen=ui.chosen();local selected_count=ui.selection_count();local set=M.get('active')
   local comp=ui.comp();local listen_mode=ui.listen_mode();local target=ui.target()
-  if set~=last_set then take_scroll=0;last_selected=nil;last_set=set;record_start=nil end
+  if set~=last_set then take_scroll=0;last_selected=nil;last_set=set;record_start=nil;last_click=nil end
   text('Song timeline',x,y,4)
-  text('Click a section to record it. Drag its center to move, or an edge to resize.',x+158,y+3,3,C.muted,w-158)
+  text('Click a section to record it. Double-click an edge to zoom in; drag to adjust.',x+158,y+3,3,C.muted,w-158)
   button('New section...',x,y+30,142,32,V.new_section,C.blue,enabled)
   button('Split at cursor (B)',x+152,y+30,164,32,function()S.split();ui.changed('Section split. Click the section name below to rename it.')end,nil,enabled)
   button('Use scratch take',x+326,y+30,152,32,function()S.from_scratch();S.full_song();V.fit();ui.changed('Click the ruler at a transition, then Split at cursor. Or press B while listening.')end,nil,enabled and #regions==0)
   button(S.snapping()and'Snap: bars'or'Snap: off',x+488,y+30,112,32,function()S.set_snap(not S.snapping())end,nil,enabled)
-  button('Fit song',x+w-288,y+30,90,32,V.fit)
+  button('Zoom start',x+610,y+30,104,32,function()zoom_boundary('s')end,nil,target~=nil or active~=nil)
+  button('Zoom end',x+722,y+30,104,32,function()zoom_boundary('e')end,nil,target~=nil or active~=nil)
+  button(wide_view and 'Back' or 'Fit song',x+w-288,y+30,90,32,wide_view and back or V.fit)
   button('-',x+w-188,y+30,38,32,function()zoom(1.5)end)
   button('+',x+w-144,y+30,38,32,function()zoom(1/1.5)end)
   button('<',x+w-94,y+30,42,32,function()pan(-0.5)end)
   button('>',x+w-46,y+30,46,32,function()pan(0.5)end)
-  text('Bars / '..seconds(view_start)..' - '..seconds(view_end),x,y+74,3,C.muted)
-  text('Cmd-click: toggle / Shift-click: range / Wheel: scroll',x+315,y+74,3,C.muted,w-565)
+  text((focus and 'Close-up / 'or'Bars / ')..seconds(view_start)..' - '..seconds(view_end),x,y+74,3,focus and C.gold or C.muted,305)
+  text('Alt/Option + wheel: zoom at mouse / Wheel: scroll',x+315,y+74,3,C.muted,w-565)
   button('Tempo...',x+w-236,y+69,108,25,ui.tempo_menu,nil,enabled and #takes>0)
   button('Up',x+w-118,y+69,50,25,function()take_scroll=math.max(0,take_scroll-1)end)
   button('Down',x+w-62,y+69,62,25,function()take_scroll=take_scroll+1 end)
@@ -228,11 +284,27 @@ return function(M,S,ui)
   local step=math.max(1,math.ceil((last-first+1)*58/box.w))
   local ticks={}
   for bar=math.floor(first/step)*step,last+1,step do
-   local px=to_x(R.TimeMap_GetMeasureInfo(0,bar))
+   local start,_,_,beats=R.TimeMap_GetMeasureInfo(0,bar)
+   local px=to_x(start)
    if px>=box.x and px<box.x+box.w then
     ticks[#ticks+1]=px
     color(C.line);gfx.line(px,box.y+24,px,box.y+box.h)
     text(tostring(bar+1),px+5,box.y+4,3,C.muted)
+   end
+   if step==1 then
+    local width=to_x(R.TimeMap_GetMeasureInfo(0,bar+1))-px
+    if width/beats>=36 then for beat=0,beats-1 do
+     local bx=to_x(R.TimeMap2_beatsToTime(0,beat,bar))
+     if beat>0 and bx>=box.x and bx<box.x+box.w then
+      ticks[#ticks+1]=bx;color(C.line);gfx.line(bx,box.y+18,bx,box.y+box.h)
+      text(tostring(bar+1)..'.'..(beat+1),bx+4,box.y+4,3,C.muted)
+     end
+     local subdivisions=width/beats>=160 and 4 or width/beats>=80 and 2 or 1
+     for sub=1,subdivisions-1 do
+      local sx=to_x(R.TimeMap2_beatsToTime(0,beat+sub/subdivisions,bar))
+      if sx>=box.x and sx<box.x+box.w then color(C.line);gfx.line(sx,box.y+20,sx,box.y+27)end
+     end
+    end end
    end
   end
   local g=gesture;local previews={}
@@ -251,7 +323,11 @@ return function(M,S,ui)
     text(row.name,a+12,box.y+35,1,C.text,b-a-24)
     text(duration(p.s,p.e),a+12,box.y+60,3,C.text,b-a-24)
    end
-   if b-a>22 then color(C.text);gfx.rect(a+5,box.y+44,2,21,1);gfx.rect(b-7,box.y+44,2,21,1)end
+   if b-a>22 then
+    color(C.text)
+    if p.s>=view_start then gfx.rect(a+5,box.y+44,2,21,1)end
+    if p.e<=view_end then gfx.rect(b-7,box.y+44,2,21,1)end
+   end
   end
   for i,row in ipairs(regions)do block(row,i)end
   if g and g.kind=='new' and g.moved then block({key='preview',s=g.a,e=g.b,name='New section'},#regions+1,true)end
@@ -285,7 +361,7 @@ return function(M,S,ui)
     local pos=g and g.kind=='comp_edge'and g.key==edge.key and g.plan.pos or edge.pos
     local px=to_x(pos)
     if px>=box.x and px<=box.x+box.w then
-     comp_hits[#comp_hits+1]={x=px,key=edge.key}
+     comp_hits[#comp_hits+1]={x=px,key=edge.key,pos=pos}
      color(g and g.kind=='comp_edge'and g.key==edge.key and C.gold or C.text)
      gfx.rect(px-2,cy+9,4,26,1)
     end
@@ -352,6 +428,7 @@ return function(M,S,ui)
    if chosen.tempo then detail=detail..' / recorded: '..chosen.tempo.label..(chosen.tempo.different and ' (different from song)'or '')end
    if chosen.note~='' then detail=detail..' / '..chosen.note end
   end
+  if focus then detail='Close-up: drag the white Comp edge for free timing. Song section edges follow Snap. Back or Esc returns to the wider view.'end
   if g and g.moved and g.kind~='comp_edge'then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end
   if g and g.kind=='comp_edge'then detail=g.valid and ('Comp edge: '..string.format('%.3f s',g.plan.pos)..' / available '..seconds(g.low)..' - '..seconds(g.high)..' | Release to apply; Esc to cancel')or g.error end
   text(detail,x,y+h-97,3,g and not g.valid and C.record or C.muted,w-155)
@@ -362,7 +439,7 @@ return function(M,S,ui)
    local available=spec[4]=='delete' and selected_count>0 or single
    button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],enabled and available)
   end
-  text('Drag Comp edges to adjust joins / Left, Right: takes',x+631,ay+8,3,C.muted,w-631)
+  text('Zoom start/end: selected passage or section',x+631,ay+8,3,C.muted,w-631)
   local iy=y+h-33
   text('Section',x,iy+8,3,C.muted)
   if active then
