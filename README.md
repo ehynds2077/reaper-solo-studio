@@ -81,6 +81,14 @@ Switching keeps a running song at its current position. When stopped, it prepare
 
 **Delete take** in either Timeline or Takes removes the entire selected lane’s audio items across the recording set, including parts outside the selected section. With multiple takes selected, the button shows **Delete N takes** and removes the whole batch in one Undo step. Take playback, note, rename, favorite, and comp actions require a single selected take. Adding to a multiselection leaves playback unchanged; Comp remains available. After deletion, selection moves to the next surviving take next to the focused take, or the previous one if there is no next take; it stays empty if no takes remain. In Take mode the surviving neighbor also becomes the playback lane, within the same Undo step; Comp mode keeps the saved comp playing. Source audio files stay on disk. **Cmd+Z in REAPER’s arrangement** restores the whole operation, including notes and favorites. Separate comp copies stay intact when their source take is removed. Empty native lanes remain in REAPER to preserve microphone and comp alignment, but disappear from Solo Studio’s take list. If every source take is deleted, choose Comp to return to any saved passages. Deletion is disabled during recording.
 
+### Manage project tracks
+
+Open **Tracks** beside Timeline, Takes, and Mix to see every project track, its folder indentation, recording set, input, item count, and effect count. Click a row to select that track in REAPER. Use **+ Instrument** to add another guitar, vocal, or other recording part; each addition can have its own name and recording set.
+
+- **Rename...** changes the native track name. A single-track recording set follows that name, so doubled guitars or backing vocals are easy to distinguish in the recording-set menu. Multitrack set names stay separate from microphone names.
+- **Delete...** shows a confirmation with the number of items and effects being removed. Deleting a folder includes its child tracks and states that explicitly. Source audio files remain on disk. **Cmd+Z in REAPER** restores the operation, including recordings, effects, and folder structure.
+- Deleting one microphone leaves the surviving tracks available in their recording set. Empty sets disappear from the menu; native Undo restores their membership. Renaming and deleting are disabled while recording.
+
 ### Build a song from your scratch take
 
 1. Choose **Scratch guitar + vocal**, then **Full song**. Record the guide and use **Stop & keep** when finished.

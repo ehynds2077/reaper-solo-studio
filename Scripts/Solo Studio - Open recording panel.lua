@@ -14,8 +14,8 @@ local buttons={}
 local sliders,drag={},nil
 local section_scroll,sections=0,{}
 local saved_view=R.GetExtState(M.ns,'panel_view')
-local view=(saved_view=='review' or saved_view=='mix') and saved_view or 'timeline'
-local V,X
+local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks') and saved_view or 'timeline'
+local V,X,K
 local listen_mode='comp'
 local comp_row,clip_target
 local take_action
@@ -106,6 +106,12 @@ end
 local function mix()
  if not X then X=dofile(dir..'/solo_mix.lua')(M,{colors=C,text=text,button=button,color=color,run=run}) end
  return X
+end
+local function track_view()
+ if not K then K=dofile(dir..'/solo_tracks_view.lua')(M,{colors=C,text=text,button=button,color=color,
+  hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
+  changed=function(message)status=message;lastrefresh=0;selection.reset();clip_target=nil end})end
+ return K
 end
 local function slider(id,x,y,w,value,fn,enabled)
  enabled=enabled~=false
@@ -253,7 +259,7 @@ V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=
  selected=selection.has,selection_count=function()return #selected_rows()end,select=select_take})
 local function refresh()
  local proj=R.EnumProjects(-1,'')
- if proj~=lastproject then M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
+ if proj~=lastproject then M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
   local set=M.get('active');local previous={}
@@ -310,9 +316,10 @@ local function frame()
   button('+ Instrument',w-130,152,106,33,add_instrument)
   color(C.line);gfx.line(24,201,w-24,201)
   local sx=w+12
-  button('Timeline',sx,24,88,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
-  button('Takes',sx+96,24,80,33,function()change_view('review')end,view=='review' and C.blue or nil)
-  button('Mix',sx+184,24,80,33,function()change_view('mix')end,view=='mix' and C.blue or nil)
+  button('Timeline',sx,24,84,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
+  button('Takes',sx+88,24,56,33,function()change_view('review')end,view=='review' and C.blue or nil)
+  button('Tracks',sx+148,24,66,33,function()change_view('tracks')end,view=='tracks' and C.blue or nil)
+  button('Mix',sx+218,24,46,33,function()change_view('mix')end,view=='mix' and C.blue or nil)
   text('Record: '..S.label(),sx,73,3,C.muted,264)
   button('Full song',sx,101,264,33,function()S.full_song();status='Ready to record the whole song. Stop & keep when finished.'end,S.mode()=='full' and C.blue or nil,not recording)
   button('One pass',sx,152,128,33,function()S.set_loop(false)end,not S.looping() and C.blue or nil,not recording)
@@ -321,6 +328,8 @@ local function frame()
    V.draw(24,215,gfx.w-48,gfx.h-300,recording)
   elseif view=='mix' then
    mix().draw(24,215,gfx.w-48,gfx.h-300)
+  elseif view=='tracks' then
+   track_view().draw(24,215,gfx.w-48,gfx.h-300,recording)
   else
   local tempo_enabled=T.tempo_enabled()
   local bpm=drag and drag.id=='tempo' and math.floor(T.min_bpm+drag.value*(T.max_bpm-T.min_bpm)+0.5) or T.bpm()
@@ -431,6 +440,7 @@ local function frame()
   local delta=gfx.mouse_wheel>0 and 1 or -1
   if view=='timeline' then V.wheel(delta)
   elseif view=='mix' then mix().wheel(delta)
+  elseif view=='tracks' then track_view().wheel(delta)
   elseif gfx.mouse_x>gfx.w-300 then section_scroll=section_scroll-delta else scroll=scroll-delta end
   gfx.mouse_wheel=0
  end
@@ -440,9 +450,9 @@ local function frame()
  if ch==109 or ch==77 then run(function()change_view('mix')end)
  elseif ch==32 then run(play) elseif ch==114 or ch==82 then run(M.record)
  elseif ch==110 or ch==78 then run(M.another)
- elseif ch==1818584692 then run(function()select_step(-1) end)
- elseif ch==1919379572 then run(function()select_step(1) end)
- elseif ch==102 or ch==70 then run(function()with_row(function(row)M.favorite(row.lane) end) end)
+ elseif ch==1818584692 and view~='tracks' then run(function()select_step(-1) end)
+ elseif ch==1919379572 and view~='tracks' then run(function()select_step(1) end)
+ elseif (ch==102 or ch==70)and view~='tracks' then run(function()with_row(function(row)M.favorite(row.lane) end) end)
  elseif ch==98 or ch==66 then run(mark_transition)
  end
  gfx.update();if ch>=0 and ch~=27 then R.defer(frame) end

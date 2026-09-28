@@ -27,7 +27,34 @@ function M.sections()
   if not section_module then section_module=dofile(module_dir..'/solo_sections.lua')(M) end
   return section_module
 end
-local function get(key) local _,v=R.GetProjExtState(0,M.ns,key); return v end
+local function raw_get(key)local _,v=R.GetProjExtState(0,M.ns,key);return v end
+local function resolve_tracks(id)
+  local result={};local guids=raw_get('set.'..id..'.tracks')
+  for guid in guids:gmatch('[^\n]+')do
+    for i=0,R.CountTracks(0)-1 do local tr=R.GetTrack(0,i);if R.GetTrackGUID(tr)==guid then result[#result+1]=tr;break end end
+  end
+  return result
+end
+local function get(key)
+  if key=='active'then
+    local id=raw_get(key)
+    if id~=''and #resolve_tracks(id)==0 then
+      for candidate in raw_get('sets'):gmatch('[^\n]+')do if #resolve_tracks(candidate)>0 then return candidate end end
+      return ''
+    end
+    return id
+  end
+  local id=key:match('^set%.(.+)%.name$')
+  if id then
+    -- Single-track instruments follow native names, including native Undo/Redo.
+    local guids=raw_get('set.'..id..'.tracks')
+    if guids~=''and not guids:find('\n',1,true)then
+      local tr=resolve_tracks(id)[1]
+      if tr then local _,name=R.GetSetMediaTrackInfo_String(tr,'P_NAME','',false);if name~=''then return name end end
+    end
+  end
+  return raw_get(key)
+end
 local function put(key,value) R.SetProjExtState(0,M.ns,key,tostring(value)); R.MarkProjectDirty(0) end
 M.get, M.put = get, put
 local function split(s) local t={} for v in (s or ''):gmatch('[^\n]+') do t[#t+1]=v end return t end
@@ -59,16 +86,13 @@ function M.select_tracks(tracks)
   for _,tr in ipairs(tracks) do R.SetTrackSelected(tr,true) end
 end
 function M.sets()
-  local t={}; for _,id in ipairs(split(get('sets'))) do t[#t+1]={id=id,name=get('set.'..id..'.name')} end; return t
+  local t={};for _,id in ipairs(split(get('sets')))do
+    if #resolve_tracks(id)>0 then t[#t+1]={id=id,name=get('set.'..id..'.name')}end
+  end;return t
 end
 function M.tracks()
-  local id=get('active'); local ids=split(get('set.'..id..'.tracks')); local t={}
-  for _,guid in ipairs(ids) do
-    local found
-    for i=0,R.CountTracks(0)-1 do local tr=R.GetTrack(0,i); if R.GetTrackGUID(tr)==guid then found=tr; break end end
-    if not found then return {},'A track in this recording set is missing. Select its tracks and save the set again.' end
-    t[#t+1]=found
-  end
+  -- Retain registered GUIDs: native track Undo restores membership automatically.
+  local t=resolve_tracks(get('active'))
   return t,#t==0 and 'Select tracks in REAPER, then choose Use selected tracks.' or nil
 end
 function M.require_tracks()

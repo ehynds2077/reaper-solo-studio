@@ -4,6 +4,7 @@ The standalone interaction checks need Lua 5.3 or newer. From the repository roo
 
 ```sh
 lua "$PWD/Tests/Visual timeline interactions.lua"
+lua "$PWD/Tests/Track management.lua"
 lua "$PWD/Tests/Take deletion.lua"
 lua "$PWD/Tests/Take selection.lua"
 lua "$PWD/Tests/Recorded tempo.lua"
@@ -56,3 +57,5 @@ Multiple-selection checks cover Cmd toggles, Shift ranges across offscreen rows,
 `Comp edges.lua` checks shared and outer edge edits, physical source limits, the least available microphone, stale drag protection, recording locks, and whole-set rollback. `Section recording handles.lua` checks musical bounds through tempo changes, temporary setting restoration (including closed projects), and per-pass limits in shared loop WAVs. Timeline gestures verify unsnapped edge movement, clamping, cancellation, and independence from song regions.
 
 The visual runner also runs `Native comp edges.lua` and `Native section handles.lua`. The latter records silent track outputs in its disposable project and takes about 30 seconds with a working output device; it never records hardware inputs. It verifies real media offsets and lengths, single-pass and repeated loop capture, default visible trimming, per-pass handle metadata, and restoration of pre-roll/link preferences. The panel opens only after those checks finish.
+
+`Track management.lua` exercises the real core, manager, and Tracks view with a synthetic project: native-name-derived set labels, folder descendants and closing depths, surviving microphone membership, restored GUIDs, stale confirmations, project changes, recording locks, and cancelled deletion. Panel checks cover the new tab, scrolling, and project reset. The boundary zoom interaction checks cover musical bar ranges, tempo/meter changes, double-clicks, pointer-centered zoom, returning to the previous view, and precise drags after zooming.

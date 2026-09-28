@@ -57,6 +57,7 @@ local function fixture(initial_view)
     if path:match('solo_core.lua$') then return M end
     if path:match('solo_tempo.lua$') then return T end
     if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,draw=function()end,mouse=function()end,wheel=function()end}end end
+    if path:match('solo_tracks_view.lua$')then return function()return {reset=function()f.track_reset=true end,draw=function()f.track_drawn=true end,wheel=function(delta)f.track_wheel=delta end}end end
     if path:match('solo_take_selection.lua$')then return dofile(path)end
     error('Unexpected module '..path)
   end},{__index=_G})
@@ -69,6 +70,12 @@ local function fixture(initial_view)
   f.gfx=g;return f
 end
 local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..name)end
+local tf=fixture('tracks')
+check(tf.track_drawn,'The saved Tracks tab opens the project-track interface')
+tf.gfx.mouse_wheel=-120;tf.frame();check(tf.track_wheel==-1,'The Tracks tab routes scrolling to project tracks')
+tf.project='new song';tf.frame();check(tf.track_reset,'Switching projects resets the Tracks view')
+tf=fixture();tf.click(1075,40);check(tf.track_drawn,'The Tracks tab is reachable from the panel navigation')
+tf.key=1919379572;tf.frame();check(#tf.calls==0,'Track view arrow keys cannot accidentally switch a hidden take')
 local f=fixture()
 check(#f.calls==0,'Opening panel changes no settings')
 f.mouse(140,256,true);f.mouse(197,256,true)
