@@ -4,6 +4,9 @@ return function(M,S,ui)
  local V={};local C=ui.colors;local text,button,color=ui.text,ui.button,ui.color
  local view_start,view_end=0,nil
  local box,gesture,regions
+ local take_box,take_hits,take_scroll,take_visible=nil,{},0,1
+ local last_set,last_selected,record_start
+ local lane_height=46
  local palette={{0.29,0.48,0.63},{0.37,0.51,0.42},{0.56,0.43,0.29},{0.48,0.40,0.58},{0.30,0.51,0.53}}
  local function fmt(t)return R.format_timestr_pos(t,'',2)end
  local function duration(a,b)return string.format('%.2f bars',S.bar_position(b)-S.bar_position(a)):gsub('%.00 bars',' bars')end
@@ -12,7 +15,10 @@ return function(M,S,ui)
   local out={};for _,r in ipairs(S.list())do out[#out+1]=r.key..':'..r.s..':'..r.e..':'..r.name end
   return table.concat(out,'|')
  end
- function V.reset()view_start=0;view_end=nil;gesture=nil;box=nil end
+ function V.reset()
+  view_start=0;view_end=nil;gesture=nil;box=nil;take_box=nil;take_hits={};take_scroll=0
+  last_set=nil;last_selected=nil;record_start=nil
+ end
  function V.cancel()local had=gesture~=nil;gesture=nil;return had end
  function V.fit()
   local minimum=R.TimeMap_GetMeasureInfo(0,16)
@@ -55,7 +61,8 @@ return function(M,S,ui)
   if row.s<view_start or row.e>view_end then V.fit()end
   ui.changed('Section added. Drag its edges or click Start, End, or Length below.')
  end
- local function inside(x,y)return box and x>=box.x and x<=box.x+box.w and y>=box.y and y<=box.y+box.h end
+ local function contains(b,x,y)return b and x>=b.x and x<b.x+b.w and y>=b.y and y<b.y+b.h end
+ local function inside(x,y)return contains(box,x,y)end
  local function hit(x)
   -- Give visible boundary handles priority over section bodies.
   local best,edge,distance=nil,nil,9
@@ -86,7 +93,11 @@ return function(M,S,ui)
   return a,b,changes,valid
  end
  function V.mouse(down,pressed,recording)
-  if recording then gesture=nil;return inside(gfx.mouse_x,gfx.mouse_y)end
+  if recording then gesture=nil;return inside(gfx.mouse_x,gfx.mouse_y) or contains(take_box,gfx.mouse_x,gfx.mouse_y)end
+  if pressed and not gesture and contains(take_box,gfx.mouse_x,gfx.mouse_y)then
+   for _,hit in ipairs(take_hits)do if contains(hit,gfx.mouse_x,gfx.mouse_y)then ui.select(hit.row);break end end
+   return true
+  end
   if gesture then
    local g=gesture
    if g.project~=R.EnumProjects(-1,'')then gesture=nil;return true end
@@ -108,7 +119,7 @@ return function(M,S,ui)
    return true
   end
   if not pressed or not inside(gfx.mouse_x,gfx.mouse_y)then return false end
-  if gfx.mouse_y<box.y+32 then
+  if gfx.mouse_y<box.y+24 then
    ui.run(function()R.SetEditCurPos2(0,math.max(0,S.snap(to_time(gfx.mouse_x))),true,R.GetPlayState()&1~=0)end)
    return true
   end
@@ -122,35 +133,71 @@ return function(M,S,ui)
   return true
  end
  function V.wheel(delta)
+  if contains(take_box,gfx.mouse_x,gfx.mouse_y)then take_scroll=math.max(0,take_scroll-delta);return true end
   if not inside(gfx.mouse_x,gfx.mouse_y)then return false end
   if not gesture then pan(delta>0 and -0.12 or 0.12)end
   return true
  end
+ local function take_name(row)return row.name:match('^%d+$')and 'Take '..row.name or row.name end
+ local function spans(row)
+  local result={};local start,finish=math.huge,0
+  for _,item in ipairs(row.items)do
+   local a=R.GetMediaItemInfo_Value(item,'D_POSITION');local b=a+R.GetMediaItemInfo_Value(item,'D_LENGTH')
+   start=math.min(start,a);finish=math.max(finish,b)
+   if b>a then result[#result+1]={s=a,e=b}end
+  end
+  return result,start==math.huge and 0 or start,finish
+ end
  function V.draw(x,y,w,h,recording)
   if not view_end then V.fit()end
   regions=S.list();local active=S.active();local enabled=not recording
+  local takes=ui.rows();local chosen=ui.chosen();local set=M.get('active')
+  if set~=last_set then take_scroll=0;last_selected=nil;last_set=set;record_start=nil end
   text('Song timeline',x,y,4)
-  text('Draw your arrangement here. Choose a block to record that section.',x+158,y+3,3,C.muted)
-  button('New section...',x,y+36,142,34,V.new_section,C.blue,enabled)
-  button('Split at cursor (B)',x+152,y+36,164,34,function()S.split();ui.changed('Section split. Click the new name below to rename it.')end,nil,enabled)
-  button('Use scratch take',x+326,y+36,152,34,function()S.from_scratch();S.full_song();V.fit();ui.changed('Click the ruler at a transition, then Split at cursor. Or press B while listening.')end,nil,enabled and #regions==0)
-  button(S.snapping()and'Snap: bars'or'Snap: off',x+488,y+36,112,34,function()S.set_snap(not S.snapping())end,nil,enabled)
-  button('Fit song',x+w-288,y+36,90,34,V.fit)
-  button('-',x+w-188,y+36,38,34,function()zoom(1.5)end)
-  button('+',x+w-144,y+36,38,34,function()zoom(1/1.5)end)
-  button('<',x+w-94,y+36,42,34,function()pan(-0.5)end)
-  button('>',x+w-46,y+36,46,34,function()pan(0.5)end)
-  text('Bars  /  '..seconds(view_start)..' - '..seconds(view_end),x,y+85,3,C.muted)
-  text('Click ruler to position cursor',x+w-212,y+85,3,C.muted)
-  box={x=x,y=y+108,w=w,h=154}
-  color({0.12,0.14,0.17});gfx.rect(box.x,box.y,box.w,box.h,1)
+  text('Click a section to record it. Drag its center to move, or an edge to resize.',x+158,y+3,3,C.muted,w-158)
+  button('New section...',x,y+30,142,32,V.new_section,C.blue,enabled)
+  button('Split at cursor (B)',x+152,y+30,164,32,function()S.split();ui.changed('Section split. Click the section name below to rename it.')end,nil,enabled)
+  button('Use scratch take',x+326,y+30,152,32,function()S.from_scratch();S.full_song();V.fit();ui.changed('Click the ruler at a transition, then Split at cursor. Or press B while listening.')end,nil,enabled and #regions==0)
+  button(S.snapping()and'Snap: bars'or'Snap: off',x+488,y+30,112,32,function()S.set_snap(not S.snapping())end,nil,enabled)
+  button('Fit song',x+w-288,y+30,90,32,V.fit)
+  button('-',x+w-188,y+30,38,32,function()zoom(1.5)end)
+  button('+',x+w-144,y+30,38,32,function()zoom(1/1.5)end)
+  button('<',x+w-94,y+30,42,32,function()pan(-0.5)end)
+  button('>',x+w-46,y+30,46,32,function()pan(0.5)end)
+  text('Bars / '..seconds(view_start)..' - '..seconds(view_end),x,y+74,3,C.muted)
+  text('Click take: select   |   Audition: listen   |   Wheel over takes: scroll',x+315,y+74,3,C.muted,w-425)
+  button('Up',x+w-118,y+69,50,25,function()take_scroll=math.max(0,take_scroll-1)end)
+  button('Down',x+w-62,y+69,62,25,function()take_scroll=take_scroll+1 end)
+  local gutter=188
+  box={x=x+gutter,y=y+99,w=w-gutter,h=88}
+  take_box={x=x,y=box.y+box.h,w=w,h=math.max(lane_height,y+h-102-(box.y+box.h))}
+  take_hits={};take_visible=math.max(1,math.floor(take_box.h/lane_height))
+  local count=#takes+(recording and 1 or 0)
+  local selected_index
+  for i,row in ipairs(takes)do if chosen and row.key==chosen.key then selected_index=i end end
+  if chosen and chosen.key~=last_selected and selected_index then
+   if selected_index<=take_scroll then take_scroll=selected_index-1
+   elseif selected_index>take_scroll+take_visible then take_scroll=selected_index-take_visible end
+  end
+  last_selected=chosen and chosen.key
+  if recording and not record_start then
+   record_start=S.mode()=='section' and active and active.s or R.GetCursorPosition()
+   take_scroll=math.max(0,count-take_visible)
+  elseif not recording then record_start=nil end
+  take_scroll=math.max(0,math.min(take_scroll,count-take_visible))
+  color({0.12,0.14,0.17});gfx.rect(x,box.y,w,box.h+take_box.h,1)
+  text(M.get('set.'..set..'.name')~='' and M.get('set.'..set..'.name')or 'Choose an instrument',x+8,box.y+4,1,C.text,gutter-16)
+  text(#takes..' takes / '..#M.tracks()..' tracks',x+8,box.y+27,3,C.muted,gutter-16)
+  text('Song sections',x+8,box.y+60,3,C.muted,gutter-16)
   local _,first=R.TimeMap2_timeToBeats(0,view_start);local _,last=R.TimeMap2_timeToBeats(0,view_end)
-  local step=math.max(1,math.ceil((last-first+1)*58/w))
+  local step=math.max(1,math.ceil((last-first+1)*58/box.w))
+  local ticks={}
   for bar=math.floor(first/step)*step,last+1,step do
    local px=to_x(R.TimeMap_GetMeasureInfo(0,bar))
-   if px>=x and px<x+w then
-    color(C.line);gfx.line(px,box.y+27,px,box.y+box.h)
-    text(tostring(bar+1),px+5,box.y+5,3,C.muted)
+   if px>=box.x and px<box.x+box.w then
+    ticks[#ticks+1]=px
+    color(C.line);gfx.line(px,box.y+24,px,box.y+box.h)
+    text(tostring(bar+1),px+5,box.y+4,3,C.muted)
    end
   end
   local g=gesture;local previews={}
@@ -159,43 +206,86 @@ return function(M,S,ui)
    elseif g.row then previews[g.row.key]={s=g.a,e=g.b}end
   end
   local function block(row,index,new)
-   local p=previews[row.key]or row;local a=math.max(x,to_x(p.s));local b=math.min(x+w,to_x(p.e))
+   local p=previews[row.key]or row;local a=math.max(box.x,to_x(p.s));local b=math.min(box.x+box.w,to_x(p.e))
    if b<=a then return end
    local selected=active and active.key==row.key;local tint=palette[(index-1)%#palette+1]
    color(g and not g.valid and (new or g.row and g.row.key==row.key)and C.record or tint)
-   gfx.rect(a+1,box.y+37,math.max(1,b-a-2),box.h-45,1)
-   if selected or new then color(C.text);gfx.rect(a+1,box.y+37,math.max(1,b-a-2),box.h-45,0)end
+   gfx.rect(a+1,box.y+30,math.max(1,b-a-2),52,1)
+   if selected or new then color(C.text);gfx.rect(a+1,box.y+30,math.max(1,b-a-2),52,0)end
    if b-a>55 then
-    text(row.name,a+12,box.y+53,1,C.text,b-a-24)
-    text(duration(p.s,p.e),a+12,box.y+82,3,C.text,b-a-24)
+    text(row.name,a+12,box.y+35,1,C.text,b-a-24)
+    text(duration(p.s,p.e),a+12,box.y+60,3,C.text,b-a-24)
    end
-   if b-a>22 then color(C.text);gfx.rect(a+5,box.y+66,2,21,1);gfx.rect(b-7,box.y+66,2,21,1)end
+   if b-a>22 then color(C.text);gfx.rect(a+5,box.y+44,2,21,1);gfx.rect(b-7,box.y+44,2,21,1)end
   end
   for i,row in ipairs(regions)do block(row,i)end
   if g and g.kind=='new' and g.moved then block({key='preview',s=g.a,e=g.b,name='New section'},#regions+1,true)end
   if #regions==0 and not(g and g.moved)then
-   text('Drag from the start to the end of your first section',x+24,box.y+64,4,C.text)
-   text('Or click New section... and enter a start bar and length.',x+24,box.y+99,1,C.muted)
+   text('Drag here to create a section, or use New section... for an exact length.',box.x+16,box.y+49,1,C.muted,box.w-32)
   end
-  local px=to_x(S.position());if px>=x and px<=x+w then color(C.gold);gfx.line(px,box.y,px,box.y+box.h);gfx.rect(px-3,box.y,6,7,1)end
-  local help='Drag empty space: add section     Drag center: move     Drag edge: resize     Shared edge: adjust both sections'
-  if g and g.moved then help=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..'  /  '..duration(g.a,g.b)..'   |   Release to apply; Esc to cancel'end
-  text(help,x,y+275,3,g and not g.valid and C.record or C.muted,w)
-  local iy=y+310
+  for i=take_scroll+1,math.min(count,take_scroll+take_visible)do
+   local row=takes[i];local live=not row;local ry=take_box.y+(i-take_scroll-1)*lane_height
+   local is_selected=row and chosen and row.key==chosen.key
+   color(is_selected and {0.22,0.31,0.38}or {0.16,0.19,0.23});gfx.rect(x,ry,w,lane_height-2,1)
+   if active then
+    local a=math.max(box.x,to_x(active.s));local b=math.min(box.x+box.w,to_x(active.e))
+    if b>a then color({0.25,0.29,0.32});gfx.rect(a,ry,b-a,lane_height-2,1)end
+   end
+   for _,px in ipairs(ticks)do color(C.line);gfx.line(px,ry,px,ry+lane_height-2)end
+   local clips,a,b
+   if live then
+    a=record_start;b=math.max(a,S.position());clips={{s=a,e=b}}
+    text(b>a and 'Recording...'or 'Lead-in...',x+12,ry+5,1,C.record,gutter-20)
+    text('New pass',x+12,ry+26,3,C.muted,gutter-20)
+   else
+    clips,a,b=spans(row)
+    text((row.favorite and '* 'or '')..take_name(row),x+12,ry+5,1,C.text,gutter-20)
+    text(row.playing and 'Playing' or (row.note~='' and row.note or duration(a,b)),x+12,ry+26,3,row.playing and C.blue or C.muted,gutter-20)
+    take_hits[#take_hits+1]={x=x,y=ry,w=w,h=lane_height-2,row=row}
+   end
+   for _,clip in ipairs(clips)do
+    local left=math.max(box.x,to_x(clip.s));local right=math.min(box.x+box.w,to_x(clip.e))
+    if right>left then
+     color(live and C.record or row.playing and {0.28,0.49,0.62}or {0.30,0.39,0.47})
+     gfx.rect(left,ry+5,right-left,34,1)
+     if is_selected then color(C.text);gfx.rect(left,ry+5,right-left,34,0)end
+     if right-left>65 then text(duration(clip.s,clip.e),left+8,ry+14,3,C.text,right-left-16)end
+    end
+   end
+   if is_selected then color(C.gold);gfx.rect(x,ry,3,lane_height-2,1)end
+  end
+  if count==0 then
+   text('Record this instrument to see its takes here.',box.x+16,take_box.y+14,1,C.text,box.w-32)
+   text('Each pass stays aligned with the song sections above, including unfinished takes.',box.x+16,take_box.y+41,3,C.muted,box.w-32)
+  end
+  local px=to_x(S.position());if px>=box.x and px<=box.x+box.w then color(C.gold);gfx.line(px,box.y,px,take_box.y+take_box.h);gfx.rect(px-3,box.y,6,7,1)end
+  color(C.line);gfx.line(box.x,box.y,box.x,take_box.y+take_box.h)
+  local detail='Select a take to inspect it. Delete take removes the whole pass from this set; audio files stay on disk.'
+  if chosen then
+   local _,a,b=spans(chosen)
+   detail=take_name(chosen)..': '..fmt(a)..' - '..fmt(b)..' / '..duration(a,b)..' span / '..seconds(b-a)
+   if chosen.note~='' then detail=detail..' / '..chosen.note end
+  end
+  if g and g.moved then detail=(g.valid and 'Preview: 'or'Invalid range: ')..fmt(g.a)..' to '..fmt(g.b)..' / '..duration(g.a,g.b)..' | Release to apply; Esc to cancel'end
+  text(detail,x,y+h-97,3,g and not g.valid and C.record or C.muted,w-155)
+  text(count>0 and (take_scroll+1)..'-'..math.min(count,take_scroll+take_visible)..' of '..count..' lanes' or '',x+w-145,y+h-97,3,C.muted,145)
+  local ay=y+h-74;local available=enabled and chosen~=nil
+  for _,spec in ipairs({{'Audition',0,96,'audition',C.blue},{'Favorite',104,96,'favorite'},{'Take note',208,105,'note'},
+   {'Rename',321,90,'rename'},{'Keep passage',419,136,'comp'},{'Delete take',563,116,'delete',C.record}})do
+   button(spec[1],x+spec[2],ay,spec[3],30,function()ui.take_action(spec[4])end,spec[5],available)
+  end
+  text('Delete whole pass / Undo in REAPER',x+698,ay+8,3,C.muted,w-698)
+  local iy=y+h-33
+  text('Section',x,iy+8,3,C.muted)
   if active then
-   text('Selected section',x,iy,3,C.muted)
-   button(active.name..'  (rename)',x,iy+23,240,36,ask_name,nil,enabled)
-   button('Start: '..fmt(active.s),x+250,iy+23,178,36,function()ask_edge('s')end,nil,enabled)
-   button('End: '..fmt(active.e),x+438,iy+23,178,36,function()ask_edge('e')end,nil,enabled)
-   button('Length: '..duration(active.s,active.e),x+626,iy+23,198,36,ask_length,nil,enabled)
-   button('Remove label',x+w-142,iy+23,142,36,function()
+   button(active.name..' (rename)',x+68,iy,222,30,ask_name,nil,enabled)
+   button('Start: '..fmt(active.s),x+298,iy,170,30,function()ask_edge('s')end,nil,enabled)
+   button('End: '..fmt(active.e),x+476,iy,170,30,function()ask_edge('e')end,nil,enabled)
+   button('Length: '..duration(active.s,active.e),x+654,iy,190,30,ask_length,nil,enabled)
+   button('Remove label',x+w-142,iy,142,30,function()
     if R.ShowMessageBox('Remove "'..active.name..'"? Recorded audio stays in place.','Remove section label',4)==6 then S.remove(active.key)end
    end,nil,enabled)
-   text('Positions are bar.beat.hundredths. Example: start 1, end 9 = 8 bars. Click any value to change it.',x,iy+70,3,C.muted,w)
-  else
-   text('For an exact length: New section...  >  name, start bar, length in bars.',x,iy+24,1,C.text,w)
-   text('Example: Verse, start 9, length 8 creates a section from bar 9 to bar 17.',x,iy+56,3,C.muted,w)
-  end
+  else text('Choose a section above to edit its name, start, end, or length.',x+68,iy+8,3,C.muted,w-68)end
  end
  return V
 end

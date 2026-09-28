@@ -2,9 +2,11 @@
 local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0
 local function fixture()
-  local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0}
+  local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={}}
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
-  local M={ns='test',tracks=function()return {'track'}end,lanes=function()return {}end,
+  local M={ns='test',tracks=function()return {'track'}end,lanes=function()return f.rows end,
+    audition=function(lane)call('audition',lane)end,
+    delete_take=function(lane,key)call('delete',key);for i,row in ipairs(f.rows)do if row.key==key then table.remove(f.rows,i);break end end end,
     get=function(key)return key=='active' and 'scratch' or 'Scratch'end,
     sets=function()return {{id='scratch',name='Scratch'}}end,message=function(s)error(s)end}
   M.sections=function()return {recover_leadin=function()end,filter_takes=function(rows)return rows end,list=function()return {}end,
@@ -64,4 +66,19 @@ f=fixture();f.tempo_map=true;f.mouse(140,256,true);f.mouse(250,256,false)
 check(#f.calls==0,'Tempo-map project disables tempo slider')
 f=fixture();f.mouse(750,230,true);f.mouse(750,230,false)
 check(#f.calls==1 and f.calls[1][1]=='sounds','Click sound button opens native sound settings')
+local function take(key,lane,playing)return {key=key,lane=lane,name=key,note='',playing=playing,favorite=false}end
+f=fixture();f.rows={take('Short take',0,false),take('Playing take',1,true)};f.frame()
+f.mouse(400,435,true);f.mouse(400,435,false)
+check(#f.calls==0,'Take-list click selects a partial take without switching audio')
+f.mouse(620,388,true);f.mouse(620,388,false)
+check(f.calls[1]and f.calls[1][1]=='audition'and f.calls[1][2]==0,'Audition button uses the explicitly selected take')
+f.mouse(540,579,true);f.mouse(540,579,false)
+check(f.calls[2]and f.calls[2][1]=='delete'and f.calls[2][2]=='Short take'and #f.rows==1,'Take-list Delete removes the selected take, not the playing one')
+f=fixture();f.rows={take('Take 1',0,true)};f.recording=true;f.frame()
+f.mouse(540,579,true);f.mouse(540,579,false)
+check(#f.calls==0 and #f.rows==1,'Take-list deletion is disabled during recording')
+f=fixture();f.rows={take('Old take',0,true)};f.frame();f.recording=true;f.frame()
+f.rows={take('Old take',0,false),take('New take',1,true)};f.recording=false;f.frame()
+f.mouse(540,579,true);f.mouse(540,579,false)
+check(f.calls[1]and f.calls[1][2]=='New take','After Stop the new pass becomes the selected take for review or deletion')
 print(passed..' panel interaction checks passed.')

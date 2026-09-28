@@ -60,13 +60,19 @@ Existing recording, comping and tuner tools work without the mixing worker.
 
 ### Visual song timeline
 
-Open **Song timeline** at the upper right of Solo Studio. The horizontal ruler shows bars; colored blocks are song sections. The gold line is the cursor/playhead. **Takes** returns to take review, tempo, and metronome controls; **Mix** opens the mixing workspace.
+Open **Timeline** at the upper right of Solo Studio. The horizontal ruler shows bars; colored blocks are song sections. The gold line is the cursor/playhead. **Takes** returns to take review, tempo, and metronome controls; **Mix** opens the mixing workspace.
 
 - **Create visually:** drag across empty timeline space from the desired start to the desired end. A preview shows the bounds and duration. Releasing creates and selects the section; click its name below to rename it.
 - **Create with an exact length:** click **New section...**, enter a name, start bar, and length in bars. Example: `Verse`, start `9`, length `8` ends at bar `17`.
 - **Adjust:** drag either edge to resize, or drag the center to move a section. A shared edge adjusts both touching sections. Overlapping moves and boundaries that would erase a neighboring section are rejected. Audio stays in place.
 - **Set exact bounds:** select a block and click **Start**, **End**, or **Length** below it. Start/end accept a whole bar or `bar.beat.hundredths`, such as `9.2.00`. Length accepts whole bars. The end is exclusive: start 1, end 9 is 8 bars.
 - **Navigate:** click the ruler to position the cursor. Use **+ / -** to zoom, **< / >** or the mouse wheel over the timeline to pan, and **Fit song** to see the arrangement. **Snap: bars** aligns dragged edits to bars; switch it off for precise times. **Escape** cancels an active drag.
+
+The selected recording set’s takes appear in lanes directly under the sections, on the same ruler. One lane represents one performance across the set’s microphones. Clips show their actual position and length, including partial takes and gaps; changing the selected section does not hide other takes. The ranges come from the first track in the set, so keep microphone lanes aligned. A growing red pass shows recording progress, and the kept take is selected after Stop.
+
+Click a take to select it without changing playback. Its start, end, duration, and note appear below the lanes. **Audition** switches all microphones together; **Favorite**, **Take note**, **Rename**, and **Keep passage** are available here too. Use the mouse wheel over the lanes or **Up / Down** to browse more takes. Zoom and pan apply to sections and clips together. Audition and comping still require the take to cover the selected passage across every microphone; partial takes remain selectable for notes and deletion.
+
+**Delete take** in either Timeline or Takes removes the entire selected lane’s audio items across the recording set, including parts outside the selected section. Source audio files stay on disk. **Cmd+Z in REAPER’s arrangement** restores the whole operation, including notes and favorites. Separate comp copies stay intact when their source take is removed. Empty native lanes remain in REAPER to preserve microphone and comp alignment, but disappear from Solo Studio’s take list. Deleting the playing take leaves that lane silent until you audition another take. Deletion is disabled during recording.
 
 ### Build a song from your scratch take
 
@@ -123,7 +129,7 @@ The setup was checked inside REAPER: all nine drum input assignments, monitoring
 
 ## Review and comp
 
-- Click a take to audition its matching lanes across the complete recording set. Previous/Next also switch the complete set.
+- Click a take to select it, then **Audition** to hear its matching lanes across the complete recording set. Previous/Next also switch the complete set. **Delete take** removes the whole pass across the set; Cmd+Z in REAPER restores it.
 - **Favorite**, **Take note**, and **Passage note** help preserve your decisions. Passage notes belong to the exact selected time range. Save the project to persist them.
 - **Keep passage** copies the selected time range into REAPER's native comp lane on every microphone. It requires playback to be stopped. Later selections add to that comp. Original source items are preserved.
 - In REAPER's arrangement, use **Cmd+Z** to undo comp edits. Native lane controls remain available for detailed edits and crossfades.

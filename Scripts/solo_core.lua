@@ -185,6 +185,41 @@ function M.lanes()
   return rows
 end
 function M.row_for_lane(lane) for _,row in ipairs(M.lanes()) do if row.lane==lane then return row end end end
+-- Remove project items, never their source files. Keep empty native lanes so
+-- source/comp lane indices remain aligned across microphones.
+function M.delete_take(lane,key)
+  M.stopped()
+  local tracks=M.require_tracks();local row=M.row_for_lane(lane)
+  assert(row and row.key==key,'This take changed. Select it again before deleting.')
+  local count=R.GetMediaTrackInfo_Value(tracks[1],'I_NUMFIXEDLANES')
+  local saved={}
+  for _,tr in ipairs(tracks) do
+    assert(R.GetMediaTrackInfo_Value(tr,'I_NUMFIXEDLANES')==count,'The microphone tracks have different lane counts. Align their take lanes before deleting.')
+    local ok,chunk=R.GetTrackStateChunk(tr,'',false)
+    assert(ok,'Could not prepare an undoable deletion for '..M.track_name(tr)..'.')
+    saved[#saved+1]={track=tr,chunk=chunk,items=M.lane_items(tr,lane)}
+  end
+  M.edit('delete '..row.name..' across recording set',function()
+    local ok,err=xpcall(function()
+      for _,snapshot in ipairs(saved) do
+        local tr=snapshot.track;local removed={}
+        for _,it in ipairs(snapshot.items) do
+          removed[itemstr(it,'GUID')]=true
+          assert(R.DeleteTrackMediaItem(tr,it),'REAPER could not remove every item in the take.')
+        end
+        assert(#M.lane_items(tr,lane)==0,'REAPER left items in the deleted take.')
+        local comp={}
+        for _,id in ipairs(split(str(tr,'P_EXT:SoloStudioComp'))) do if not removed[id] then comp[#comp+1]=id end end
+        R.GetSetMediaTrackInfo_String(tr,'P_EXT:SoloStudioComp',table.concat(comp,'\n'),true)
+      end
+    end,debug.traceback)
+    if not ok then
+      local restored=true
+      for _,snapshot in ipairs(saved) do if not R.SetTrackStateChunk(snapshot.track,snapshot.chunk,false) then restored=false end end
+      error(restored and (err..'\nThe original tracks were restored.') or 'Deletion failed and restoration was incomplete. Use REAPER Undo immediately.',0)
+    end
+  end)
+end
 function M.validate_lane(tracks,lane,range)
   local counts={}
   for _,tr in ipairs(tracks) do

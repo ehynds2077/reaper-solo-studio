@@ -3,9 +3,10 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local total=0
 local function check(ok,label)assert(ok,label);total=total+1;print('PASS: '..label)end
 local function fixture()
- local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={}}
+ local f={regions={},state={},edits=0,project='a',cursor=0,recording=false,errors={},buttons={},takes={},draws={},active_set='drums'}
  local serial=0
  reaper={
+  GetMediaItemInfo_Value=function(it,key)return key=='D_POSITION' and it.s or it.e-it.s end,
   EnumProjects=function()return f.project end,GetProjectLength=function()return 32 end,
   GetPlayState=function()return f.recording and 4 or 0 end,GetCursorPosition=function()return f.cursor end,
   SetEditCurPos2=function(_,p)f.cursor=p end,Main_OnCommand=function()end,GetSetRepeat=function()end,
@@ -22,21 +23,23 @@ local function fixture()
   ColorToNative=function()return 0 end,
   GetUserInputs=function()return true,f.answer end,
  }
- local M={get=function(k)return f.state[k]or''end,put=function(k,v)f.state[k]=v end,
+ local M={tracks=function()return {'kick','snare'}end,get=function(k)if k=='active' then return f.active_set end;return f.state[k]or''end,put=function(k,v)f.state[k]=v end,
   stopped=function()assert(not f.recording,'Recording')end,
   edit=function(_,fn)assert(not f.recording);f.edits=f.edits+1;fn()end}
  local S=dofile(root..'/Scripts/solo_sections.lua')(M)
  gfx={mouse_x=0,mouse_y=0}
- for _,fn in ipairs({'rect','line'})do gfx[fn]=function()end end
+ for _,fn in ipairs({'rect','line'})do gfx[fn]=function(...)f.draws[#f.draws+1]={kind=fn,args={...}}end end
  local ui={colors={muted={},text={},line={},blue={},record={},gold={}},text=function()end,color=function()end,
   button=function(label,_,_,_,_,fn,_,enabled)if enabled~=false then f.buttons[label]=fn end end,
+  rows=function()return f.takes end,chosen=function()return f.chosen end,
+  select=function(row)f.chosen=row end,take_action=function(action)f.action=action end,
   changed=function(message)f.message=message end,
   run=function(fn)local ok,err=pcall(fn);if not ok then f.errors[#f.errors+1]=err end end}
  local V=dofile(root..'/Scripts/solo_timeline.lua')(M,S,ui)
  f.S,f.V=S,V
- function f.draw()f.buttons={};V.draw(24,215,1152,430,f.recording)end
+ function f.draw()f.buttons={};f.draws={};V.draw(24,215,1152,430,f.recording)end
  function f.mouse(t,down,pressed,y)
-  gfx.mouse_x=24+t/36*1152;gfx.mouse_y=y or 395
+  gfx.mouse_x=212+t/36*964;gfx.mouse_y=y or 365
   V.mouse(down,pressed or false,f.recording)
  end
  f.draw();return f
@@ -76,4 +79,38 @@ check(#f.regions==1 and #f.errors==1,'External region changes invalidate a pendi
 f=fixture();a=f.S.create(0,8,'Verse');b=f.S.create(12,16,'Chorus');f.draw()
 f.mouse(10,true,true);f.mouse(20,false)
 check(#f.regions==3 and f.S.active().s==10 and f.S.active().e==12,'Drawing through a neighboring section stops at the available gap')
+local function take(key,s,e)
+ return {key=key,lane=0,name=key,items={{s=s,e=e}},note='',favorite=false,playing=false}
+end
+f=fixture();f.S.create(0,8,'Verse');f.S.create(8,16,'Chorus');f.S.select(f.S.list()[1].key)
+f.takes={take('Short pass',2,6),take('Later pass',12,14)};f.draw()
+check(f.buttons.Audition==nil,'Take actions disabled until a take is chosen')
+f.mouse(4,true,true,417)
+check(f.chosen==f.takes[1] and not f.action and f.S.active().s==0,'Clicking a partial take selects without auditioning or changing section')
+f.draw();f.buttons['Delete take']()
+check(f.action=='delete','Timeline delete control routes to the selected take')
+local aligned=false
+for _,shape in ipairs(f.draws)do local a=shape.args
+ if shape.kind=='rect' and a[2]==407 and a[4]==34 then
+  aligned=math.abs(a[1]-(212+2/36*964))<1e-7 and math.abs(a[3]-4/36*964)<1e-7
+ end
+end
+check(aligned,'Take start and duration use the same ruler coordinates as song sections')
+f.mouse(13,true,true,463)
+check(f.chosen==f.takes[2],'Takes outside the selected section remain visible and selectable')
+f.takes[2].items={{s=8,e=10},{s=12,e=14}};f.draw()
+local clips=0
+for _,shape in ipairs(f.draws)do if shape.kind=='rect' and shape.args[2]==453 and shape.args[4]==34 and shape.args[5]==1 then clips=clips+1 end end
+check(clips==2,'Split takes draw separate clips with their real gap')
+f=fixture();for i=1,9 do f.takes[i]=take('Take '..i,0,8)end;f.draw()
+f.mouse(2,false,false,417);f.V.wheel(-1);f.draw();f.mouse(2,true,true,417)
+check(f.chosen==f.takes[2],'Wheel over lanes scrolls takes instead of panning the song')
+f.active_set='guitar';f.chosen=nil;f.takes={take('Guitar',4,8)};f.draw();f.mouse(5,true,true,417)
+check(f.chosen==f.takes[1],'Switching instruments resets lane scroll and displays only that set')
+f.recording=true;f.draw();f.chosen=nil;f.mouse(5,true,true,417)
+check(f.chosen==nil and f.buttons['Delete take']==nil,'Recording locks take selection and deletion')
+f=fixture();f.takes={take('Outside',40,44)};f.draw()
+local outside=false
+for _,shape in ipairs(f.draws)do if shape.kind=='rect' and shape.args[4]==34 then outside=true end end
+check(not outside,'Clips outside the visible time range are clipped from the drawing')
 print(total..' visual timeline checks passed.')

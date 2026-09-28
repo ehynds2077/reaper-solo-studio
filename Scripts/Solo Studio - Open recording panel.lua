@@ -7,6 +7,7 @@ local C={bg={0.16,0.18,0.21},surface={0.21,0.24,0.28},line={0.32,0.36,0.40},text
 local current_key,mouse_down,scroll=nil,false,0
 local status='Drag in the song timeline to add a section, or use New section... for an exact start and length.'
 local lastproject,rows,tracks,lastrefresh=nil,{},{},0
+local all_rows,lastset,was_recording={},nil,false
 local buttons={}
 local sliders,drag={},nil
 local section_scroll,sections=0,{}
@@ -24,9 +25,10 @@ local function run(fn,msg)
  lastrefresh=0
 end
 local function chosen()
- for _,row in ipairs(rows) do if row.key==current_key then return row end end
- for _,row in ipairs(rows) do if row.playing then return row end end
- return rows[1]
+ local candidates=view=='timeline' and all_rows or rows
+ for _,row in ipairs(candidates) do if row.key==current_key then return row end end
+ for _,row in ipairs(candidates) do if row.playing then return row end end
+ return candidates[1]
 end
 local function with_row(fn)
  local row=chosen();if not row then error('Record or import a take first.',0) end;fn(row)
@@ -105,11 +107,24 @@ local function rename()
   if ok and name~='' then M.edit('rename take',function() for _,tr in ipairs(M.require_tracks()) do R.GetSetMediaTrackInfo_String(tr,'P_LANENAME:'..row.lane,name,true) end end) end
  end)
 end
+local function take_action(action)
+ if action=='note' then annotate(false);return end
+ if action=='rename' then rename();return end
+ with_row(function(row)
+  if action=='audition' then M.audition(row.lane);status='Auditioning '..row.name..' across the recording set.'
+  elseif action=='favorite' then M.favorite(row.lane)
+  elseif action=='comp' then M.comp(row.lane);status='Passage copied to the native comp lane. Cmd+Z undoes this edit.'
+  elseif action=='delete' then
+   M.delete_take(row.lane,row.key);current_key=nil
+   status='Deleted '..row.name..' across the recording set. Audio files kept. Cmd+Z in REAPER restores it.'
+  end
+ end)
+end
 local function play()
  if R.GetPlayState()~=0 then M.stop() else R.OnPlayButton() end
 end
 local function select_step(d)
- M.step(d);rows=S.filter_takes(M.lanes());for _,row in ipairs(rows) do if row.playing then current_key=row.key end end
+ M.step(d);all_rows=M.lanes();rows=S.filter_takes(all_rows);for _,row in ipairs(rows) do if row.playing then current_key=row.key end end
 end
 local function monitoring()
  local ts=M.require_tracks();local on=R.GetMediaTrackInfo_Value(ts[1],'I_RECMON')==0
@@ -141,11 +156,25 @@ local function section_sidebar(x,w,recording)
  text('Click a section to record or comp it.',x,gfx.h-94,3,C.muted)
 end
 V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=color,run=run,
- changed=function(message)status=message;lastrefresh=0;current_key=nil;scroll=0 end})
+ changed=function(message)status=message;lastrefresh=0;current_key=nil;scroll=0 end,
+ rows=function()return all_rows end,chosen=chosen,take_action=take_action,
+ select=function(row)current_key=row.key;status='Selected '..row.name..'. Audition to listen, or Delete take to remove the whole pass.' end})
 local function refresh()
  local proj=R.EnumProjects(-1,'')
  if proj~=lastproject then S.recover_leadin();current_key=nil;scroll=0;section_scroll=0;drag=nil;V.reset();lastproject=proj;lastrefresh=0 end
- if R.time_precise()-lastrefresh>0.25 then tracks=M.tracks();rows=S.filter_takes(M.lanes());sections=S.list();lastrefresh=R.time_precise() end
+ local recording=R.GetPlayState()&4~=0
+ if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
+  local set=M.get('active');local previous={}
+  if set==lastset then for _,row in ipairs(all_rows)do previous[row.key]=true end end
+  tracks=M.tracks();all_rows=M.lanes();rows=S.filter_takes(all_rows);sections=S.list()
+  if was_recording and not recording and set==lastset then
+   for _,row in ipairs(all_rows)do if not previous[row.key] then current_key=row.key end end
+   -- REAPER may expose the growing lane before Stop, so prefer its playing pass.
+   if not current_key or previous[current_key] then for _,row in ipairs(all_rows)do if row.playing then current_key=row.key end end end
+  end
+  lastset=set;lastrefresh=R.time_precise()
+ end
+ was_recording=recording
 end
 gfx.init('Solo Studio | Record & review',1200,730,tonumber(R.GetExtState(M.ns,'dock')) or 0)
 gfx.setfont(1,'Helvetica',16);gfx.setfont(2,'Helvetica',28,98);gfx.setfont(3,'Helvetica',13);gfx.setfont(4,'Helvetica',19,98)
@@ -237,6 +266,7 @@ local function frame()
    S.manual();R.Main_OnCommand(40020,0);status='Time selection and loop range cleared.'
   end,nil,not recording)
   text(S.mode()=='section' and 'Section takes' or 'Takes',24,381,4)
+  button('Audition',w-322,371,94,34,function()take_action('audition')end,C.blue,not recording and chosen()~=nil)
   button('Previous',w-220,371,92,34,function()select_step(-1) end)
   button('Next',w-120,371,96,34,function()select_step(1) end)
   local table_y=419; local table_end=gfx.h-180;local visible=math.max(1,math.floor((table_end-table_y)/42))
@@ -252,8 +282,8 @@ local function frame()
     local name=row.name:match('^%d+$') and 'Take '..row.name or row.name
     text(name,39,y+10,1,C.text,175)
     text(row.favorite and 'Favorite' or '',220,y+11,3,C.gold)
-    text(row.note~='' and row.note or 'Click to audition all tracks in this set',315,y+11,3,row.note~='' and C.text or C.muted,w-350)
-    buttons[#buttons+1]={x=24,y=y,w=w-48,h=38,fn=function()M.audition(row.lane);current_key=row.key;status='Auditioning '..name..' across the recording set.' end}
+    text(row.note~='' and row.note or 'Select, then Audition to hear this take',315,y+11,3,row.note~='' and C.text or C.muted,w-350)
+    if not recording then buttons[#buttons+1]={x=24,y=y,w=w-48,h=38,fn=function()current_key=row.key;status='Selected '..name..'. Audition to listen, or Delete take to remove the whole pass.' end}end
    end
   end
   local fy=gfx.h-167
@@ -261,9 +291,10 @@ local function frame()
   button('Take note',132,fy,110,35,function()annotate(false) end)
   button('Passage note',250,fy,128,35,function()annotate(true) end)
   button('Rename',386,fy,89,35,rename)
+  button('Delete take',483,fy,118,35,function()take_action('delete')end,C.record,not recording and chosen()~=nil)
   button('Keep passage',w-207,fy,183,35,function()with_row(function(row)M.comp(row.lane);status='Passage copied to the native comp lane. Cmd+Z undoes this edit.' end) end,C.blue)
   local cr=chosen();local sn=cr and e>s and M.section_note(cr.lane,s,e) or ''
-  text(sn~='' and ('Passage note: '..sn) or 'Keep passage copies the selected time range across every microphone.',25,fy+46,3,C.muted,w-50)
+  text(sn~='' and ('Passage note: '..sn) or 'Delete removes the whole take across this set. Audio files stay on disk. Cmd+Z in REAPER restores it.',25,fy+46,3,C.muted,w-50)
   section_sidebar(w+12,264,recording)
   end
   color(C.line);gfx.line(24,gfx.h-78,gfx.w-24,gfx.h-78)
