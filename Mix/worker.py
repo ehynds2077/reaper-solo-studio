@@ -20,6 +20,8 @@ os.environ['PATH'] = '/opt/homebrew/bin:/usr/local/bin:' + os.environ.get('PATH'
 ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('SOLO_STUDIO_DATA', str(Path.home() / 'Library/Application Support/Solo Studio/Mix')))
 API = 'https://openrouter.ai/api/v1'
+DEFAULT_MODEL = 'openai/gpt-6-luna'
+MODEL_CATALOG = API + '/models?supported_parameters=tools&sort=intelligence-high-to-low'
 sys.path.insert(0, str(ROOT.parent / 'ReferenceLab'))
 
 
@@ -42,6 +44,71 @@ def write(path, value):
 
 def key():
     return os.environ.get('OPENROUTER_API_KEY') or read(DATA / 'credentials.json', {}).get('api_key', '')
+
+
+def model_shortlist(data, now=None):
+    """Recent leaders in catalog order, with provider diversity and Luna pinned.
+
+    The API sorts by its intelligence index. This is a convenient shortlist,
+    not a claim that a benchmark predicts mixing quality. Batch routes cannot
+    serve this interactive loop, so exclude routing variants and duplicates.
+    """
+    now = time.time() if now is None else now
+    eligible = []
+    seen = set()
+    for row in data.get('data', []):
+        ident = row.get('id', '')
+        if not isinstance(ident, str) or '/' not in ident or ':' in ident or ident in seen:
+            continue
+        if not {'tools', 'tool_choice'} <= set(row.get('supported_parameters') or []):
+            continue
+        if 'text' not in row.get('architecture', {}).get('output_modalities', ['text']):
+            continue
+        created = row.get('created', 0)
+        if not isinstance(created, (int, float)) or created > now + 86400:
+            continue
+        if ident != DEFAULT_MODEL and created < now - 180 * 86400:
+            continue
+        seen.add(ident)
+        pricing = row.get('pricing') or {}
+        def price(key):
+            try:
+                value = float(pricing[key]) * 1_000_000
+                return round(value, 6) if math.isfinite(value) and value >= 0 else None
+            except (KeyError, TypeError, ValueError):
+                return None
+        eligible.append({'id': ident, 'name': row.get('name') or ident,
+                         'created': created, 'input_per_million': price('prompt'),
+                         'output_per_million': price('completion')})
+    result = [r for r in eligible if r['id'] == DEFAULT_MODEL]
+    counts = {'openai': len(result)}
+    for row in eligible:
+        provider = row['id'].split('/')[0]
+        limit = 3 if provider == 'openai' else (2 if provider == 'anthropic' else 1)
+        if row['id'] == DEFAULT_MODEL or counts.get(provider, 0) >= limit:
+            continue
+        result.append(row)
+        counts[provider] = counts.get(provider, 0) + 1
+        if len(result) >= 12:
+            break
+    if not result:
+        raise ValueError('No recent tool-capable models were returned')
+    return result
+
+
+def refresh_models(path):
+    previous = read(path, {})
+    previous.pop('pending', None)
+    try:
+        # Public catalog request: no API key, project data or paid generation.
+        with urllib.request.urlopen(MODEL_CATALOG, timeout=25) as response:
+            choices = model_shortlist(json.load(response))
+        write(path, {'models': choices, 'updated': time.time(), 'source': MODEL_CATALOG})
+    except Exception:
+        # Preserve usable cached choices if offline; never replace them with [] or
+        # silently change the user's selected model.
+        previous['error'] = 'Model refresh failed. Using the saved list; try Refresh models again.'
+        write(path, previous)
 
 
 def request(route, payload=None):
@@ -281,7 +348,7 @@ class Session:
                 if self.cancelled():
                     raise RuntimeError('Session cancelled')
                 self.publish('Waiting for OpenRouter · round %d / %d…' % (turn + 1, rounds))
-                response = self.api('/chat/completions', {'model': self.config.get('model', 'anthropic/claude-sonnet-4.5'),
+                response = self.api('/chat/completions', {'model': self.config.get('model', DEFAULT_MODEL),
                     'messages': messages, 'tools': TOOLS, 'tool_choice': 'auto',
                     'max_tokens': 2200,
                     'provider': {'require_parameters': True, 'data_collection': 'deny'}})
@@ -369,8 +436,11 @@ def main():
     parser.add_argument('--check', type=Path)
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--result', type=Path)
+    parser.add_argument('--models', type=Path)
     args = parser.parse_args()
-    if args.session:
+    if args.models:
+        refresh_models(args.models)
+    elif args.session:
         Session(args.session).run()
     elif args.connect:
         try:

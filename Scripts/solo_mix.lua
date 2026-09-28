@@ -1,6 +1,7 @@
 -- Native Mix tab; network and analysis run in a separate Python process.
 local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 local B=dofile(dir..'/solo_mix_bridge.lua');local J=B.json;local R=reaper
+local Models=dofile(dir..'/solo_models.lua')
 return function(M,ui)
  local X={};local text,button,color,C=ui.text,ui.button,ui.color,ui.colors
  local data=(os.getenv('HOME')or '')..'/Library/Application Support/Solo Studio/Mix'
@@ -15,14 +16,16 @@ return function(M,ui)
   local result=R.ExecProcess(command,-1);assert(result,'Could not start Python worker')
  end
  local function read(path,default)local ok,value=pcall(J.read,path);return ok and value or default end
+ local models=Models.new(J,R,data,launch)
  local config=read(data..'/settings.json',{})
- config.model=config.model or 'anthropic/claude-sonnet-4.5'
+ config.model=config.model or Models.default
  config.direction=config.direction or 'Natural indie rock. Clear vocals, punchy drums, preserve dynamics and performance.'
  config.rounds=config.rounds or 8;config.stop_after_usd=config.stop_after_usd or 2
  local lib=read(data..'/library.json',{references=J.array(),default=''})
  local selected=config.references or (lib.default~=''and J.array({lib.default})or J.array())
  local phase='intro';local session;local state;local foreign_session=false;local status='Choose a reference and direction, then create a candidate mix.'
  local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
+ local model_x,model_y=24,215
  local old=R.GetExtState(M.ns,'mix_session')
  if old~=''then
   session=B.recover(old)
@@ -62,6 +65,7 @@ return function(M,ui)
  end
  function X.poll()
   if R.time_precise()-lastpoll<.2 then return end;lastpoll=R.time_precise()
+  models.poll()
   if checking then local c=read(data..'/connection.json');if c then checking=false;status=c.message end end
   if importing then local v=read(data..'/import-result.json');if v then importing=false;status=v.error or ('Reference saved: '..v.title);lib=read(data..'/library.json',lib)end end
   if foreign_session then
@@ -121,14 +125,18 @@ return function(M,ui)
   end
  end
  local function advanced()
-  local ok,value=R.GetUserInputs('OpenRouter settings',3,'Model ID,Maximum model rounds (1-20),Stop after reported cost USD,extrawidth=220',config.model..','..config.rounds..','..config.stop_after_usd)
+  local ok,value=R.GetUserInputs('OpenRouter settings',2,'Maximum model rounds (1-20),Stop after reported cost USD,extrawidth=220',config.rounds..','..config.stop_after_usd)
   if ok then
-   local model,rounds,cost=value:match('^([^,]+),([^,]+),([^,]+)$');rounds=tonumber(rounds);cost=tonumber(cost)
-   assert(model and model:match('^[%w_%.%-]+/[%w_%.:%-]+$'),'Enter an OpenRouter model ID with tool support.')
+   local rounds,cost=value:match('^([^,]+),([^,]+)$');rounds=tonumber(rounds);cost=tonumber(cost)
    assert(rounds and rounds%1==0 and rounds>=1 and rounds<=20,'Rounds must be 1–20.')
    assert(cost and cost>0 and cost<=20,'Reported cost threshold must be above 0 and at most $20.')
-   config.model=model;config.rounds=rounds;config.stop_after_usd=cost;save_config()
+   config.rounds=rounds;config.stop_after_usd=cost;save_config()
   end
+ end
+ local function choose_model()
+  gfx.x=model_x;gfx.y=model_y
+  local id=models.menu(config.model)
+  if id then config.model=id;save_config();status='Mix model: '..models.selected(id).name end
  end
  local function wrap(value,width)
   gfx.setfont(3);local lines={};local line=''
@@ -153,6 +161,7 @@ return function(M,ui)
    text('Enter: configure mix  /  Local analysis + OpenRouter decisions',x,y+249,3,C.muted)
    text('Your audio stays on this Mac. Track names, settings, direction and analysis go to your chosen provider.',x,y+275,3,C.muted,w)
   elseif phase=='setup'then
+   models.ensure()
    local c=connection();local right=x+w-350
    text('Reference',x,y+57,4)
    local names={};for _,row in ipairs(lib.references)do for _,id in ipairs(selected)do if row.id==id then names[#names+1]=row.title end end end
@@ -171,10 +180,15 @@ return function(M,ui)
    text(string.format('%.1f – %.1f sec',range[1],range[2]),x+405,y+244,3,C.muted)
    text('OpenRouter',right,y+57,4)
    text(checking and 'Checking connection…'or (c.connected and 'Connected · analysis ready'or 'Connection required'),right,y+88,3,c.connected and C.blue or C.gold)
-   button('Connect / change key',right,y+116,210,33,function()R.ExecProcess('/usr/bin/open '..quote(worker_dir..'/Connect OpenRouter.command'),-1);status='Enter the key in Terminal, then Refresh connection here.'end)
-   button('Refresh connection',right,y+160,210,33,function()os.remove(data..'/connection.json');checking=true;launch({'--check',data..'/connection.json'})end,nil,not checking)
-   button('Advanced settings…',right,y+204,210,33,advanced)
-   text(config.model,right,y+250,3,C.muted,350)
+   button('Connect / change key',right,y+116,178,33,function()R.ExecProcess('/usr/bin/open '..quote(worker_dir..'/Connect OpenRouter.command'),-1);status='Enter the key in Terminal, then Refresh connection here.'end)
+   button('Refresh connection',right+186,y+116,164,33,function()os.remove(data..'/connection.json');checking=true;launch({'--check',data..'/connection.json'})end,nil,not checking)
+   text('AI model',right,y+163,4)
+   model_x,model_y=right,y+228
+   button(models.selected(config.model).name..'  ▾',right,y+193,350,35,choose_model)
+   text(models.price(config.model),right,y+240,3,C.muted,350)
+   button(models.busy and 'Refreshing…'or 'Refresh models',right,y+272,167,30,models.refresh,nil,not models.busy)
+   button('Advanced settings…',right+175,y+272,175,30,advanced)
+   if models.message()then text('Offline list · retry Refresh models',right,y+315,3,C.gold,350)end
    text('Usage billed by OpenRouter. Cost stop is checked after each response.',x,y+301,3,C.muted,w)
    button('Create candidate mix',x,y+333,215,40,start,C.blue,c.connected and not importing and R.GetPlayState()==0)
    button('Back',x+227,y+333,87,40,function()phase='intro'end)
@@ -250,6 +264,7 @@ return function(M,ui)
  end
  function X.key(ch)
   if ch==13 and phase=='intro'then phase='setup';return true end
+  if phase=='setup'and (ch==111 or ch==79)then ui.run(choose_model);return true end
   return false
  end
  function X.wheel(delta)chat_scroll=math.max(0,chat_scroll+delta*3)end

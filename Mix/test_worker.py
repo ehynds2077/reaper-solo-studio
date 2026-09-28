@@ -87,6 +87,7 @@ class WorkerTests(unittest.TestCase):
             self.assertEqual(len(session.measurements),2)
             self.assertIn('Unknown tool', requests[1]['messages'][3]['content'])
             self.assertEqual(len(requests[1]['tools']),len(worker.TOOLS))
+            self.assertEqual(requests[0]['model'], 'openai/gpt-6-luna')
             self.assertEqual(worker.read(path/'status.json')['state'],'review')
 
     def test_peak_warning_and_provider_failure(self):
@@ -102,6 +103,36 @@ class WorkerTests(unittest.TestCase):
                 session.measure=lambda *a: {'loudness':{'integrated_lufs':-14,'true_peak_dbtp':peak}}
                 with patch.object(worker,'library',return_value={'references':[]}):
                     self.assertEqual(session.run(), 'error' if should_fail else 'review_warning')
+
+    def test_model_catalog_filters_routes_and_pins_default(self):
+        now=1_790_000_000
+        def model(ident, age=0, tools=True):
+            return {'id':ident,'name':ident,'created':now-age*86400,
+                    'supported_parameters':['tools','tool_choice'] if tools else [],
+                    'pricing':{'prompt':'0.000001','completion':'0.000005'}}
+        rows=[model('anthropic/top'),model('openai/gpt-6-astra'),
+              model('openai/gpt-6-luna:batch'),model('old/model',181),
+              model('no/tools',tools=False),model(worker.DEFAULT_MODEL),
+              model(worker.DEFAULT_MODEL),model('openai/gpt-6-sol'),model('openai/older')]
+        result=worker.model_shortlist({'data':rows},now)
+        self.assertEqual([r['id'] for r in result],
+                         [worker.DEFAULT_MODEL,'anthropic/top','openai/gpt-6-astra','openai/gpt-6-sol'])
+        self.assertEqual(result[0]['input_per_million'],1)
+        self.assertEqual(result[0]['output_per_million'],5)
+
+    def test_model_refresh_failure_preserves_cache_and_finishes(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path=Path(temp)/'models.json'
+            saved={'models':[{'id':worker.DEFAULT_MODEL,'name':'GPT-6 Luna'}],
+                   'updated':123,'pending':True}
+            worker.write(path,saved)
+            with patch.object(worker.urllib.request,'urlopen',side_effect=OSError('offline')):
+                worker.refresh_models(path)
+            result=worker.read(path)
+            self.assertEqual(result['models'],saved['models'])
+            self.assertEqual(result['updated'],123)
+            self.assertNotIn('pending',result)
+            self.assertIn('error',result)
 
 
 if __name__=='__main__':

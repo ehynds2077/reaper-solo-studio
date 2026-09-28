@@ -42,7 +42,7 @@ local function button(label,x,y,w,h,fn,tint,enabled)
  if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn} end
 end
 local function mix()
- if not X then X=dofile(dir..'/solo_mix.lua')(M,{colors=C,text=text,button=button,color=color}) end
+ if not X then X=dofile(dir..'/solo_mix.lua')(M,{colors=C,text=text,button=button,color=color,run=run}) end
  return X
 end
 local function slider(id,x,y,w,value,fn,enabled)

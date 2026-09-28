@@ -32,8 +32,21 @@ is a protected local file, not encrypted Keychain storage. An inherited
 Stop transport and clear track solos. Choose up to two saved references, or
 **Analyze new…** to measure another local recording. Choose a time selection or
 full-song scope (3 seconds to 10 minutes). Enter mix direction if desired.
-**Advanced settings** selects an OpenRouter model ID supporting tools, the model
-round limit, and a stop threshold based on reported usage cost. That threshold
+The **AI model** dropdown defaults to **GPT-6 Luna** (`openai/gpt-6-luna`). It
+shows a dozen recent tool-capable models, using OpenRouter's intelligence-sorted
+catalog with provider diversity. Only releases from the last 180 days are listed
+(the default stays eligible); batch routes are excluded. This is a convenient
+shortlist, not a ranking of audio-mixing quality. Catalog prices are shown per
+million input/output tokens; provider, caching and long-context rates can differ.
+The list refreshes in the background once a day when setup is opened. **Refresh
+models** updates it immediately without a key or a paid model call. Offline, the
+last successful list remains available. Selecting a model saves it for future
+sessions; refreshing never silently changes that selection. **Enter model ID…**
+at the end of the dropdown supports models outside the shortlist. Press **O** in
+mix setup to open the dropdown from the keyboard.
+
+**Advanced settings** controls the model round limit and a stop threshold based
+on reported usage cost. That threshold
 is checked *after* each response, so it is not a guaranteed billing cap.
 
 **Create candidate mix** measures the original, runs the tool loop, and measures
