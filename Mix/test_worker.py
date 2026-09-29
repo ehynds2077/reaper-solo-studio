@@ -11,6 +11,11 @@ PROJECT = {'tracks': [], 'capabilities': {'mix_tools_version': 3}}
 
 
 class WorkerTests(unittest.TestCase):
+    def setUp(self):
+        # Ordinary protocol tests never look up model capabilities on the network.
+        support = patch.object(worker, 'image_support', return_value=False)
+        support.start(); self.addCleanup(support.stop)
+
     def test_diagnostic_window_uses_energy_and_absolute_project_time(self):
         profile = {'envelope_1s': [
             {'seconds': i, 'rms_dbfs': -12 if 60 <= i < 90 else None}

@@ -15,6 +15,12 @@ local ok,err=xpcall(function()
  local item=R.AddMediaItemToTrack(tr);local take=R.AddTakeToMediaItem(item)
  local source=assert(R.PCM_Source_CreateFromFile(dir..'/mix-tone.wav'))
  R.SetMediaItemTake_Source(take,source);R.SetMediaItemInfo_Value(item,'D_LENGTH',8)
+ -- Synthetic fixtures do not pass through REAPER's normal import/peak builder.
+ if R.PCM_Source_BuildPeaks(source,0)~=0 then
+  local complete=false
+  for i=1,1000 do if R.PCM_Source_BuildPeaks(source,1)==0 then complete=true;break end end
+  R.PCM_Source_BuildPeaks(source,2);assert(complete,'Synthetic peak build did not finish')
+ end
  R.SetMediaItemInfo_Value(item,'D_FADEINLEN',0);R.SetMediaItemInfo_Value(item,'D_FADEOUTLEN',0)
  local path=dir..'/Mix test data/'..R.genGuid():gsub('[^%w]','');R.RecursiveCreateDirectory(path,0)
  -- Inspect the actual installed limiter before validating its physical-unit adapter.
@@ -138,6 +144,21 @@ local ok,err=xpcall(function()
  log:write(string.format('BENCHMARK 274s render %.3fs; 30s render %.3fs; repeated render skipped\n',full.render_seconds,short.render_seconds))
  B.revert(perf)
  R.SetMediaItemInfo_Value(item,'B_LOOPSRC',loops);R.SetMediaItemInfo_Value(item,'D_LENGTH',8)
+ -- Source overview uses the peak cache at absolute project times, with no render.
+ local overview=dofile(root..'/Scripts/solo_mix_visuals.lua')
+ R.SetMediaItemInfo_Value(item,'D_POSITION',40)
+ local before=R.GetProjectStateChangeCount(project)
+ local source_view=overview.overview(project,{0,60},{start_track=0,track_count=16})
+ local row=source_view.tracks[1];local maximum=0
+ for _,peak in ipairs(row.peaks)do maximum=math.max(maximum,peak)end
+ J.write(dir..'/mix-source-overview.json',source_view)
+ log:write('PEAKS '..maximum..' '..tostring(row.clips[1]and row.clips[1].kind)..'\n');log:flush()
+ check(#row.clips==1 and row.clips[1].start_seconds==40,'Source overview places clips at absolute project times')
+ check(maximum>0 and row.clips[1].kind=='audio','Native source peak cache supplies waveform data at a nonzero item position')
+ check(R.GetProjectStateChangeCount(project)==before,'Source overview is read-only')
+ R.SetMediaItemInfo_Value(item,'B_MUTE',1)
+ check(#overview.overview(project,{0,60},{}).tracks[1].clips==0,'Muted clips are excluded from source overview')
+ R.SetMediaItemInfo_Value(item,'B_MUTE',0);R.SetMediaItemInfo_Value(item,'D_POSITION',0)
 end,debug.traceback)
 local function cleanup()
  -- Only the disposable test project is saved to avoid a close-tab save prompt.

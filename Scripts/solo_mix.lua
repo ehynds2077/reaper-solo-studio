@@ -21,6 +21,7 @@ return function(M,ui)
  config.model=config.model or Models.default
  config.direction=config.direction or 'Natural indie rock. Clear vocals, punchy drums, preserve dynamics and performance.'
  config.rounds=config.rounds or 8;config.stop_after_usd=config.stop_after_usd or 2
+ if config.visual_analysis==nil then config.visual_analysis=true end
  local lib=read(data..'/library.json',{references=J.array(),default=''})
  local selected=config.references or (lib.default~=''and J.array({lib.default})or J.array())
  local phase='intro';local session;local state;local foreign_session=false;local status='Choose a reference and direction, then create a candidate mix.'
@@ -122,7 +123,7 @@ return function(M,ui)
   local id=R.genGuid():gsub('[^%w]','');local path=data..'/sessions/'..id
   R.RecursiveCreateDirectory(path,0);session=B.begin(path,range);handled='';chat_scroll=0
   save_config();local job={model=config.model,direction=config.direction,rounds=config.rounds,
-   stop_after_usd=config.stop_after_usd,references=selected,bounds=range}
+   stop_after_usd=config.stop_after_usd,references=selected,bounds=range,visual_analysis=config.visual_analysis}
   J.write(path..'/config.json',job);R.SetExtState(M.ns,'mix_session',path,true)
   state={state='running',events=J.array(),measurements=J.array(),updated=os.time()};phase='session'
   local ok,err=pcall(launch,{'--session',path});if not ok then state.state='error';error(err)end
@@ -200,7 +201,7 @@ return function(M,ui)
    text('Compare the original and candidate before you keep any changes.',x,y+132,1,C.muted)
    button('Mix with AI',x,y+181,176,43,function()phase='setup'end,C.blue,not X.pending())
    text('Enter: configure mix  /  Local analysis + OpenRouter decisions',x,y+249,3,C.muted)
-   text('Your audio stays on this Mac. Track names, settings, direction and analysis go to your chosen provider.',x,y+275,3,C.muted,w)
+   text('Audio stays on this Mac. Track names, settings, direction, measurements and enabled analysis images go to your provider.',x,y+275,3,C.muted,w)
   elseif phase=='recovery'then
    text('Continue from your current mix',x,y+64,4)
    text('Tracks, levels, or effects changed after the last AI pass. Its comparison is now out of date.',x,y+103,1,C.muted,w)
@@ -242,6 +243,10 @@ return function(M,ui)
    text('Usage billed by OpenRouter. Cost stop is checked after each response.',x,y+301,3,C.muted,w)
    button('Create candidate mix',x,y+333,215,40,start,C.blue,c.connected and not importing and not X.pending()and R.GetPlayState()==0)
    button('Back',x+227,y+333,87,40,function()phase='intro'end)
+   button(config.visual_analysis and 'Visual analysis: on'or 'Visual analysis: off',x+326,y+333,196,40,function()
+    config.visual_analysis=not config.visual_analysis;save_config()
+    status=config.visual_analysis and 'Send measured charts when the selected model supports images.'or 'Use numerical measurements only.'
+   end,config.visual_analysis and C.blue or nil)
   else
    local busy=X.busy();local measurements=state and state.measurements or {};local first=measurements[1];local last=measurements[#measurements]
    local label=busy and 'Working · leave transport stopped'or 'Review the candidate'

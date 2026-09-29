@@ -9,6 +9,10 @@ def main():
     directory=Path(sys.argv[1]);calls=[]
     def scripted_model(route,payload):
         calls.append(route)
+        images=[part for m in payload['messages'] if isinstance(m.get('content'),list)
+                for part in m['content'] if part.get('type')=='image_url']
+        assert images and len(images)<=4,'Measured images must accompany model requests'
+        assert all(p['image_url']['url'].startswith('data:image/png;base64,') for p in images)
         project=json.loads(payload['messages'][1]['content'])['project']
         track=project['tracks'][0]['id']
         if len(calls)==1:
@@ -29,6 +33,8 @@ def main():
             return {'choices':[{'message':{'role':'assistant','content':'Synthetic test: raise level with source compression, makeup and master limiting.',
                 'tool_calls':[{'id':str(i),'type':'function','function':{'name':name,'arguments':json.dumps(args)}}
                               for i,(name,args) in enumerate(operations)]}}]}
+    # The fixture exercises the real PNG + multimodal path without network access.
+    worker.image_support=lambda model: True
     state=worker.Session(directory,scripted_model).run()
     assert state=='review',worker.read(directory/'status.json')
     assert len(calls)==3
@@ -38,6 +44,8 @@ def main():
     assert data[-1]['loudness']['integrated_lufs'] > data[0]['loudness']['integrated_lufs']+10
     assert data[-1]['loudness']['true_peak_dbtp'] <= -1
     assert (directory/'comparison.png').exists()
+    assert (directory/'visuals/source-tracks-0.png').exists()
+    assert len(list((directory/'visuals').glob('*.png')))>=3
     worker.write(directory/'test-result.json',{'ok':True,'model_requests':len(calls),
         'original_lufs':data[0]['loudness']['integrated_lufs'],'candidate_lufs':data[-1]['loudness']['integrated_lufs']})
 

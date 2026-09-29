@@ -124,7 +124,7 @@ function B.inspect(s)
  local master=R.GetMasterTrack(s.project);local effects=J.array()
  for i=0,R.TrackFX_GetCount(master)-1 do local _,name=R.TrackFX_GetFXName(master,i,'');effects[#effects+1]={name=name,enabled=R.TrackFX_GetEnabled(master,i)}end
  return {tracks=list_tracks(s.project),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,
-  capabilities={mix_tools_version=3,measurement_windows=true,measurement_cache=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
+  capabilities={mix_tools_version=3,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
   master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
@@ -173,6 +173,7 @@ end
 function B.execute(s,name,a)
  B.guard(s,true);assert(s.mode=='candidate','Return to Candidate before continuing');a=a or {}
  if name=='inspect_project'then return B.inspect(s)end
+ if name=='inspect_arrangement'then return dofile(dir..'/solo_mix_visuals.lua').overview(s.project,s.bounds,a)end
  if name=='measure_mix'then return render(s,measurement_bounds(s,a),'mix')end
  if name=='measure_track'then
   assert(a.track~='MASTER','Use measure_mix to measure the master output')

@@ -9,8 +9,9 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/charts.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/charts.py`, `Mix/visuals.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
+   Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
 3. Copy `Effects/Mix trim.jsfx` into `Effects/Solo Studio/`.
 4. Install FFmpeg/ffprobe and the Python dependencies in `ReferenceLab/requirements.txt`
@@ -69,6 +70,36 @@ externally. Any attempted mixing edit or A/B switch invalidates all cached rende
 with an empty cache. Cancelled/incomplete renders are never cached as valid
 measurements. The status feed separates rendering from analysis and reports their
 elapsed times; session status also saves measurement timings for diagnosis.
+
+**Visual analysis** is on by default and can be disabled in mix setup. With an
+image-capable model, the worker attaches small PNG evidence charts to its model
+requests alongside the numeric measurements:
+
+- Source-clip overviews use REAPER's cached take peaks, without a render. Only
+  unmuted items in playing lanes are shown, with up to 16 tracks per page. Track
+  waveforms are scaled independently; they describe source activity, not processed
+  mix balance. MIDI and unavailable peaks are marked, never inferred to be silence.
+  Initial overviews cover up to 48 tracks; the `view_arrangement` tool can page
+  through other tracks. Time/item limits mark incomplete overviews explicitly.
+- Processed charts read existing render WAVs and show the peak-preserving waveform,
+  level envelope, normalized spectrum/reference curves and stereo energy. Axes use
+  absolute project seconds. Solo-track charts include routing, shared returns and
+  master processing, matching the measurements. A chart does not require another
+  audio render. Unchanged render charts are reused.
+
+At most four images are retained in model context; older images are replaced by
+text notices while numerical results remain. Charts are saved in the session's
+`visuals/` folder, accessible through **Show analysis files**. They are transmitted
+as PNG data in memory, not public image URLs or screenshots. Image payloads are
+not written into chat logs. Normal OpenRouter image-input billing applies.
+
+The model picker labels confirmed models as **vision** or **numbers only**.
+Custom models use a public capability lookup. If support is absent or cannot be
+verified, the same selected model continues with numerical measurements and the
+status feed explains the fallback. No model is silently substituted. Chart
+generation failures also leave numerical analysis available. The agent is told
+to use images to locate patterns, then verify decisions using measurements; an
+image is not evidence that it heard the song or judged vocal intelligibility.
 
 The agent treats the starting session as a rough, unmixed balance unless your
 direction says otherwise. Selected references are active targets for broad EQ,
@@ -172,7 +203,8 @@ the song automatically; use your normal REAPER save workflow.
   per worker pass and 40 renders per bridge session.
 
 OpenRouter receives track names/settings, selected reference metrics, user mix
-direction/feedback, tool results and decision messages. Audio, source file paths,
+direction/feedback, tool results, decision messages and, with visual analysis
+enabled, measured source-overview and processed-audio charts. Audio, source file paths,
 credentials and full project files are not submitted. Provider routing requests
 `data_collection: deny` and parameter support; this is not a promise of zero data
 retention. Choose a provider/model consistent with your own privacy requirements.
@@ -202,11 +234,16 @@ ffmpeg -f lavfi -i 'sine=frequency=1000:duration=8:sample_rate=48000' -ac 2 Test
 Live paid-model behavior requires the user's OpenRouter key and is a separate
 validation from these deterministic tests.
 
-On the development machine, 43 native integration checks passed, including the
+On the development machine, 47 native integration checks passed, including the
 complete asynchronous worker/REAPER/render/analyzer/chart loop, compressor makeup,
-master limiting, and master-FX rollback. Twenty-five Python checks cover the worker
+master limiting, source-peak reading and master-FX rollback. Thirty Python checks cover the worker
 and completion handling; 87 Lua checks cover A/B and review controls, with another
-18 covering recovery. During
+18 covering recovery and 11 covering source-overview scope/pagination. Visual
+checks verify peak-preserving PCM reduction, absolute chart times, image protocol
+ordering, bounded context, capability fallback and no extra audio renders.
+A live GPT-6 Luna request using only a synthetic chart correctly identified its
+track label and distinguished source peaks from processed mix levels. This verifies
+image/tool compatibility, not the quality of an AI mix. During
 testing, REAPER 7.55 hit a macOS accessibility crash when the Actions window was
 closed by an accessibility press on Run/close. Running the test with **Run** and
 leaving Actions open avoided that interaction. No production mixer call uses the

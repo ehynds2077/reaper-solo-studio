@@ -88,6 +88,11 @@ project metadata and measured profiles go to the chosen OpenRouter provider.
 
 AI mixing has a separate Python/FFmpeg setup and requires an OpenRouter key.
 See [Mix installation, workflow, safeguards and limitations](Mix/README.md).
+
+**Visual analysis** in mix setup lets image-capable models see source-clip
+overviews and processed waveform, level and spectrum charts alongside the measured
+numbers. Charts reuse existing renders; audio stays local. The model picker marks
+vision support, and models without image input continue with numerical analysis.
 Existing recording, comping and tuner tools work without the mixing worker.
 
 ## Bounce and compare saved mixes

@@ -47,7 +47,8 @@ function P.new(J,R,data,launch)
  function self.ensure()
   if not self.started then
    self.started=true
-   if type(cache.updated)~='number'or os.time()-cache.updated>86400 then self.refresh()end
+   if type(cache.updated)~='number'or os.time()-cache.updated>86400 or
+    (cache.models and cache.models[1]and cache.models[1].image_input==nil)then self.refresh()end
   end
  end
  function self.poll()
@@ -62,6 +63,7 @@ function P.new(J,R,data,launch)
   local rows=self.rows();local labels={};local ids={};local present=false
   for _,row in ipairs(rows)do
    local label=row.name..(row.id==P.default and ' (default)'or '')
+   if row.image_input==true then label=label..' · vision'elseif row.image_input==false then label=label..' · numbers only'end
    if type(row.input_per_million)=='number'and type(row.output_per_million)=='number'then
     label=label..string.format(' — $%g / $%g per 1M',row.input_per_million,row.output_per_million)
    end
