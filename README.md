@@ -53,6 +53,25 @@ AI mixing has a separate Python/FFmpeg setup and requires an OpenRouter key.
 See [Mix installation, workflow, safeguards and limitations](Mix/README.md).
 Existing recording, comping and tuner tools work without the mixing worker.
 
+## Bounce and compare saved mixes
+
+Open **Mix → Bounces → Bounce mix + instrumental**, name the version, and add
+optional notes. Full song is the default; **Range** switches to the time selection.
+Use **Vocal tracks…** to choose everything the instrumental should leave out.
+Every version saves both WAVs, named M4As for texting to your phone, and full and
+instrumental REAPER session copies in **Desktop/Solo Studio Mixes**.
+
+Play previous versions directly from the list with **Play full / Instrumental**
+and **Pause / Stop**. **Show files** reveals the files to share. **Open session
+copy** opens the archived mix in a new REAPER tab. Source recordings are preserved
+in the library's shared `_Media` folder; keep the whole library together when
+moving it. Audition uses the Mac audio output.
+
+Install `Bounces/library.py` in `Scripts/Solo Studio/Bounces/` and have FFmpeg
+available. See [bounce workflow and archive details](Bounces/README.md).
+[Lyric Helper API integration](Bounces/LYRIC_HELPER_V2.md) is planned for v2;
+desktop exports do not upload anything.
+
 ## A recording session
 
 1. Start from **File → Project templates → Solo Studio - One person band**, **One instrument**, or **Drums**. Save the project into its own folder before recording. New audio goes into `Media` within that folder.

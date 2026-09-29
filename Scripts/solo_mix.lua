@@ -26,6 +26,12 @@ return function(M,ui)
  local phase='intro';local session;local state;local foreign_session=false;local status='Choose a reference and direction, then create a candidate mix.'
  local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
  local model_x,model_y=24,215
+ local mix_view=R.GetExtState(M.ns,'mix_view')=='bounces'and 'bounces'or 'ai'
+ local library
+ local function bounces()
+  if not library then library=dofile(dir..'/solo_bounces_view.lua')({text=text,button=button,color=color,colors=C,run=ui.run,busy=function()return X.busy()end})end
+  return library
+ end
  local function recover_review(recovered)
   local f=io.open(recovered.path..'/cancel','w');if f then f:close()end
   local saved=read(recovered.path..'/status.json',{events=J.array()})
@@ -80,6 +86,7 @@ return function(M,ui)
   status='Current mix preserved. Choose references and create a new candidate.'
  end
  function X.poll()
+  if library then library.poll()end
   if R.time_precise()-lastpoll<.2 then return end;lastpoll=R.time_precise()
   models.poll()
   if checking then local c=read(data..'/connection.json');if c then checking=false;status=c.message end end
@@ -183,7 +190,10 @@ return function(M,ui)
  end
  function X.draw(x,y,w,h)
   X.poll();text('Mix',x,y,2)
-  text(status,x+80,y+7,3,C.muted,w-90)
+  button('AI mix',x+w-234,y,100,32,function()if library then library.stop()end;mix_view='ai';R.SetExtState(M.ns,'mix_view','ai',true)end,mix_view=='ai'and C.blue or nil)
+  button('Bounces',x+w-123,y,123,32,function()mix_view='bounces';R.SetExtState(M.ns,'mix_view','bounces',true)end,mix_view=='bounces'and C.blue or nil)
+  if mix_view=='bounces'then bounces().draw(x,y+48,w,h-48);return end
+  text(status,x+80,y+7,3,C.muted,w-325)
   if phase=='intro'then
    text('Shape a mix from your recordings.',x,y+64,4)
    text('A measured first pass with faders, panning, effects and section automation.',x,y+103,1,C.muted)
@@ -294,6 +304,11 @@ return function(M,ui)
   end
  end
  function X.key(ch)
+  if ch==108 or ch==76 then
+   mix_view=mix_view=='ai'and 'bounces'or 'ai';if library then library.stop()end
+   R.SetExtState(M.ns,'mix_view',mix_view,true);return true
+  end
+  if mix_view=='bounces'then return bounces().key(ch)end
   if ch==13 and phase=='recovery'then if R.GetPlayState()==0 then ui.run(restart)end;return true end
   if phase=='session'and (ch==103 or ch==71)then ui.run(refine);return true end
   if phase=='session'and (ch==49 or ch==50)then
@@ -304,8 +319,9 @@ return function(M,ui)
   if phase=='setup'and (ch==111 or ch==79)then ui.run(choose_model);return true end
   return false
  end
- function X.wheel(delta)chat_scroll=math.max(0,chat_scroll+delta*3)end
+ function X.wheel(delta)if mix_view=='bounces'then bounces().wheel(delta)else chat_scroll=math.max(0,chat_scroll+delta*3)end end
  function X.close()
+  if library then library.close()end
   if session and not session.finished then
    cancelled()
    -- Closing/reloading the panel must not silently undo the user's mix.

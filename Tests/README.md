@@ -61,3 +61,11 @@ The visual runner also runs `Native comp edges.lua` and `Native section handles.
 `Track management.lua` exercises the real core, manager, and Tracks view with a synthetic project: native-name-derived set labels, folder descendants and closing depths, surviving microphone membership, restored GUIDs, stale confirmations, project changes, recording locks, and cancelled deletion. Panel checks cover the new tab, scrolling, and project reset. The boundary zoom interaction checks cover musical bar ranges, tempo/meter changes, double-clicks, pointer-centered zoom, returning to the previous view, and precise drags after zooming.
 
 `Run boundary history checks.lua` verifies native boundary Undo/Redo across nine microphones during playback, plus track rename/deletion Undo and restored set membership. It opens a disposable panel; closing it restores the original project and checks every original track state chunk for exact preservation. Panel tests cover history buttons, keyboard shortcuts, empty history, recording locks, and drag cancellation; timeline tests verify that history refresh keeps the zoom and clears stale item hits.
+
+`Bounce library controls.lua` checks saved-version selection, instrumental
+playback, Space/Pause/Resume behavior, and transport/AI/archiving locks.
+`Run bounce checks.lua` renders synthetic guitar and vocal tracks in disposable
+project copies, packages both WAV/M4A variants, resolves archived source files,
+reopens a snapshot as an unsaved copy, and checks cancellation plus exact
+preservation of the user's project. Generate its tones with `make_fixtures.py`.
+See [bounce archive checks](../Bounces/README.md#checks) for Python validation.

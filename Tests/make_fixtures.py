@@ -22,3 +22,11 @@ write_mono("lead-in-tone.wav", (
     for frame in range(RATE)
 ))
 print("Generated silence.wav and lead-in-tone.wav in Tests/.")
+
+# Separate guitar/vocal frequencies make instrumental exports measurable.
+for index, frequency in enumerate((220, 880), 1):
+    write_mono(f"bounce-{index}.wav", (
+        round(1000 * math.sin(2 * math.pi * frequency * frame / RATE))
+        for frame in range(RATE * 2)
+    ))
+print("Generated bounce-1.wav and bounce-2.wav in Tests/.")
