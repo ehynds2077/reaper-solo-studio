@@ -54,6 +54,22 @@ the final candidate. Leave the transport stopped while it works. Rendering uses
 REAPER's native offline render dialog, which can be cancelled. Network calls and
 analysis run outside REAPER's UI thread.
 
+For passages longer than 45 seconds, routine AI mix and track checks default to
+the same energetic 30-second window, selected from the original level envelope.
+The agent can request a different start/duration to check another section, or
+`full_passage=true` for the whole selection. Measurements identify their exact
+project bounds; short-window loudness is not presented as whole-song loudness.
+Original, completion and final-review checks always cover the entire selected
+passage. Only full-passage measurements feed the review meters and A/B charts.
+
+Repeated measurements of the same scope and unchanged mix reuse the rendered WAV
+and its analysis. Every request still checks that the project has not been edited
+externally. Any attempted mixing edit or A/B switch invalidates all cached renders
+(including solo contributions through shared buses/master FX); recovery starts
+with an empty cache. Cancelled/incomplete renders are never cached as valid
+measurements. The status feed separates rendering from analysis and reports their
+elapsed times; session status also saves measurement timings for diagnosis.
+
 The agent treats the starting session as a rough, unmixed balance unless your
 direction says otherwise. Selected references are active targets for broad EQ,
 loudness, dynamic density and stereo presentation. It can make substantial changes;
@@ -65,7 +81,8 @@ For comparable material, the prompt starts with working tolerances of roughly
 are adjustable goals, not guarantees or literal EQ settings. Different arrangements
 and song sections require judgment. The agent must report remaining gaps and tool
 limits rather than claiming an unchanged rough mix is finished.
-The loop checks a proposed completion against a fresh render and can challenge it
+The loop checks a proposed completion against a full-passage measurement of the
+current mix (reusing a render only if no settings have changed) and can challenge it
 up to three times when large loudness/tonal gaps remain. Empty or truncated model
 responses are retried (at most twice), not accepted as completion; truncated tool
 batches are not applied. Requests allow 8,000 output/reasoning tokens, and the same
@@ -170,7 +187,9 @@ arguments, cancellation, local credentials, profile minimization, final metering
 and failure paths. `Tests/Run mix checks.lua` uses an isolated REAPER tab and a
 synthetic sine, with all hardware outputs removed. It checks real native effects,
 automation, fader/pan edits, render setting restoration, A/B, rollback, manual-edit
-preservation and recovery. It then runs `test_native_worker.py` through the real
+preservation and recovery. A 274-second synthetic passage checks exact diagnostic
+bounds, cache invalidation and separate track/mix caches, saving local timings to
+`Tests/mix-performance.json`. It then runs `test_native_worker.py` through the real
 file bridge and analyzer with a scripted model response and **no network call**.
 The expanded fixture requires installed FabFilter Pro-L 2 and checks a level lift
 of more than 10 LU while retaining the -1 dBTP final peak ceiling.
@@ -183,10 +202,11 @@ ffmpeg -f lavfi -i 'sine=frequency=1000:duration=8:sample_rate=48000' -ac 2 Test
 Live paid-model behavior requires the user's OpenRouter key and is a separate
 validation from these deterministic tests.
 
-On the development machine, 32 native integration checks passed, including the
+On the development machine, 43 native integration checks passed, including the
 complete asynchronous worker/REAPER/render/analyzer/chart loop, compressor makeup,
-master limiting, and master-FX rollback. Twenty-one Python checks cover the worker
-and completion handling; 76 Lua checks cover A/B and review controls. During
+master limiting, and master-FX rollback. Twenty-five Python checks cover the worker
+and completion handling; 87 Lua checks cover A/B and review controls, with another
+18 covering recovery. During
 testing, REAPER 7.55 hit a macOS accessibility crash when the Actions window was
 closed by an accessibility press on Run/close. Running the test with **Run** and
 leaving Actions open avoided that interaction. No production mixer call uses the

@@ -7,10 +7,87 @@ import unittest
 from unittest.mock import patch
 import worker
 
-PROJECT = {'tracks': [], 'capabilities': {'mix_tools_version': 2}}
+PROJECT = {'tracks': [], 'capabilities': {'mix_tools_version': 3}}
 
 
 class WorkerTests(unittest.TestCase):
+    def test_diagnostic_window_uses_energy_and_absolute_project_time(self):
+        profile = {'envelope_1s': [
+            {'seconds': i, 'rms_dbfs': -12 if 60 <= i < 90 else None}
+            for i in range(180)]}
+        self.assertEqual(worker.diagnostic_bounds(profile, [100, 280]), [160, 190])
+        self.assertEqual(worker.diagnostic_bounds(profile, [100, 130]), [100, 130])
+        self.assertEqual(worker.diagnostic_bounds({}, [100, 280]), [100, 130])
+
+    def test_window_requests_validate_scope_and_boolean(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp); worker.write(path/'config.json', {'bounds': [100, 280]})
+            session = worker.Session(path); session.diagnostic_bounds = [160, 190]
+            self.assertEqual(session.measurement_window({}), [160, 190])
+            self.assertEqual(session.measurement_window({'full_passage': True}), [100, 280])
+            self.assertEqual(session.measurement_window({'start_seconds': 200, 'duration_seconds': 30}), [200, 230])
+            for args in ({'start_seconds': 100}, {'duration_seconds': 30},
+                         {'start_seconds': 80, 'duration_seconds': 30},
+                         {'start_seconds': 270, 'duration_seconds': 30},
+                         {'full_passage': True, 'start_seconds': 100, 'duration_seconds': 30}):
+                with self.assertRaises(ValueError): session.measurement_window(args)
+            spec = next(t['function']['parameters'] for t in worker.TOOLS if t['function']['name'] == 'measure_mix')
+            for value in ('false', 1, None):
+                with self.assertRaises(ValueError): worker.validate({'full_passage': value}, spec)
+
+    def test_cached_analysis_needs_native_confirmation_and_preserves_original(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp); worker.write(path/'config.json', {'bounds': [0, 180]})
+            session = worker.Session(path); calls = []
+            def bridge(name, args):
+                calls.append((name, args))
+                return {'path': str(path/'unique.wav'), 'cached': len(calls) == 2}
+            session.bridge = bridge
+            profile = {'title': 'Original', 'duration_seconds': 180,
+                       'loudness': {'integrated_lufs': -14, 'true_peak_dbtp': -2}}
+            with patch.object(worker, 'analyze_audio', return_value=profile) as analyze:
+                before = session.measure('Original')
+                after = session.measure('Completion check')
+                self.assertEqual(analyze.call_count, 1)
+                self.assertEqual(before['title'], 'Original')
+                self.assertEqual(after['title'], 'Completion check')
+                session.measure('After edit')
+                self.assertEqual(analyze.call_count, 2)
+            self.assertEqual(len(calls), 3)  # Native guard still runs on every request.
+            self.assertEqual([t['reused'] for t in session.timings], [False, True, False])
+
+    def test_short_diagnostics_never_replace_full_final_validation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp); worker.write(path/'config.json', {'bounds': [100, 280], 'rounds': 2})
+            requests = []; renders = []
+            def api(route, payload):
+                requests.append(payload)
+                if len(requests) == 1:
+                    return {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
+                        {'id': 'short', 'function': {'name': 'measure_mix', 'arguments': '{}'}}]}}]}
+                return {'choices': [{'message': {'role': 'assistant', 'content': 'Measured summary.'}}]}
+            session = worker.Session(path, api)
+            def bridge(name, args):
+                if name == 'inspect_project': return PROJECT
+                renders.append(args)
+                return {'path': str(path/('render-%d.wav' % len(renders)))}
+            session.bridge = bridge
+            def analyze(*args):
+                duration = renders[-1].get('duration_seconds', 180)
+                # A peak outside the diagnostic must still block Keep.
+                peak = .1 if len(renders) >= 3 else -2
+                return {'duration_seconds': duration,
+                        'loudness': {'integrated_lufs': -14, 'true_peak_dbtp': peak}}
+            with patch.object(worker, 'analyze_audio', side_effect=analyze), \
+                 patch.object(worker, 'library', return_value={'references': []}), patch('charts.render_charts'):
+                self.assertEqual(session.run(), 'review_warning')
+            self.assertEqual(renders, [{}, {'start_seconds': 100, 'duration_seconds': 30}, {}, {}])
+            diagnostic = worker.read(path/'latest-diagnostic.json')
+            self.assertEqual(diagnostic['measurement_bounds'], [100, 130])
+            self.assertEqual(diagnostic['envelope_time_origin_seconds'], 100)
+            self.assertTrue(all(p['measurement_kind'] == 'full_passage' for p in session.measurements))
+            self.assertEqual(session.measurements[-1]['loudness']['true_peak_dbtp'], .1)
+
     def test_argument_validation(self):
         specs = {t['function']['name']: t['function']['parameters'] for t in worker.TOOLS}
         worker.validate({'track': 'guid', 'volume_db': -3, 'pan': .2}, specs['set_track_mix'])
@@ -120,7 +197,7 @@ class WorkerTests(unittest.TestCase):
 
     def test_actual_file_bridge_and_cancel(self):
         with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp);worker.write(path/'config.json', {})
+            path=Path(temp);worker.write(path/'config.json', {'bounds': [0, 8]})
             session=worker.Session(path)
             def reaper():
                 while not (path/'request.json').exists():
@@ -211,7 +288,7 @@ class WorkerTests(unittest.TestCase):
                 return {'choices':[{'message':{'role':'assistant','content':'Ready for review.'}}], 'usage':{'cost':.01}}
             session=worker.Session(path, api)
             session.bridge=lambda name,args: executed.append((name,args)) or PROJECT
-            def measure(label, track_id=None):
+            def measure(label, track_id=None, window=None):
                 profile={'title':label,'loudness':{'integrated_lufs':-18,'true_peak_dbtp':-3}}
                 session.measurements.append(profile)
                 return profile
@@ -256,7 +333,7 @@ class WorkerTests(unittest.TestCase):
                 return responses[min(len(requests)-1,len(responses)-1)]
             session=worker.Session(path,api)
             session.bridge=lambda name,args: PROJECT if name=='inspect_project' else mutations.append((name,args)) or {'ok':True}
-            def measure(label,track_id=None):
+            def measure(label,track_id=None,window=None):
                 current=json.loads(json.dumps(profile));session.measurements.append(current);return current
             session.measure=measure
             lib={'references':[]}

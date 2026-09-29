@@ -33,6 +33,8 @@ def main():
     assert state=='review',worker.read(directory/'status.json')
     assert len(calls)==3
     data=worker.read(directory/'measurements.json')
+    timings=worker.read(directory/'status.json')['measurement_timings']
+    assert timings[-1]['reused'] and timings[-2]['reused'], 'Unchanged completion/final checks must reuse rendering and analysis'
     assert data[-1]['loudness']['integrated_lufs'] > data[0]['loudness']['integrated_lufs']+10
     assert data[-1]['loudness']['true_peak_dbtp'] <= -1
     assert (directory/'comparison.png').exists()

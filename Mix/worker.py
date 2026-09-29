@@ -4,6 +4,7 @@ Only typed, allowlisted tool requests cross the REAPER file bridge. No generated
 code, shell commands, URLs or arbitrary output paths are executable tools.
 """
 import argparse
+import copy
 import getpass
 import json
 import math
@@ -147,6 +148,11 @@ def schema(name, description, properties, required):
 
 TRACK = {'type': 'string', 'description': 'Exact track GUID returned by inspect_project, or MASTER for session-owned master effects'}
 FX = {'type': 'string', 'description': 'Exact effect GUID returned by add_effect'}
+WINDOW = {
+    'start_seconds': dict(number(0, 86400), description='Absolute project start; supply duration_seconds too.'),
+    'duration_seconds': number(3, 600),
+    'full_passage': {'type': 'boolean', 'description': 'Measure the entire selected passage instead of a diagnostic window; omit start/duration.'},
+}
 TOOLS = [
     schema('inspect_project', 'Read tracks, master, routing, regions, available plugins and session_effects IDs. Reuse these owned effects on refinement instead of adding duplicates.', {}, []),
     schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. Master fader and automated controls are protected.',
@@ -173,8 +179,8 @@ TOOLS = [
            {'track': TRACK, 'points': {'type': 'array', 'minItems': 2, 'maxItems': 64,
             'items': {'type': 'object', 'properties': {'seconds': number(0, 86400), 'db': number(-12, 3)},
                       'required': ['seconds', 'db'], 'additionalProperties': False}}}, ['track', 'points']),
-    schema('measure_track', 'Render one track solo-in-place through its routing and master. Includes shared returns. Compare contribution to the full mix; not a dry stem.', {'track': TRACK}, ['track']),
-    schema('measure_mix', 'Render and measure the chosen excerpt through the actual master FX. Returns LUFS, peaks, crest, spectrum, stereo and time envelopes. Does not send audio.', {}, []),
+    schema('measure_track', 'Measure one track solo-in-place, including routing, shared returns and master FX; not a dry stem. Defaults to the shared 30-second diagnostic window. Supply start/duration to inspect another section, or full_passage=true. Compare with the mix over the SAME window.', {'track': TRACK, **WINDOW}, ['track']),
+    schema('measure_mix', 'Measure the mix through actual master FX: LUFS, peaks, crest, spectrum, stereo and time envelopes. Defaults to the shared 30-second diagnostic window. Supply start/duration for another section, or full_passage=true. Final review always verifies the entire selected passage.', WINDOW, []),
 ]
 
 
@@ -195,6 +201,9 @@ def validate(value, spec):
     elif kind == 'string':
         if not isinstance(value, str) or not 0 < len(value) <= 512 or '\x00' in value:
             raise ValueError('Invalid tool string')
+    elif kind == 'boolean':
+        if not isinstance(value, bool):
+            raise ValueError('Expected boolean')
     elif kind in ('number', 'integer'):
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
             raise ValueError('Expected finite number')
@@ -214,6 +223,38 @@ def compact(profile):
     envelope = result.get('envelope_1s', [])
     result['envelope_1s'] = envelope[::max(1, math.ceil(len(envelope) / 90))]
     return result
+
+
+def diagnostic_bounds(profile, bounds):
+    """A stable, energetic 30s window for comparing successive revisions.
+
+    This is only a diagnostic sample, never a whole-song loudness estimate.
+    Envelope times are relative to the initial full-passage render.
+    """
+    start, end = bounds
+    duration = end - start
+    if duration <= 45:
+        return list(bounds)
+    envelope = profile.get('envelope_1s', [])
+    rows = sorted((float(row['seconds']), 10 ** (float(row['rms_dbfs']) / 10)
+                   if isinstance(row.get('rms_dbfs'), (int, float))
+                   and math.isfinite(row['rms_dbfs']) else 0)
+                  for row in envelope
+                  if isinstance(row.get('seconds'), (int, float))
+                  and math.isfinite(row['seconds'])
+                  and 0 <= row['seconds'] < duration)
+    if not rows:
+        return [start, start + 30]
+    intervals = [(t, rows[i + 1][0] if i + 1 < len(rows) else duration, power)
+                 for i, (t, power) in enumerate(rows)]
+    candidates = {0.0, duration - 30}
+    for t, _ in rows:
+        candidates.add(min(t, duration - 30))
+        candidates.add(max(0, t - 30))
+    def energy(t):
+        return sum(max(0, min(b, t + 30) - max(a, t)) * p for a, b, p in intervals)
+    best = max(sorted(candidates), key=energy)
+    return [start + best, start + best + 30]
 
 
 def reference_comparison(profile, references):
@@ -346,6 +387,18 @@ differences require a stated adjustment to the target, not abandoning the refere
 Measure after each meaningful batch of changes, check whether the important gaps
 actually shrank, and revise moves that worsen the result. Spend the limited rounds
 on the largest gaps; solo-render only tracks needed to resolve a specific question.
+Rendering is expensive. Batch related fader/EQ/dynamics edits before measuring;
+do not request a solo render of every track as a routine inventory step. The shared
+diagnostic window is chosen from an energetic 30 seconds of the original passage.
+Default measure_mix/measure_track calls use that same window. Compare like-for-like
+windows; measurement_bounds are absolute project seconds, while envelope_1s times
+are relative to measurement_bounds[0]. A diagnostic window's LUFS/LRA is not the
+whole song's loudness/dynamics. Inspect other sections with start_seconds and
+duration_seconds when needed, especially after automation; use full_passage=true
+for an overall check. If a track is silent in a window, inspect another relevant
+section or report missing audio; do not boost silence. Repeated measurements of an
+unchanged state reuse verified renders. Completion is checked over the ENTIRE
+selected passage after the last edit; short diagnostics cannot approve a final mix.
 Without a reference, build a clear, balanced mix from the raw tracks; do not assume
 the starting balance is finished or invent reference measurements.
 
@@ -395,17 +448,21 @@ class Session:
         self.completion_reason = ''
         self.cost = 0.0
         self.state = 'running'
+        self.analysis_cache = {}
+        self.diagnostic_bounds = list(self.config['bounds'])
+        self.timings = []
 
     def cancelled(self):
         return (self.dir / 'cancel').exists()
 
     def publish(self, text=None, role='status'):
         if text:
-            self.events.append({'role': role, 'text': str(text)[:6000]})
+            self.events.append({'role': role, 'text': str(text)[:6000], 'time': time.time()})
         write(self.dir / 'status.json', {'state': self.state, 'updated': time.time(),
             'events': self.events[-120:], 'calls': self.calls, 'cost_usd': self.cost,
             'measurements': self.measurements, 'reference_issues': self.reference_issues,
-            'responses': self.responses, 'completion_reason': self.completion_reason})
+            'responses': self.responses, 'completion_reason': self.completion_reason,
+            'measurement_timings': self.timings})
 
     def bridge(self, name, args):
         if self.cancelled():
@@ -429,9 +486,34 @@ class Session:
             time.sleep(.1)
         raise RuntimeError('REAPER did not respond. Reopen the Mix tab to recover the session.')
 
-    def measure(self, label, track_id=None):
-        self.publish('Rendering and measuring ' + label + '…')
-        rendered = self.bridge('measure_track', {'track': track_id}) if track_id else self.bridge('measure_mix', {})
+    def measurement_window(self, args):
+        full = args.get('full_passage', False)
+        supplied = 'start_seconds' in args or 'duration_seconds' in args
+        if full and supplied:
+            raise ValueError('Use full_passage OR start_seconds/duration_seconds, not both')
+        if full:
+            return list(self.config['bounds'])
+        if not supplied:
+            return list(self.diagnostic_bounds)
+        if 'start_seconds' not in args or 'duration_seconds' not in args:
+            raise ValueError('Supply both start_seconds and duration_seconds')
+        start, duration = args['start_seconds'], args['duration_seconds']
+        lo, hi = self.config['bounds']
+        if start < lo or start + duration > hi + 1e-7:
+            raise ValueError('Measurement must stay within the selected passage')
+        return [start, min(start + duration, hi)]
+
+    def measure(self, label, track_id=None, window=None):
+        bounds = list(window if window is not None else self.config['bounds'])
+        full = bounds == list(self.config['bounds'])
+        self.publish('Measuring %s · %.0f seconds (%s)…' % (
+            label, bounds[1] - bounds[0], 'full passage' if full else 'diagnostic'))
+        args = {'track': track_id} if track_id else {}
+        if not full:
+            args.update(start_seconds=bounds[0], duration_seconds=bounds[1] - bounds[0])
+        started = time.monotonic()
+        rendered = self.bridge('measure_track' if track_id else 'measure_mix', args)
+        render_time = time.monotonic() - started
         if 'error' in rendered:
             # A bad GUID or muted source is a recoverable tool error. Fatal bridge
             # errors still raise in bridge(), and invalid/incomplete WAVs below
@@ -440,21 +522,42 @@ class Session:
         path = Path(rendered['path']).resolve()
         if path.parent != self.dir.resolve() or path.suffix.lower() != '.wav':
             raise RuntimeError('Unexpected render path')
-        profile = analyze_audio(path, self.dir, label)
-        expected = self.config['bounds'][1] - self.config['bounds'][0]
+        if rendered.get('bounds', bounds) != bounds:
+            raise RuntimeError('REAPER measured different bounds. Reopen Solo Studio and retry.')
+        cached = rendered.get('cached', False) and str(path) in self.analysis_cache
+        analysis_start = time.monotonic()
+        if cached:
+            profile = copy.deepcopy(self.analysis_cache[str(path)])
+        else:
+            self.publish('Analyzing %s · %.0f seconds of audio…' % (label, bounds[1] - bounds[0]))
+            profile = analyze_audio(path, self.dir, label)
+        expected = bounds[1] - bounds[0]
         if abs(profile['duration_seconds'] - expected) > .1:
             raise RuntimeError('Render was incomplete or had unexpected bounds. Cancel/revert and retry.')
+        if not cached:
+            self.analysis_cache[str(path)] = copy.deepcopy(profile)
+        profile.update(title=label, measurement_bounds=bounds,
+                       measurement_kind='full_passage' if full else 'diagnostic',
+                       envelope_time_origin_seconds=bounds[0])
         if track_id:
             profile['scope'] = rendered['scope']
             profile['track'] = track_id
         else:
             if self.references:
                 profile['reference_comparison'] = reference_comparison(profile, self.references)
-            self.reference_issues = reference_issues(profile, self.references)
-            self.measurements.append(profile)
+            if full:
+                self.reference_issues = reference_issues(profile, self.references)
+                self.measurements.append(profile)
         write(self.dir / ('latest-track.json' if track_id else 'measurements.json'), profile if track_id else self.measurements)
-        self.publish('Measured %s: %s LUFS, %s dBTP.' % (label,
-            profile['loudness']['integrated_lufs'], profile['loudness']['true_peak_dbtp']))
+        if not full and not track_id:
+            write(self.dir / 'latest-diagnostic.json', profile)
+        elapsed = time.monotonic() - analysis_start
+        self.timings.append({'label': label, 'bounds': bounds, 'track': track_id,
+                             'render_seconds': round(render_time, 3),
+                             'analysis_seconds': round(elapsed, 3), 'reused': bool(cached)})
+        self.publish('%s %s: %s LUFS, %s dBTP · render %.1fs, analysis %.1fs.' % (
+            'Reused' if cached else 'Measured', label, profile['loudness']['integrated_lufs'],
+            profile['loudness']['true_peak_dbtp'], render_time, elapsed))
         return profile
 
     def run(self):
@@ -463,7 +566,7 @@ class Session:
             project = self.bridge('inspect_project', {})
             if 'error' in project:
                 raise RuntimeError(project['error'])
-            if project.get('capabilities', {}).get('mix_tools_version', 0) < 2:
+            if project.get('capabilities', {}).get('mix_tools_version', 0) < 3:
                 raise RuntimeError('Reopen Solo Studio to load the updated mixing controls, then start a new pass.')
             selected = set(self.config.get('references', []))
             self.references = [compact(read(row['profile'])) for row in library()['references']
@@ -472,9 +575,11 @@ class Session:
             original = self.measure('Current candidate' if self.config.get('resume') else 'Original')
             if original['loudness']['integrated_lufs'] is None:
                 raise RuntimeError('This excerpt is silent or too quiet to measure. Select an audible passage.')
+            self.diagnostic_bounds = diagnostic_bounds(original, self.config['bounds'])
+            self.publish('Quick checks will use %.1f–%.1fs; final review checks the full selected passage.' % tuple(self.diagnostic_bounds))
             messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps({
                 'direction': self.config.get('direction', 'Natural indie rock; clear vocals, punchy drums, preserve dynamics.'),
-                'excerpt_seconds': self.config['bounds'], 'project': project,
+                'excerpt_seconds': self.config['bounds'], 'diagnostic_seconds': self.diagnostic_bounds, 'project': project,
                 'original': original, 'references': refs}, allow_nan=False)}]
             rounds = min(20, max(1, int(self.config.get('rounds', 8))))
             empty_retries = 0
@@ -558,9 +663,11 @@ class Session:
                         validate(args, spec)
                         self.publish(name.replace('_', ' ') + '…', 'tool')
                         if name == 'measure_mix':
-                            result = self.measure('Candidate %d' % len(self.measurements))
+                            window = self.measurement_window(args)
+                            result = self.measure('Candidate %d' % len(self.measurements), window=window)
                         elif name == 'measure_track':
-                            result = self.measure('Track contribution', args['track'])
+                            window = self.measurement_window(args)
+                            result = self.measure('Track contribution', args['track'], window=window)
                         else:
                             result = self.bridge(name, args)
                     except (ValueError, KeyError, TypeError) as error:

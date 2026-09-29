@@ -124,13 +124,29 @@ function B.inspect(s)
  local master=R.GetMasterTrack(s.project);local effects=J.array()
  for i=0,R.TrackFX_GetCount(master)-1 do local _,name=R.TrackFX_GetFXName(master,i,'');effects[#effects+1]={name=name,enabled=R.TrackFX_GetEnabled(master,i)}end
  return {tracks=list_tracks(s.project),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,
-  capabilities={mix_tools_version=2,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
+  capabilities={mix_tools_version=3,measurement_windows=true,measurement_cache=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
   master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
-local function render(s)
+local function measurement_bounds(s,a)
+ if a.start_seconds==nil and a.duration_seconds==nil then return {s.bounds[1],s.bounds[2]}end
+ local start=finite(a.start_seconds,s.bounds[1],s.bounds[2])
+ local duration=finite(a.duration_seconds,3,s.bounds[2]-s.bounds[1])
+ assert(start+duration<=s.bounds[2]+1e-7,'Measurement must stay within the selected passage')
+ return {start,math.min(start+duration,s.bounds[2])}
+end
+local function render(s,bounds,scope)
+ s.render_cache=s.render_cache or {}
+ local key=scope..':'..string.format('%.17g:%.17g',bounds[1],bounds[2])
+ local cached=s.render_cache[key]
+ if cached then
+  local f=io.open(cached.path,'rb');local size=f and f:seek('end');if f then f:close()end
+  if size==cached.size then return {path=cached.path,bounds=bounds,cached=true,render_seconds=0}end
+  s.render_cache[key]=nil
+ end
  s.renders=s.renders+1;assert(s.renders<=40,'Render limit reached')
- local numbers={RENDER_SETTINGS=0,RENDER_BOUNDSFLAG=0,RENDER_STARTPOS=s.bounds[1],RENDER_ENDPOS=s.bounds[2],
+ local started=R.time_precise()
+ local numbers={RENDER_SETTINGS=0,RENDER_BOUNDSFLAG=0,RENDER_STARTPOS=bounds[1],RENDER_ENDPOS=bounds[2],
   RENDER_CHANNELS=2,RENDER_TAILFLAG=0,RENDER_ADDTOPROJ=0,RENDER_DITHER=0,RENDER_NORMALIZE=0,RENDER_SRATE=48000}
  -- A recovered bridge starts its counter again. Unique names also make a cancelled
  -- render fail instead of accidentally accepting an earlier WAV as fresh analysis.
@@ -148,22 +164,31 @@ local function render(s)
  for k,v in pairs(olds)do R.GetSetProjectInfo_String(s.project,k,v,true)end
  remember(s);if not ok then error(err)end
  local path=s.path..'/'..pattern..'.wav';local f=io.open(path,'rb');assert(f,'Render was cancelled or no WAV was created');local n=f:seek('end');f:close();assert(n>100,'Render is empty')
- return {path=path}
+ local source=assert(R.PCM_Source_CreateFromFile(path),'Rendered WAV could not be opened')
+ local duration=R.GetMediaSourceLength(source);R.PCM_Source_Destroy(source)
+ assert(math.abs(duration-(bounds[2]-bounds[1]))<=.1,'Render was cancelled or incomplete')
+ s.render_cache[key]={path=path,size=n}
+ return {path=path,bounds=bounds,cached=false,render_seconds=R.time_precise()-started}
 end
 function B.execute(s,name,a)
  B.guard(s,true);assert(s.mode=='candidate','Return to Candidate before continuing');a=a or {}
  if name=='inspect_project'then return B.inspect(s)end
- if name=='measure_mix'then return render(s)end
+ if name=='measure_mix'then return render(s,measurement_bounds(s,a),'mix')end
  if name=='measure_track'then
   assert(a.track~='MASTER','Use measure_mix to measure the master output')
   local tr=track(a.track,s.project);assert(R.GetMediaTrackInfo_Value(tr,'B_MUTE')==0,'Track is muted')
+  local bounds=measurement_bounds(s,a)
   local solos={};for i=0,R.CountTracks(s.project)-1 do local t=R.GetTrack(s.project,i);solos[i]={track=t,value=R.GetMediaTrackInfo_Value(t,'I_SOLO')};R.SetMediaTrackInfo_Value(t,'I_SOLO',0)end
   R.SetMediaTrackInfo_Value(tr,'I_SOLO',2)
-  local ok,result=xpcall(function()return render(s)end,debug.traceback)
+  local ok,result=xpcall(function()return render(s,bounds,'track:'..a.track)end,debug.traceback)
   for _,row in pairs(solos)do R.SetMediaTrackInfo_Value(row.track,'I_SOLO',row.value)end
   remember(s);if not ok then error(result)end
   result.scope='Solo-in-place contribution including routing, shared returns and master FX';return result
  end
+ -- Any attempted audio edit invalidates all contributions: shared buses and
+ -- nonlinear master FX make per-track-only invalidation unsafe. Failed tools
+ -- may have partially changed a plugin, so invalidate before applying them.
+ if name~='inspect_effect'then s.render_cache={}end
  R.Undo_BeginBlock2(s.project)
  local ok,result=xpcall(function()
   if name=='set_track_mix'then
@@ -302,6 +327,7 @@ function B.compare(s,mode)
   local v=mode=='original'and row or (values and values[row.id])
   assert(v and type(v.volume)=='number'and type(v.pan)=='number','No candidate snapshot')
  end
+ s.render_cache={}
  R.Undo_BeginBlock2(s.project)
  for _,row in ipairs(s.original)do
   local tr=tracks[row.id];local v=mode=='original'and row or values[row.id]
