@@ -14,8 +14,9 @@ local buttons={}
 local sliders,drag={},nil
 local section_scroll,sections=0,{}
 local saved_view=R.GetExtState(M.ns,'panel_view')
-local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks') and saved_view or 'timeline'
-local V,X,K
+local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks' or saved_view=='projects') and saved_view or 'timeline'
+local V,X,K,P
+local change_view
 local listen_mode='comp'
 local comp_row,clip_target
 local take_action
@@ -112,6 +113,13 @@ local function track_view()
   hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
   changed=function(message)status=message;lastrefresh=0;selection.reset();clip_target=nil end})end
  return K
+end
+local function project_view()
+ if not P then P=dofile(dir..'/solo_projects_view.lua')(M,{colors=C,text=text,button=button,color=color,run=run,
+  hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
+  opened=function(message)status=message;lastrefresh=0;change_view('timeline')end},
+  {busy=function()return X and X.busy()end,before_switch=function()if X then X.close();X=nil end end})end
+ return P
 end
 local function history(redo)
  M.stopped()
@@ -237,9 +245,9 @@ end
 local function mark_transition()
  local row=S.split();status='Transition marked. Rename '..row.name..' when you are ready.'
 end
-local function change_view(value)
+change_view=function(value)
  if value~=view then clip_target=nil end
- view=value;selection.sync(candidates());drag=nil;V.cancel();R.SetExtState(M.ns,'panel_view',value,true)
+ view=value;if value=='projects'then if P then P.reset()end;status='Choose a song, or start a full-band song in Desktop/Solo Studio Songs.'end;selection.sync(candidates());drag=nil;V.cancel();R.SetExtState(M.ns,'panel_view',value,true)
 end
 local function section_sidebar(x,w,recording)
  button('Edit song timeline',x,212,w,36,function()change_view('timeline')end,C.blue)
@@ -270,7 +278,7 @@ V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=
  selected=selection.has,selection_count=function()return #selected_rows()end,select=select_take})
 local function refresh()
  local proj=R.EnumProjects(-1,'')
- if proj~=lastproject then M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
+ if proj~=lastproject then if X then X.close();X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
   local set=M.get('active');local previous={}
@@ -306,9 +314,13 @@ local function frame()
   button('Undo',224,24,76,32,function()history(false)end,nil,history_enabled and (undo_label or '')~='')
   button('Redo',308,24,76,32,function()history(true)end,nil,history_enabled and (redo_label or '')~='')
   text(undo_label and undo_label~=''and ('Undo: '..undo_label:gsub('^Solo Studio: ',''))or 'No earlier edits',224,61,3,C.muted,w-548)
+  button('Projects',404,24,110,32,function()change_view(view=='projects'and 'timeline'or 'projects')end,view=='projects'and C.blue or nil)
   button('Tuner',w-308,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
   button('Save project',w-225,24,115,32,function()R.Main_OnCommand(40026,0) end)
   button('Dock',w-98,24,72,32,function()gfx.dock(gfx.dock(-1)&1==1 and 0 or 1) end)
+  if view=='projects'then
+   project_view().draw(24,96,gfx.w-48,gfx.h-182)
+  else
   local record_label=S.mode()=='section' and 'Record section' or (S.mode()=='full' and 'Record full song' or 'Record')
   button(recording and 'Stop & keep' or record_label,24,88,160,49,function()M.record() end,C.record)
   button(R.GetPlayState()~=0 and 'Stop' or 'Play',195,88,115,49,play)
@@ -429,9 +441,10 @@ local function frame()
   text(sn~='' and ('Passage note: '..sn) or 'Cmd-click: toggle takes / Shift-click: range. Delete removes whole passes; Cmd+Z in REAPER restores them.',25,fy+46,3,C.muted,w-50)
   section_sidebar(w+12,264,recording)
   end
+  end
   color(C.line);gfx.line(24,gfx.h-78,gfx.w-24,gfx.h-78)
   text(status,25,gfx.h-64,3,C.text,gfx.w-50)
-  text('Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo   Shift+Cmd/Ctrl+Z: redo',25,gfx.h-36,3,C.muted,w-50)
+  text(view=='projects'and 'P: back to song   N: new song   Up/Down: choose song   Enter: open song   Space: play/stop' or 'P: projects   Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo',25,gfx.h-36,3,C.muted,gfx.w-50)
  end
  local down=gfx.mouse_cap&1==1
  local consumed=view=='timeline' and V.mouse(down,down and not mouse_down,R.GetPlayState()&4~=0)
@@ -457,6 +470,7 @@ local function frame()
   if view=='timeline' then V.wheel(delta)
   elseif view=='mix' then mix().wheel(delta)
   elseif view=='tracks' then track_view().wheel(delta)
+  elseif view=='projects' then project_view().wheel(delta)
   elseif gfx.mouse_x>gfx.w-300 then section_scroll=section_scroll-delta else scroll=scroll-delta end
   gfx.mouse_wheel=0
  end
@@ -466,7 +480,9 @@ local function frame()
  end
  if ch==27 and V.cancel()then ch=0 end
  if view=='mix' and X and X.key(ch)then ch=0 end
- if ch==109 or ch==77 then run(function()change_view('mix')end)
+ if view=='projects'and P and P.key(ch)then ch=0 end
+ if ch==112 or ch==80 then run(function()change_view(view=='projects'and 'timeline'or 'projects')end)
+ elseif ch==109 or ch==77 then run(function()change_view('mix')end)
  elseif ch==32 then run(play) elseif ch==114 or ch==82 then run(M.record)
  elseif ch==110 or ch==78 then run(M.another)
  elseif ch==1818584692 and view~='tracks' then run(function()select_step(-1) end)

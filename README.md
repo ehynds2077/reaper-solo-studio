@@ -12,7 +12,7 @@ native Lua/gfx and the tuner uses JSFX; other platforms have not been verified.
 3. Copy `Effects/Solo Studio Strobe.jsfx` into `Effects/Solo Studio/` under the same resource folder.
 4. Copy the four files in `Templates/` into `ProjectTemplates/`. These are empty project templates, with no recordings.
 5. In **Actions → Show action list → New action → Load ReaScript**, load the installed `Solo Studio - Open recording panel.lua`. Run it, and assign **Cmd+Option+Shift+P** if that shortcut is free. Other `Solo Studio - ...` actions can be loaded and assigned shortcuts the same way.
-6. Start a new song from a Solo Studio project template, save it in its own folder, select your audio device, and assign inputs. In **Count-in...**, enable **Pre-roll before recording**, set **Pre-roll measures** to **2**, enable **Start pre-roll at start of measure**, and disable **Count-in before recording**.
+6. Open **Projects → New song** to name and save a full-band X32 song. Select your audio device and check inputs. Other supplied templates are also available through REAPER’s File menu. In **Count-in...**, enable **Pre-roll before recording**, set **Pre-roll measures** to **2**, enable **Start pre-roll at start of measure**, and disable **Count-in before recording**.
 
 The X32 template contains the channel assignments documented below. The other
 templates leave inputs unassigned. REAPER input monitoring defaults to off for
@@ -33,6 +33,32 @@ project, not required installation steps. Use the supplied templates for new son
 Press **Cmd+Option+Shift+P** from REAPER's arrangement to open the panel. Or, in **Actions → Show action list**, search **Solo Studio**, then run **Solo Studio - Open recording panel**. The other Solo Studio actions can also be assigned to keyboard shortcuts or MIDI controller buttons through this action list. On the original setup this shortcut is already assigned; new installations assign it during the steps above.
 
 On macOS, installed scripts live in `~/Library/Application Support/REAPER/Scripts/Solo Studio`. This repository holds their editable source, templates, and checks. Original settings backups remain local and are not included here.
+
+## Projects and new songs
+
+Click **Projects** at the top of Solo Studio, or press **P**, to browse your songs.
+Select a row and **Open song** (or Enter). An already-open song is selected in its
+existing REAPER tab; a closed song opens in a new tab. Previous songs stay open,
+including unsaved edits. Normal playback stops when switching; recording and
+an active AI mix pass must finish first. Save changes before closing REAPER.
+
+**New song** asks for a name and tempo, then saves an empty 15-track X32 full-band
+project under `~/Desktop/Solo Studio Songs/<name>/<name>.RPP`, with recordings in
+its `Media` folder. Scratch vocal (input 9) and scratch guitar (input 15) are
+selected and armed. The final vocal, electric/acoustic guitar, bass, and nine-mic
+drum sets are ready to select; acoustic guitar and bass still need input choices.
+Software input monitoring is off for interface monitoring. Names already in use
+are rejected rather than overwritten. The standalone **Create song project**
+action uses this same flow. It requires the supplied **Ethan X32** template.
+
+The list finds Solo Studio songs from open tabs, REAPER’s recent-project list,
+and the default song folder (up to five subfolder levels). **Add existing…**
+adds any saved `.RPP` without moving it. **Find a song…** filters the list;
+**Refresh** rescans it. The list shows open/current status, unsaved edits, tempo,
+track count, and last opened date. Missing files remain listed. Templates,
+development fixtures, and archived bounce copies are excluded from automatic
+discovery. The local catalog is saved in `Solo Studio/projects.json` inside
+REAPER’s resource directory; neither the catalog nor your songs go to GitHub.
 
 ## Mix with AI
 

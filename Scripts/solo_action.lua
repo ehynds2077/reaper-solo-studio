@@ -19,8 +19,7 @@ local actions={
   if ok then M.note(row.lane,note) end
  end,
  ['Create song project']=function()
-  reaper.Main_OnCommand(41929,0)
-  reaper.Main_openProject('template:'..reaper.GetResourcePath()..'/ProjectTemplates/Solo Studio - One person band.RPP')
+  dofile(dir..'/solo_projects.lua')(M).prompt_new()
  end,
  ['Tuner']=function()
   dofile(dir..'/solo_tuner.lua').open()

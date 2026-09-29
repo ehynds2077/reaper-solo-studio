@@ -69,3 +69,12 @@ project copies, packages both WAV/M4A variants, resolves archived source files,
 reopens a snapshot as an unsaved copy, and checks cancellation plus exact
 preservation of the user's project. Generate its tones with `make_fixtures.py`.
 See [bounce archive checks](../Bounces/README.md#checks) for Python validation.
+
+`Project library.lua` checks discovery, persistent catalogs, explicit imports,
+missing files, recording/AI locks, stale dialogs, and reuse of open project tabs.
+Panel checks cover Projects navigation, recording shortcut isolation, and mix
+view reset when the active song changes. `Run project library checks.lua` creates
+an isolated full-band song, verifies all X32 inputs and recording sets, switches
+between dirty and unsaved projects, rejects duplicate names, reopens the saved
+song, and verifies exact preservation of the user's original project. It never
+records hardware inputs; fixtures and its catalog stay under `Tests/`.

@@ -68,6 +68,13 @@ local function fixture(initial_view)
       cancel_drag=function()local had=f.pending_drag;f.pending_drag=false;return had end,history_changed=function()f.history_refreshed=true end,
       draw=function()end,mouse=function()end,wheel=function()end}end end
     if path:match('solo_tracks_view.lua$')then return function()return {reset=function()f.track_reset=true end,draw=function()f.track_drawn=true end,wheel=function(delta)f.track_wheel=delta end}end end
+    if path:match('solo_projects_view.lua$')then return function(_,ui,options)
+      f.projects_ui=ui;f.projects_options=options
+      return {reset=function()f.projects_reset=true end,draw=function()f.projects_drawn=true end,
+       wheel=function(delta)f.projects_wheel=delta end,key=function(ch)if ch==110 or ch==114 or ch==1818584692 then f.project_key=ch;return true end;return false end}
+    end end
+    if path:match('solo_mix.lua$')then return function()return {draw=function()f.mix_drawn=true end,poll=function()end,busy=function()return f.mix_busy end,
+     close=function()f.mix_closed=(f.mix_closed or 0)+1 end,key=function()return false end}end end
     if path:match('solo_take_selection.lua$')then return dofile(path)end
     error('Unexpected module '..path)
   end},{__index=_G})
@@ -80,6 +87,15 @@ local function fixture(initial_view)
   f.gfx=g;return f
 end
 local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..name)end
+local pf=fixture('projects');check(pf.projects_drawn,'Projects can be restored as the saved panel view')
+pf.gfx.mouse_wheel=-120;pf.frame();check(pf.projects_wheel==-1,'Project library receives scrolling')
+pf.key=110;pf.frame();pf.key=nil;check(pf.project_key==110 and #pf.calls==0,'Projects handles N without triggering another recording take')
+pf.key=114;pf.frame();pf.key=nil;check(pf.project_key==114 and #pf.calls==0,'Recording hotkey is consumed while browsing songs')
+pf.projects_ui.opened('Ready');pf.frame();pf.projects_drawn=false;pf.frame();check(not pf.projects_drawn,'Opening a project returns the panel to its timeline')
+pf.key=112;pf.frame();pf.key=nil;pf.frame();check(pf.projects_drawn,'P opens Projects from the recording workspace')
+pf=fixture();pf.click(450,40);check(pf.projects_drawn,'Projects button opens the library')
+pf.project='new project';pf.frame();check(pf.projects_reset,'Native project changes invalidate the project list')
+pf=fixture('mix');pf.project='another project';pf.frame();check(pf.mix_closed==1,'Changing native project releases the old mix session view')
 local hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.playing=true;hf.click(260,40)
 check(hf.calls[1][1]=='undo'and hf.history_refreshed and hf.playing,'Undo button reverses the native edit, refreshes the timeline, and preserves playback')
 hf.click(346,40);check(hf.calls[2][1]=='redo','Redo button reapplies the native boundary edit')
