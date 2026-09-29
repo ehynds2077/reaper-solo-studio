@@ -54,7 +54,11 @@ action uses this same flow. It requires the supplied **Ethan X32** template.
 The list finds Solo Studio songs from open tabs, REAPER’s recent-project list,
 and the default song folder (up to five subfolder levels). **Add existing…**
 adds any saved `.RPP` without moving it. **Find a song…** filters the list;
-**Refresh** rescans it. The list shows open/current status, unsaved edits, tempo,
+**Refresh** rescans it. Select a saved song and click **Rename…** (or press **F2**)
+to change its name in Solo Studio. Renames persist in the local catalog and are
+used for future bounce filenames; existing project files, folders, recordings,
+and archived mixes stay in place. Save an unnamed project once before renaming.
+The list shows open/current status, unsaved edits, tempo,
 track count, and last opened date. Missing files remain listed. Templates,
 development fixtures, and archived bounce copies are excluded from automatic
 discovery. The local catalog is saved in `Solo Studio/projects.json` inside

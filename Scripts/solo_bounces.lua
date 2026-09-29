@@ -24,8 +24,11 @@ function B.identity()
  local snapshot=path:match('/Session%.RPP$')or path:match('/Instrumental session%.RPP$')
  -- REAPER's master-track GUID is regenerated on reopen; saved project paths
  -- remain stable across launches. Archived copies carry their originating ID.
- return {project=project,path=path,id=restored~=''and restored or snapshot and archive and archive.project_id or (path~=''and path or tostring(project)),
-  title=restored_title~=''and restored_title or snapshot and archive and archive.project_title or path:match('([^/]+)%.[Rr][Pp][Pp]$')or 'Untitled song'}
+ local id=restored~=''and restored or snapshot and archive and archive.project_id or (path~=''and path or tostring(project))
+ local catalog=read(R.GetResourcePath()..'/Solo Studio/projects.json');local display_name
+ for _,row in ipairs(catalog and catalog.projects or {})do if row.path==id then display_name=row.display_name;break end end
+ return {project=project,path=path,id=id,
+  title=display_name or (restored_title~=''and restored_title or snapshot and archive and archive.project_title or path:match('([^/]+)%.[Rr][Pp][Pp]$')or 'Untitled song')}
 end
 local function settings()
  return read(B.root..'/settings.json')or {projects={}}

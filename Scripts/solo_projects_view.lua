@@ -22,12 +22,23 @@ return function(M,ui,options)
   local ok,value=R.GetUserInputs('Find a song',1,'Song name:,extrawidth=220',query)
   if ok then query=value:lower();scroll=0;selected=nil end
  end
+ local function rename()
+  local row=chosen()
+  if not row or row.path==''or not P.available()then return end
+  local expected=R.EnumProjects(-1,'')
+  local ok,value=R.GetUserInputs('Rename song in Projects',1,'Song name (files stay in place):,extrawidth=240',row.title)
+  if ok then
+   selected=P.rename(row,value,expected);query='';refresh()
+   for i,song in ipairs(P.list())do if song.key==selected then scroll=math.max(0,i-(box and box.visible or 1));break end end
+  end
+ end
  function V.reset()last_refresh=0 end
  function V.wheel(delta)
   if box and gfx.mouse_y>=box.y and gfx.mouse_y<box.y+box.h then scroll=math.max(0,scroll-delta);return true end
  end
  function V.key(ch)
   if ch==110 or ch==78 then ui.run(new_song);return true end
+  if ch==26162 then ui.run(rename);return true end -- F2
   if ch==13 then local row=chosen();if row then ui.run(function()opened(row)end)end;return true end
   if ch==30064 or ch==1685026670 then
    local index=1;for i,row in ipairs(rows)do if row.key==selected then index=i;break end end
@@ -73,8 +84,9 @@ return function(M,ui,options)
   end
   if #rows==0 then ui.text(query~=''and 'No matching songs. Clear the search to see all projects.'or 'Start a new song, or add a saved REAPER project.',x+16,box.y+18,1,C.muted,w-32)end
   local row=chosen();local bottom=y+h-56
-  ui.text(row and (row.path~=''and row.path or 'Unsaved project — use Save project above.')or P.root,x,bottom,3,C.muted,w-196)
-  ui.text(available and 'N: new song   Enter: open song   Songs stay open with unsaved edits preserved.'or 'Finish recording or the current AI mix operation to switch songs.',x,bottom+28,3,C.muted,w-196)
+  ui.text(row and (row.path~=''and row.path or 'Unsaved project — use Save project above.')or P.root,x,bottom,3,C.muted,w-332)
+  ui.text(available and 'N: new song   F2: rename   Enter: open song   Unsaved edits stay open.'or 'Finish recording or the current AI mix operation to switch songs.',x,bottom+28,3,C.muted,w-332)
+  ui.button('Rename...',x+w-310,bottom,126,43,rename,nil,available and row~=nil and row.path~='')
   ui.button(row and row.current and 'Back to song'or 'Open song',x+w-174,bottom,174,43,function()if row then opened(row)end end,C.blue,available and row~=nil and not row.missing)
  end
  return V

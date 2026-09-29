@@ -72,6 +72,8 @@ See [bounce archive checks](../Bounces/README.md#checks) for Python validation.
 
 `Project library.lua` checks discovery, persistent catalogs, explicit imports,
 missing files, recording/AI locks, stale dialogs, and reuse of open project tabs.
+It also verifies rename persistence, failed-write rollback, untouched project
+files and unsaved edits, and renamed bounce titles with stable archive identity.
 Panel checks cover Projects navigation, recording shortcut isolation, and mix
 view reset when the active song changes. `Run project library checks.lua` creates
 an isolated full-band song, verifies all X32 inputs and recording sets, switches

@@ -24,6 +24,22 @@ check(find(other) and not find(ordinary),'Root scan discovers Solo Studio songs 
 check(find('').project==projects[2],'Unsaved Solo Studio tab stays reachable')
 check(#J.read(catalog).projects==2,'Unsaved tabs are not persisted as fake files')
 check(P.add(ordinary)==ordinary and find(ordinary),'Add existing explicitly accepts a standard REAPER song')
+local f=assert(io.open(song,'rb'));local original_bytes=f:read('*a');f:close()
+local old_row=find(song);P.rename(old_row,'  New song title  ',current);P.refresh()
+check(find(song).title=='New song title'and find(song).key==song,'Rename survives discovery refresh and keeps stable identity')
+f=assert(io.open(song,'rb'));local after=f:read('*a');f:close()
+check(after==original_bytes and current==projects[1]and current.dirty==1 and loads==0 and before==0,'Rename leaves the RPP bytes, unsaved edits and active tab intact')
+check(not pcall(P.rename,old_row,'Stale name'),'A stale name cannot overwrite a later rename')
+check(not pcall(P.rename,find(song),'   ')and not pcall(P.rename,find(song),'Bad\nname'),'Empty and multiline names are rejected')
+check(not pcall(P.rename,find(''),'Draft name'),'Unsaved unnamed projects must be saved before library rename')
+state=4;check(not pcall(P.rename,find(song),'Recording'),'Recording blocks the rename dialog action');state=0
+busy=true;check(not pcall(P.rename,find(song),'Mixing'),'AI operations block renaming');busy=false
+check(not pcall(P.rename,find(song),'Wrong project',projects[2]),'Changed project context rejects a stale rename dialog')
+P.rename(find(other),'Closed song title');check(find(other).title=='Closed song title'and loads==0,'Closed songs can be renamed without opening them')
+local saved_catalog=P.catalog;P.catalog='/private/tmp/no-such-solo-rename-folder/catalog.json'
+check(not pcall(P.rename,find(song),'Failed write')and find(song).title=='New song title','Failed catalog write preserves the previous name')
+P.catalog=saved_catalog
+
 state=1;P.open(find(''))
 check(current==projects[2]and state==0 and loads==0 and projects[1].dirty==1,'Switch reuses an open tab, stops playback, and preserves dirty work')
 P.open(find(song));check(current==projects[1]and loads==0,'Returning to an open song never reloads its saved file')
@@ -36,5 +52,18 @@ os.remove(other);check(find(other).missing==false,'An open project remains usabl
 projects[3]=nil;current=projects[1];check(find(other).missing and not pcall(P.open,find(other)),'A missing closed song stays in the list with a clear failure')
 local Q=factory({ns='SoloStudio_v1'},{root='/private/tmp',catalog=catalog,template=song})
 check(#Q.list()==4,'Catalog survives a module reload, including missing songs and unsaved open tabs')
+local restored={};for _,row in ipairs(Q.list())do restored[row.path]=row.title end
+check(restored[song]=='New song title'and restored[other]=='Closed song title','Renamed open and missing songs retain names after a reload')
+local old_ext=R.GetProjExtState
+R.GetProjExtState=function(project,namespace)if namespace=='SoloStudio_bounces'then return 0,''end;return old_ext(project)end
+local bounce_env=setmetatable({reaper=R,dofile=function(path)
+ if path:match('/solo_json.lua$')then return {read=function(file)if file:match('/Solo Studio/projects.json$')then return J.read(catalog)end end}end
+ return dofile(path)
+end},{__index=_G})
+local B=assert(loadfile(root..'/Scripts/solo_bounces.lua','t',bounce_env))()
+check(B.identity().title=='New song title'and B.identity().id==song,'Future bounce names use the renamed title without changing the saved mix identity')
+R.GetProjExtState=function(_,_,key)return 1,key=='source'and song or 'Old archive title'end
+check(B.identity().title=='New song title'and B.identity().id==song,'Restored archived sessions retain their mix history and follow the current song name')
+R.GetProjExtState=old_ext
 for _,path in ipairs(files)do os.remove(path)end
 print(passed..' project library checks passed')

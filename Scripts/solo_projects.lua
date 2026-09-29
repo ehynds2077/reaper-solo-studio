@@ -45,6 +45,8 @@ return function(M,options)
   if not explicit and excluded(path)then return end
   local row=metadata(path,not explicit);if not row then return end
   local previous=entries[path]
+  row.display_name=previous and previous.display_name
+  row.title=row.display_name or row.title
   row.last_opened=previous and previous.last_opened or 0
   row.added=previous and previous.added or os.time()
   entries[path]=row;return row
@@ -128,6 +130,24 @@ return function(M,options)
  function P.available()
   local state=R.GetAllProjectPlayStates and R.GetAllProjectPlayStates()or R.GetPlayState()
   return state&4==0 and not (o.busy and o.busy())
+ end
+ function P.rename(row,name,expected)
+  assert(P.available(),'Finish recording or the current AI mix operation before renaming a song.')
+  assert(not expected or R.EnumProjects(-1,'')==expected,'The active project changed. Select the song again.')
+  assert(row and row.path~=''and entries[row.path],'Save this project once before renaming it in Projects.')
+  local saved=entries[row.path]
+  assert(saved.title==row.title,'This song name changed. Select it again before renaming.')
+  name=(name or ''):gsub('^%s+',''):gsub('%s+$','')
+  local length=utf8.len(name)
+  assert(length and length>0 and length<=100 and not name:find('%c'),'Use a song name of 1–100 characters without line breaks.')
+  if name==saved.title then return row.path end
+  -- The catalog name is independent of the RPP path, which also identifies
+  -- saved bounces and AI mix sessions. Do not save or mutate the open project.
+  local old_title,old_name=saved.title,saved.display_name
+  saved.title=name;saved.display_name=name
+  local ok,err=pcall(persist)
+  if not ok then saved.title=old_title;saved.display_name=old_name;error(err,0)end
+  return row.path
  end
  local function prepare(expected)
   assert(P.available(),'Finish recording or the current AI mix operation before switching songs.')
