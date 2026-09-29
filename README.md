@@ -36,6 +36,13 @@ On macOS, installed scripts live in `~/Library/Application Support/REAPER/Script
 
 ## Projects and new songs
 
+**Projects → Import Ableton…** imports a Live set into a separate song, with its
+arrangement, takes, routing, supported automation and same-format AU/VST3 states.
+It produces a complete private XML inventory and a report of missing audio or
+features needing review. Copy `Ableton/*.py` into the installed
+`Scripts/Solo Studio/Ableton/` folder to enable it. See the
+[Ableton importer guide](Ableton/README.md) for supported features and fidelity limits.
+
 Click **Projects** at the top of Solo Studio, or press **P**, to browse your songs.
 Select a row and **Open song** (or Enter). An already-open song is selected in its
 existing REAPER tab; a closed song opens in a new tab. Previous songs stay open,

@@ -3,6 +3,7 @@ local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 return function(M,ui,options)
  local P=dofile(dir..'/solo_projects.lua')(M,options);local V={};local C=ui.colors
  local rows,selected,scroll,box={},nil,0,nil;local query='';local last_refresh=0
+ local A,import_job,import_status,import_report
  local function refresh()
   P.refresh();last_refresh=R.time_precise()
  end
@@ -13,6 +14,24 @@ return function(M,ui,options)
  local function new_song()
   local project=P.prompt_new()
   if project then refresh();ui.opened('New song saved and ready for scratch guitar + vocal. Choose Inputs if your interface assignments differ.')end
+ end
+ local function import_ableton()
+  if import_job or not P.available()then return end
+  local ok,path=R.GetUserFileNameForRead(P.root..'/','Import an Ableton Live set','.als')
+  if not ok then return end
+  A=A or dofile(dir..'/solo_ableton.lua')
+  local accepted,media=R.GetUserInputs('Ableton import — media stays in place',1,'Relink folder (optional):,extrawidth=260','')
+  if not accepted then return end
+  import_job=A.start(path,P.root,media);import_status=nil
+ end
+ local function finish_import()
+  if not import_status or not import_status.ok or not P.available()then return end
+  assert(R.GetPlayState()==0,'Stop playback and recording before opening the imported song.')
+  if options and options.before_switch then options.before_switch()end
+  local _,report=A.apply(A.read_plan(import_status.plan))
+  import_report=import_job.folder;import_job=nil;import_status=nil
+  selected=P.add(report.project);refresh()
+  ui.opened('Ableton song imported. Review the import report for missing audio and effects that need attention.')
  end
  local function add()
   local ok,path=R.GetUserFileNameForRead(P.root..'/','Add an existing REAPER song','.RPP')
@@ -51,24 +70,44 @@ return function(M,ui,options)
   return false
  end
  function V.draw(x,y,w,h)
+  if import_job and not import_status then import_status=A.poll(import_job)end
   if last_refresh==0 then refresh()end
   rows={};for _,row in ipairs(P.list())do if query==''or row.title:lower():find(query,1,true)then rows[#rows+1]=row end end
   if not chosen()then selected=rows[1]and rows[1].key end
-  local available=P.available();local visible=math.max(1,math.floor((h-183)/57))
-  scroll=math.max(0,math.min(scroll,#rows-visible));box={x=x,y=y+117,w=w,h=visible*57,visible=visible}
+  local picked=chosen();local report_folder=picked and picked.path:match('^(.*)/')
+  if not report_folder or not R.file_exists(report_folder..'/Import report.md')then report_folder=import_report end
+  local available=P.available();local extra=import_job and 49 or 0;local visible=math.max(1,math.floor((h-183-extra)/57))
+  scroll=math.max(0,math.min(scroll,#rows-visible));box={x=x,y=y+117+extra,w=w,h=visible*57,visible=visible}
   ui.text('Your songs',x,y,2)
   ui.text(#rows..(#rows==1 and ' project'or ' projects')..'  /  Full-band X32 template',x+165,y+10,3,C.muted,w-580)
   ui.button('+ New song',x+w-174,y,174,39,new_song,C.blue,available)
   ui.button('Add existing...',x,y+48,143,32,add)
   ui.button(query~=''and ('Find: '..query)or 'Find a song...',x+153,y+48,180,32,search)
   if query~=''then ui.button('Clear',x+342,y+48,68,32,function()query='';scroll=0 end)end
+  ui.button('Import Ableton...',x+422,y+48,166,32,import_ableton,nil,available and not import_job)
+  if import_job then
+   local label='Analyzing Live XML, plug-in states and media...'
+   if import_status then
+    if import_status.ok then
+     local s=import_status.stats;label=s.tracks..' tracks / '..s.clips..' clips / '..s.missing_arrangement_clips..' arrangement clips need audio'
+     ui.button('Open imported song',x+w-194,y+90,194,33,finish_import,C.blue,available and R.GetPlayState()==0)
+    else
+     label='Import analysis failed: '..import_status.error
+     ui.button('Dismiss',x+w-194,y+90,194,33,function()import_report=import_job.folder;import_job=nil;import_status=nil end)
+    end
+   end
+   ui.text(label,x+14,y+102,3,C.gold,w-340)
+   ui.button('Report',x+w-290,y+90,86,33,function()A.reveal(import_job.folder)end,nil,import_status~=nil)
+  elseif report_folder then
+   ui.button('Import report',x+598,y+48,126,32,function()A=A or dofile(dir..'/solo_ableton.lua');A.reveal(report_folder)end)
+  end
   ui.button('Refresh',x+w-270,y+48,98,32,refresh)
   ui.button('Up',x+w-162,y+48,70,32,function()scroll=math.max(0,scroll-1)end)
   ui.button('Down',x+w-82,y+48,82,32,function()scroll=scroll+1 end)
-  ui.text('Song',x+14,y+94,3,C.muted)
-  ui.text('Status',x+w*.44,y+94,3,C.muted)
-  ui.text('Tempo / tracks',x+w*.66,y+94,3,C.muted)
-  ui.text('Last opened',x+w*.81,y+94,3,C.muted)
+  ui.text('Song',x+14,y+94+extra,3,C.muted)
+  ui.text('Status',x+w*.44,y+94+extra,3,C.muted)
+  ui.text('Tempo / tracks',x+w*.66,y+94+extra,3,C.muted)
+  ui.text('Last opened',x+w*.81,y+94+extra,3,C.muted)
   for i=scroll+1,math.min(#rows,scroll+visible)do
    local row=rows[i];local ry=box.y+(i-scroll-1)*57
    ui.color(row.key==selected and {.25,.35,.43}or C.surface);gfx.rect(x,ry,w,52,1)

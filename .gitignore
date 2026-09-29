@@ -16,6 +16,7 @@
 !/ReferenceLab/
 !/Mix/
 !/Bounces/
+!/Ableton/
 
 /Scripts/*
 !/Scripts/*.lua
@@ -58,3 +59,8 @@
 /Bounces/*
 !/Bounces/*.py
 !/Bounces/*.md
+
+# Importer source only; XML inventories, source sets, plugin states and audio stay local.
+/Ableton/*
+!/Ableton/*.py
+!/Ableton/*.md

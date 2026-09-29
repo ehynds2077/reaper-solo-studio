@@ -1,5 +1,10 @@
 # Recording workflow checks
 
+Ableton XML and native import checks are documented in the
+[importer guide](../Ableton/README.md#installation-and-validation). They cover
+source preservation, complete indexing, ambiguous relinks, tempo maps, loops,
+trimmed/warped audio, AU/VST3 state, routing, automation and fixed lanes.
+
 The standalone interaction checks need Lua 5.3 or newer. From the repository root:
 
 ```sh
