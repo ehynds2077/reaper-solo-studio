@@ -12,6 +12,7 @@ local lastproject,rows,tracks,lastrefresh=nil,{},{},0
 local all_rows,lastset,was_recording={},nil,false
 local buttons={}
 local sliders,drag={},nil
+local header_hint
 local section_scroll,sections=0,{}
 local saved_view=R.GetExtState(M.ns,'panel_view')
 local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks' or saved_view=='projects') and saved_view or 'timeline'
@@ -141,14 +142,50 @@ local function slider(id,x,y,w,value,fn,enabled)
  gfx.circle(x+w*value,y+11,6,1)
  if enabled then sliders[#sliders+1]={id=id,x=x,y=y,w=w,h=23,fn=fn} end
 end
+local function set_tempo(value)
+ assert(not X or not X.busy(),'Wait for the current AI mix operation before changing tempo.')
+ T.set_bpm(value);status='Song tempo updated.'
+end
 local function tempo_input()
  local ok,s=R.GetUserInputs('Song tempo',1,'Tempo (20-300 BPM):',string.format('%.2f',T.bpm()))
- if ok then T.set_bpm(tonumber(s));status='Song tempo updated.' end
+ if ok then set_tempo(tonumber(s))end
 end
 local function click_input()
  local db=T.click_db()
  local ok,s=R.GetUserInputs('Click volume',1,'Volume (-60 to 0 dB):',string.format('%.1f',db and db>-60 and math.min(0,db) or -12))
  if ok then T.set_click_db(tonumber(s));status='Click volume updated.' end
+end
+-- Shared song controls are drawn before every view, including Projects and Mix.
+local function song_header(recording)
+ local extra=gfx.w-1200;local offset=extra*.45
+ local tempo_enabled=T.tempo_enabled()and (not X or not X.busy())
+ local bpm=drag and drag.id=='tempo'and math.floor(T.min_bpm+drag.value*(T.max_bpm-T.min_bpm)+0.5)or T.bpm()
+ text('Tempo',24,64,3,C.muted)
+ button(string.format(bpm%1==0 and '%.0f BPM'or '%.2f BPM',bpm),104,59,117,24,tempo_input,nil,tempo_enabled)
+ slider('tempo',234,60,202+offset,(T.bpm()-T.min_bpm)/(T.max_bpm-T.min_bpm),function(value)
+  set_tempo(math.floor(T.min_bpm+value*(T.max_bpm-T.min_bpm)+0.5))
+ end,tempo_enabled)
+ local db=drag and drag.id=='volume'and T.position_db(drag.value)or T.click_db()
+ text('Click volume',458+offset,64,3,C.muted)
+ button(T.format_db(db),551+offset,59,99,24,click_input,nil,T.click_db()~=nil)
+ slider('volume',663+offset,60,182+extra*.55,T.volume_position(),function(value)
+  T.set_volume(value);status='Click volume: '..T.format_db(T.click_db())
+ end,T.click_db()~=nil)
+ local click_on=R.GetToggleCommandStateEx(0,40364)==1
+ button(click_on and 'Click on'or 'Click off',gfx.w-334,59,100,24,function()R.Main_OnCommand(40364,0)end,click_on and C.blue or nil)
+ button('Click sound...',gfx.w-222,59,198,24,function()
+  T.sound_settings();status='Click sound: choose a waveform, pitch, or custom sample in REAPER.'
+ end)
+ if gfx.mouse_y>=59 and gfx.mouse_y<84 then
+  if gfx.mouse_x>=24 and gfx.mouse_x<444+offset then
+   header_hint=tempo_enabled and 'Song tempo: drag for 20–300 BPM, or click the value to enter an exact tempo.'
+    or recording and 'Tempo is locked while recording.'
+    or X and X.busy()and 'Tempo is locked during the AI mix operation.'
+    or 'This song has a tempo map. Edit its tempo markers in REAPER.'
+  elseif gfx.mouse_x>=458+offset and gfx.mouse_x<853+extra then
+   header_hint='Click volume: drag from mute to 0 dB, or click the value to enter a level. Applies to the current song.'
+  end
+ end
 end
 local function name_set()
  local t=M.selected();if #t==0 then error('Select a track or the microphone tracks for one instrument in REAPER first.',0) end
@@ -301,23 +338,26 @@ gfx.init('Solo Studio | Record & review',1200,730,tonumber(R.GetExtState(M.ns,'d
 gfx.setfont(1,'Helvetica',16);gfx.setfont(2,'Helvetica',28,98);gfx.setfont(3,'Helvetica',13);gfx.setfont(4,'Helvetica',19,98)
 R.atexit(function()if X then X.close() end;R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
 local function frame()
- refresh();if X then X.poll() end;buttons={};sliders={};color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
+ refresh();if X then X.poll() end;buttons={};sliders={};header_hint=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
  if gfx.w<1180 or gfx.h<(view=='timeline' and 710 or 650) then
   V.reset()
   text('Make this panel at least 1180 x 710 to show the song timeline.',20,25,1)
  else
   local w=gfx.w-300;local active=M.get('active');local recording=R.GetPlayState() & 4 ~= 0
   text('Solo Studio',24,20,2)
-  text(recording and 'Recording' or (#tracks>0 and M.get('set.'..active..'.name')..'  /  '..#tracks..' track'..(#tracks>1 and 's' or '') or 'Your recording workspace'),25,57,3,recording and C.gold or C.muted)
   local undo_label,redo_label=R.Undo_CanUndo2(0),R.Undo_CanRedo2(0)
   local history_enabled=not recording and (not X or not X.busy())
   button('Undo',224,24,76,32,function()history(false)end,nil,history_enabled and (undo_label or '')~='')
   button('Redo',308,24,76,32,function()history(true)end,nil,history_enabled and (redo_label or '')~='')
-  text(undo_label and undo_label~=''and ('Undo: '..undo_label:gsub('^Solo Studio: ',''))or 'No earlier edits',224,61,3,C.muted,w-548)
+  if gfx.mouse_y>=24 and gfx.mouse_y<56 and gfx.mouse_x>=224 and gfx.mouse_x<384 then
+   local redo=gfx.mouse_x>=308;local label=undo_label;if redo then label=redo_label end
+   header_hint=label and label~=''and ((redo and 'Redo: 'or 'Undo: ')..label:gsub('^Solo Studio: ',''))or 'No earlier edits'
+  end
   button('Projects',404,24,110,32,function()change_view(view=='projects'and 'timeline'or 'projects')end,view=='projects'and C.blue or nil)
   button('Tuner',w-308,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
   button('Save project',w-225,24,115,32,function()R.Main_OnCommand(40026,0) end)
   button('Dock',w-98,24,72,32,function()gfx.dock(gfx.dock(-1)&1==1 and 0 or 1) end)
+  song_header(recording)
   if view=='projects'then
    project_view().draw(24,96,gfx.w-48,gfx.h-182)
   else
@@ -348,8 +388,8 @@ local function frame()
   button('Takes',sx+88,24,56,33,function()change_view('review')end,view=='review' and C.blue or nil)
   button('Tracks',sx+148,24,66,33,function()change_view('tracks')end,view=='tracks' and C.blue or nil)
   button('Mix',sx+218,24,46,33,function()change_view('mix')end,view=='mix' and C.blue or nil)
-  text('Record: '..S.label(),sx,73,3,C.muted,264)
-  button('Full song',sx,101,264,33,function()S.full_song();status='Ready to record the whole song. Stop & keep when finished.'end,S.mode()=='full' and C.blue or nil,not recording)
+  text('Record: '..S.label(),sx,88,3,C.muted,264)
+  button('Full song',sx,107,264,33,function()S.full_song();status='Ready to record the whole song. Stop & keep when finished.'end,S.mode()=='full' and C.blue or nil,not recording)
   button('One pass',sx,152,128,33,function()S.set_loop(false)end,not S.looping() and C.blue or nil,not recording)
   button('Loop takes',sx+136,152,128,33,function()S.set_loop(true)end,S.looping() and C.blue or nil,not recording)
   if view=='timeline' then
@@ -359,51 +399,28 @@ local function frame()
   elseif view=='tracks' then
    track_view().draw(24,215,gfx.w-48,gfx.h-300,recording)
   else
-  local tempo_enabled=T.tempo_enabled()
-  local bpm=drag and drag.id=='tempo' and math.floor(T.min_bpm+drag.value*(T.max_bpm-T.min_bpm)+0.5) or T.bpm()
-  local bpm_label=string.format(bpm%1==0 and '%.0f BPM' or '%.2f BPM',bpm)
-  text('Tempo',24,220,4)
-  button(bpm_label,104,211,117,32,tempo_input,nil,tempo_enabled)
-  text(recording and 'Locked while recording' or (tempo_enabled and '20' or 'Tempo map in REAPER'),24,269,3,C.muted)
-  if tempo_enabled then text('300',345,269,3,C.muted) end
-  slider('tempo',30,245,334,(T.bpm()-T.min_bpm)/(T.max_bpm-T.min_bpm),function(value)
-   T.set_bpm(math.floor(T.min_bpm+value*(T.max_bpm-T.min_bpm)+0.5));status='Song tempo updated.'
-  end,tempo_enabled)
-  local db=drag and drag.id=='volume' and T.position_db(drag.value) or T.click_db()
-  text('Click volume',400,220,4)
-  button(T.format_db(db),541,211,109,32,click_input,nil,T.click_db()~=nil)
-  slider('volume',406,245,238,T.volume_position(),function(value)
-   T.set_volume(value);status='Click volume: '..T.format_db(T.click_db())
-  end,T.click_db()~=nil)
-  text('Mute',400,269,3,C.muted);text('0 dB',624,269,3,C.muted)
-  button('Click sound...',680,211,w-704,36,function()
-   T.sound_settings();status='Click sound: choose a waveform, pitch, or custom sample in REAPER.'
-  end)
-  text('Tone or custom sample',680,258,3,C.muted)
-  color(C.line);gfx.line(24,290,w-24,290)
-  text('Passage',24,309,4)
-  button('4 bars',122,300,78,34,function()M.loop_bars(4) end)
-  button('8 bars',208,300,78,34,function()M.loop_bars(8) end)
-  button('Loop selection',294,300,133,34,function()
+  text('Passage',24,224,4)
+  button('4 bars',122,215,78,34,function()M.loop_bars(4) end)
+  button('8 bars',208,215,78,34,function()M.loop_bars(8) end)
+  button('Loop selection',294,215,133,34,function()
    S.manual()
    local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false);if e<=s then error('Drag a time selection in the timeline first.',0) end
    R.GetSet_LoopTimeRange2(0,true,true,s,e,false);R.GetSetRepeat(1);R.SetEditCurPos2(0,s,true,false)
   end)
-  button('Click '..(R.GetToggleCommandStateEx(0,40364)==1 and 'on' or 'off'),435,300,90,34,function()R.Main_OnCommand(40364,0) end)
-  button('Count-in...',533,300,106,34,function()R.Main_OnCommand(40363,0) end)
+  button('Count-in...',435,215,120,34,function()R.Main_OnCommand(40363,0) end)
   local punch=R.GetToggleCommandStateEx(0,40076)==1
-  button(punch and 'Punch on' or 'Punch off',647,300,w-671,34,function()S.manual();R.Main_OnCommand(punch and 40252 or 40076,0) end)
+  button(punch and 'Punch on' or 'Punch off',563,215,w-587,34,function()S.manual();R.Main_OnCommand(punch and 40252 or 40076,0) end)
   local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
-  text(e>s and ('Selected: '..R.format_timestr_pos(s,'',2)..' to '..R.format_timestr_pos(e,'',2)) or 'Select a passage in the timeline to compare or comp.',25,346,3,C.muted,w-370)
-  button('Clear selection',w-174,339,150,28,function()
+  text(e>s and ('Selected: '..R.format_timestr_pos(s,'',2)..' to '..R.format_timestr_pos(e,'',2)) or 'Select a passage in the timeline to compare or comp.',25,261,3,C.muted,w-370)
+  button('Clear selection',w-174,254,150,28,function()
    S.manual();R.Main_OnCommand(40020,0);status='Time selection and loop range cleared.'
   end,nil,not recording)
   local selected_count=#selected_rows();local single=not recording and selected_count==1
-  text((S.mode()=='section' and 'Section takes' or 'Takes')..(selected_count>1 and (' / '..selected_count..' selected')or ''),24,381,4)
-  button('Tempo...',w-322,371,94,34,tempo_menu,nil,not recording and #rows>0)
-  button('Previous',w-220,371,92,34,function()select_step(-1) end,nil,not recording)
-  button('Next',w-120,371,96,34,function()select_step(1) end,nil,not recording)
-  local table_y=419; local table_end=gfx.h-180;local visible=math.max(1,math.floor((table_end-table_y)/42))
+  text((S.mode()=='section' and 'Section takes' or 'Takes')..(selected_count>1 and (' / '..selected_count..' selected')or ''),24,296,4)
+  button('Tempo...',w-322,286,94,34,tempo_menu,nil,not recording and #rows>0)
+  button('Previous',w-220,286,92,34,function()select_step(-1) end,nil,not recording)
+  button('Next',w-120,286,96,34,function()select_step(1) end,nil,not recording)
+  local table_y=334; local table_end=gfx.h-180;local visible=math.max(1,math.floor((table_end-table_y)/42))
   local focus=chosen()
   if focus and focus.key~=review_focus then
    for i,row in ipairs(rows)do if row.key==focus.key then
@@ -413,8 +430,8 @@ local function frame()
   review_focus=focus and focus.key
   scroll=math.max(0,math.min(scroll,#rows-visible))
   if #rows==0 then
-   text(#tracks==0 and 'Add an instrument to begin.' or 'Your recorded takes will appear here.',30,439,1,C.muted)
-   text('Use one recording set for a single instrument or all microphones of a kit.',30,467,3,C.muted)
+   text(#tracks==0 and 'Add an instrument to begin.' or 'Your recorded takes will appear here.',30,354,1,C.muted)
+   text('Use one recording set for a single instrument or all microphones of a kit.',30,382,3,C.muted)
   else
    for i=scroll+1,math.min(#rows,scroll+visible) do
     local row=rows[i];local y=table_y+(i-scroll-1)*42
@@ -435,15 +452,15 @@ local function frame()
   button('Rename',386,fy,89,35,rename,nil,single)
   button(selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',483,fy,160,35,function()take_action('delete')end,C.record,not recording and selected_count>0)
   button('Use in comp',w-207,fy,183,35,function()take_action('comp')end,C.blue,single)
-  button('Comp',w-322,339,64,28,function()take_action('listen_comp')end,listen_mode=='comp'and C.blue or nil,not recording and comp_row~=nil)
-  button('Take',w-254,339,68,28,function()take_action('listen_take')end,listen_mode=='take'and C.blue or nil,single)
+  button('Comp',w-322,254,64,28,function()take_action('listen_comp')end,listen_mode=='comp'and C.blue or nil,not recording and comp_row~=nil)
+  button('Take',w-254,254,68,28,function()take_action('listen_take')end,listen_mode=='take'and C.blue or nil,single)
   local cr=chosen();local sn=cr and e>s and M.section_note(cr.lane,s,e) or ''
   text(sn~='' and ('Passage note: '..sn) or 'Cmd-click: toggle takes / Shift-click: range. Delete removes whole passes; Cmd+Z in REAPER restores them.',25,fy+46,3,C.muted,w-50)
   section_sidebar(w+12,264,recording)
   end
   end
   color(C.line);gfx.line(24,gfx.h-78,gfx.w-24,gfx.h-78)
-  text(status,25,gfx.h-64,3,C.text,gfx.w-50)
+  text(header_hint or status,25,gfx.h-64,3,C.text,gfx.w-50)
   text(view=='projects'and 'P: back to song   N: new song   Up/Down: choose song   Enter: open song   Space: play/stop' or 'P: projects   Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo',25,gfx.h-36,3,C.muted,gfx.w-50)
  end
  local down=gfx.mouse_cap&1==1

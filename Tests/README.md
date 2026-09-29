@@ -80,3 +80,7 @@ an isolated full-band song, verifies all X32 inputs and recording sets, switches
 between dirty and unsaved projects, rejects duplicate names, reopens the saved
 song, and verifies exact preservation of the user's original project. It never
 records hardware inputs; fixtures and its catalog stay under `Tests/`.
+
+The panel interaction checks also exercise the shared tempo, click-volume and
+sound controls across Timeline, Takes, Tracks, Mix and Projects, including
+view-switch drag cancellation and the active-AI tempo lock.

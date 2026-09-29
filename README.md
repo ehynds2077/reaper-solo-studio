@@ -176,7 +176,11 @@ Older recordings can expose any handles already present in their files; missing 
 
 ### Tempo and click controls
 
-- Drag **Tempo** to choose 20–300 BPM, or click the BPM value to type an exact tempo (including decimals). Slider changes apply when you release the mouse. Tempo changes are locked during recording; songs with tempo markers use REAPER's tempo-map editor.
+The shared header keeps **Tempo**, **Click volume**, **Click on/off**, and
+**Click sound…** visible in Timeline, Takes, Tracks, Mix (including Bounces),
+and Projects. These controls always apply to the current open song.
+
+- Drag **Tempo** to choose 20–300 BPM, or click the BPM value to type an exact tempo (including decimals). Slider changes apply when you release the mouse. Tempo changes are locked during recording and an active AI mix; songs with tempo markers use REAPER's tempo-map editor.
 - Drag **Click volume** from mute to 0 dB, or click the dB value to enter -60 to 0 dB. This changes REAPER's metronome volume and preserves the relative volume of accented beats. It does not change instrument gain or X32 monitoring.
 - **Click sound...** opens REAPER's metronome settings. Choose the **Waveform shape**, change the A/B frequencies, or select **Sample** and browse to your own click audio. **Sample presets** saves combinations you want to reuse. **Count-in...** opens the same window at its count-in controls.
 - Tempo, click volume, sound, and count-in are saved with the project. Opening Solo Studio does not reset them.
