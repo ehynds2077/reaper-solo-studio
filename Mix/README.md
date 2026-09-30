@@ -145,9 +145,14 @@ The agent's fader, pan and effect settings apply across the track, even when
 measurement uses an excerpt. Trim automation is constrained to the excerpt with
 zero-dB endpoints. Check the full song before committing a mix based on one passage.
 
-Closing the panel cancels unfinished work and preserves the current sound and
-local journal for explicit recovery. Return to the original project and reopen
-Mix. A completed candidate resumes review;
+Unfinished mixes belong to their own projects. Switching songs or reopening Mix
+finds that project's saved journal; an unfinished candidate in another song does
+not block a new mix. Existing journals from the older global-session pointer are
+discovered automatically. Saved songs match by project path; unsaved tabs also
+need matching track GUIDs. Keep/Revert resolves only the current song's session.
+Closing the panel (including a native project-tab switch) cancels a running pass
+and preserves its current sound and local journal. The Projects view still waits
+for an active pass to stop before switching. Returning to a completed candidate resumes review;
 an interrupted pass can be continued with **Give feedback…** or reverted.
 When tracks, faders, or effects have changed, **Start a new mix** opens setup
 from the current sound without undoing those edits. The old journal and analysis

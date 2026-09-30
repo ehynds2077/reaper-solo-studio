@@ -2,7 +2,7 @@
 local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0;local function check(v,name)assert(v,name);passed=passed+1;print('PASS '..name)end
 local state,transport,session,compared,kept,reverted,buttons,archived,foreign,extstate
-local settings,writes,launches,input,job
+local settings,writes,launches,input,job,legacy
 local J={array=function(t)return t or {}end,write=function(path,value)writes[path]=value end}
 function J.read(path)
  if path:match('/status.json$')then return {state=state,events={},measurements={}}end
@@ -12,7 +12,7 @@ function J.read(path)
  if path:match('/snapshot.json$')then return {finished=false,project_path='other.rpp'}end
  if path:match('/connection.json$')then return {connected=true}end
 end
-local B={json=J,recover=function()return not foreign and session or nil end,
+local B={json=J,find_session=function()return not foreign and session or nil end,
  guard=function()assert(transport==0,'Stop transport')end,
  compare=function(_,mode)compared=mode;session.mode=mode end,
  keep=function()kept=true;session.finished=true end,
@@ -26,7 +26,7 @@ function dofile(path)
   price=function()return 'test'end,message=function()end}end}end
  return original_dofile(path)
 end
-reaper={RecursiveCreateDirectory=function()end,GetExtState=function()return '/nonexistent-test-mix'end,
+reaper={RecursiveCreateDirectory=function()end,GetExtState=function(_,key)return key=='mix_session'and legacy or ''end,
  GetPlayState=function()return transport end,time_precise=function()return 0 end,
  GetSet_LoopTimeRange2=function()return 0,20 end,SetExtState=function(_,_,v)extstate=v end,
  GetUserInputs=function()return true,input end,ExecProcess=function()launches=launches+1;return ''end}
@@ -38,6 +38,7 @@ local function panel(t,status,mode,changed,other_project)
  transport=t;state=status or 'review';session={path='/nonexistent-test-mix',mode=mode or 'candidate',recovery_changed=changed}
  compared=nil;kept=false;reverted=false;archived=false;foreign=other_project;extstate=nil;buttons={}
  writes={};launches=0;job={direction='Original direction',rounds=20,stop_after_usd=2}
+ legacy=other_project and '/other-project-mix'or session.path
  local x=factory({ns='test'},ui);x.draw(0,0,1200,700);return x
 end
 for _,t in ipairs({0,1,2,3})do
@@ -70,7 +71,7 @@ local x=panel(0,'review','candidate',true)
 check(buttons['Start a new mix'].enabled and not buttons.Original,'Changed project offers current-mix recovery instead of outdated A/B')
 x.key(49);x.key(50);check(not compared,'Recovery page cannot trigger hidden A/B shortcuts')
 -- Allow the cancellation marker to be created in a disposable location.
-local tmp=os.tmpname();os.remove(tmp);assert(os.execute('mkdir -p "'..tmp..'"'));session.path=tmp
+local tmp=os.tmpname();os.remove(tmp);assert(os.execute('mkdir -p "'..tmp..'"'));session.path=tmp;legacy=tmp
 buttons['Start a new mix'].run();buttons={};x.draw(0,0,1200,700)
 check(archived and not reverted and not kept and extstate==''and not x.pending(),'Fresh start clears the blocker without accepting or reverting the old candidate')
 check(buttons['Create candidate mix'].enabled,'Fresh start opens configured setup without launching a worker')
@@ -78,11 +79,13 @@ for _,t in ipairs({1,4,5})do
  x=panel(t,'review','candidate',true);x.key(13)
  check(not buttons['Start a new mix'].enabled and not archived,'Fresh start and Enter wait for stopped transport '..t)
 end
-x=panel(0,'review','candidate',true);session.path=tmp;x.key(13)
+x=panel(0,'review','candidate',true);session.path=tmp;legacy=tmp;x.key(13)
 check(archived and not x.pending(),'Enter opens fresh setup from recovery while stopped')
 x=panel(0);session.path=tmp;x.close();check(not reverted and not kept and extstate==nil and x.pending(),'Panel close preserves unfinished mix for explicit review')
-x=panel(0,'review','candidate',false,true);check(not buttons['Mix with AI'].enabled,'Real foreign session remains blocked')
+x=panel(0,'review','candidate',false,true);check(buttons['Mix with AI'].enabled and not x.pending(),'Another song unfinished mix does not block this project')
 x.key(13);buttons={};x.draw(0,0,1200,700)
-check(buttons['Mix with AI']and not buttons['Create candidate mix'],'Enter cannot bypass foreign-session lock')
+check(buttons['Create candidate mix'].enabled and not reverted and not kept and extstate==nil,'New project opens setup without touching another song mix')
+x=panel(0);session.path=tmp;legacy='/other-project-mix';buttons.Revert.run()
+check(reverted and extstate==nil,'Reverting this song leaves another song legacy pointer intact')
 os.remove(tmp..'/cancel');os.remove(tmp)
 print(passed..' mix review controls checks passed')

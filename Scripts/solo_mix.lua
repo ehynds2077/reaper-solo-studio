@@ -24,7 +24,7 @@ return function(M,ui)
  if config.visual_analysis==nil then config.visual_analysis=true end
  local lib=read(data..'/library.json',{references=J.array(),default=''})
  local selected=config.references or (lib.default~=''and J.array({lib.default})or J.array())
- local phase='intro';local session;local state;local foreign_session=false;local status='Choose a reference and direction, then create a candidate mix.'
+ local phase='intro';local session;local state;local status='Choose a reference and direction, then create a candidate mix.'
  local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
  local model_x,model_y=24,215
  local mix_view=R.GetExtState(M.ns,'mix_view')=='bounces'and 'bounces'or 'ai'
@@ -45,17 +45,12 @@ return function(M,ui)
   else saved.state='recovery';status='Unfinished session recovered. Revert restores its faders and removes its added effects.'end
   return saved
  end
- local old=R.GetExtState(M.ns,'mix_session')
- if old~=''then
-  session=B.recover(old)
-  if not session then
-   local snapshot=read(old..'/snapshot.json')
-   foreign_session=snapshot and not snapshot.finished or false
-   if foreign_session then status='Another project has an unfinished mix. Return to that project and reopen Mix to revert it.'end
-  end
-  if session then
-   phase='session';state=recover_review(session)
-  end
+ session=B.find_session(data..'/sessions',R.GetExtState(M.ns,'mix_session'))
+ if session then
+  phase='session';state=recover_review(session)
+ end
+ local function clear_legacy()
+  if session and R.GetExtState(M.ns,'mix_session')==session.path then R.SetExtState(M.ns,'mix_session','',true)end
  end
  local function save_config()config.references=selected;J.write(data..'/settings.json',config)end
  local function connection()return read(data..'/connection.json',{connected=false,message='Connect your OpenRouter account to begin.'})end
@@ -68,7 +63,7 @@ return function(M,ui)
   if session then local f=assert(io.open(session.path..'/cancel','w'));f:close()end
  end
  function X.busy()return session and not session.finished and state and state.state=='running'end
- function X.pending()return foreign_session or (session and not session.finished)end
+ function X.pending()return session and not session.finished end
  local function finish(revert)
   assert(session,'No session');cancelled()
   if revert then
@@ -78,12 +73,12 @@ return function(M,ui)
    assert(state and state.state=='review','Only a measured candidate with peaks at or below -1 dBTP can be kept.')
    B.keep(session);status='Candidate kept. Save your REAPER project when you are ready.'
   end
-  R.SetExtState(M.ns,'mix_session','',true);session=nil;phase='intro';state=nil
+  clear_legacy();session=nil;phase='intro';state=nil
  end
  local function restart()
   assert(session and not X.busy(),'Wait for the current pass before starting a new mix.')
   cancelled();B.archive_current(session)
-  R.SetExtState(M.ns,'mix_session','',true);session=nil;state=nil;phase='setup';foreign_session=false
+  clear_legacy();session=nil;state=nil;phase='setup'
   status='Current mix preserved. Choose references and create a new candidate.'
  end
  function X.poll()
@@ -92,10 +87,6 @@ return function(M,ui)
   models.poll()
   if checking then local c=read(data..'/connection.json');if c then checking=false;status=c.message end end
   if importing then local v=read(data..'/import-result.json');if v then importing=false;status=v.error or ('Reference saved: '..v.title);lib=read(data..'/library.json',lib)end end
-  if foreign_session then
-   local recovered=B.recover(old)
-   if recovered then session=recovered;foreign_session=false;phase='session';state=recover_review(session)end
-  end
   if not session or session.finished then return end
   if state and (state.state=='recovery'or state.state=='stale')then return end
   local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
@@ -124,7 +115,7 @@ return function(M,ui)
   R.RecursiveCreateDirectory(path,0);session=B.begin(path,range);handled='';chat_scroll=0
   save_config();local job={model=config.model,direction=config.direction,rounds=config.rounds,
    stop_after_usd=config.stop_after_usd,references=selected,bounds=range,visual_analysis=config.visual_analysis}
-  J.write(path..'/config.json',job);R.SetExtState(M.ns,'mix_session',path,true)
+  J.write(path..'/config.json',job)
   state={state='running',events=J.array(),measurements=J.array(),updated=os.time()};phase='session'
   local ok,err=pcall(launch,{'--session',path});if not ok then state.state='error';error(err)end
   status='Mixing the selected passage. Leave transport stopped until the candidate is ready.'

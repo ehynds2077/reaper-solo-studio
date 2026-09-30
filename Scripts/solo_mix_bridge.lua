@@ -97,6 +97,32 @@ function B.recover(path)
  data.recovery_changed=changed
  return data
 end
+function B.find_session(root,legacy)
+ -- Journals already record their owning project. Discover them per project;
+ -- a single global pointer cannot represent several unfinished song mixes.
+ local _,name=R.EnumProjects(-1,'');local candidates={};local seen={}
+ local function consider(path)
+  if not path or path==''or seen[path]then return end;seen[path]=true
+  local ok,data=pcall(J.read,path..'/snapshot.json')
+  if not ok or type(data)~='table'or data.finished or data.project_path~=name then return end
+  local good,status=pcall(J.read,path..'/status.json')
+  local updated=good and type(status)=='table'and tonumber(status.updated)or 0
+  candidates[#candidates+1]={path=path,updated=updated or 0}
+ end
+ consider(legacy) -- Keep old installations recoverable, including custom paths.
+ R.EnumerateSubdirectories(root,-1)
+ local i=0
+ while true do
+  local folder=R.EnumerateSubdirectories(root,i);if not folder then break end
+  consider(root..'/'..folder);i=i+1
+ end
+ table.sort(candidates,function(a,b)if a.updated~=b.updated then return a.updated>b.updated end;return a.path>b.path end)
+ for _,row in ipairs(candidates)do
+  -- Recovery also checks track GUIDs for unsaved tabs and detects stale edits.
+  local recovered=B.recover(row.path)
+  if recovered then return recovered end
+ end
+end
 function B.guard(s,check_version,allow_playback)
  assert(R.EnumProjects(-1,'')==s.project,'Project switched. Session stopped; return to its project to revert.')
  local transport=R.GetPlayState()

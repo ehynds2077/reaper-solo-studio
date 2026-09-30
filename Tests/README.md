@@ -49,6 +49,13 @@ first. It requires a working audio device, writes `Tests/mix-playback-checks.txt
 and checks that the user's original project remains unchanged. Run it with
 **Run**, leaving Actions open (see the mixing README for the macOS accessibility caveat).
 
+`Mix project sessions.lua` checks recovery from real local journals across saved
+songs and unsaved tabs, legacy-pointer migration, completed sessions, stale edits,
+and incomplete unrelated journals. `Mix review controls.lua` verifies that another
+song's pending mix leaves setup available and Keep/Revert does not clear that song's
+legacy recovery pointer. `Panel tempo interactions.lua` also checks that changing
+the native project releases the old mix view before the next one is opened.
+
 The timeline checks cover aligned take clips, gaps, partial passes, selection without auditioning, scrolling, and instrument changes. Panel checks exercise selecting, auditioning, and deleting from the list, plus selecting the new pass after Stop. `Take deletion.lua` tests synchronized deletion, stale selection protection, recording locks, and rollback after a partial failure. The native visual fixture also runs `Native take lanes.lua` with nine synthetic microphone tracks, checks single-step Undo and comp preservation, then opens the timeline for inspection.
 
 Multiple-selection checks cover Cmd toggles, Shift ranges across offscreen rows, changing scope, neighboring selection after deletion, and preserving selection on failure. Batch deletion checks verify all take identities before mutation, rollback the whole batch on failure, and native nine-microphone deletion/Undo in one step.
