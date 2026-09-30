@@ -76,6 +76,7 @@ local function fixture(initial_view)
   g.drawstr=function(s)f.labels[#f.labels+1]=s end
   local env=setmetatable({reaper=R,gfx=g,dofile=function(path)
     if path:match('solo_core.lua$') then return M end
+    if path:match('solo_bounces.lua$')then return {identity=function()return {title=f.song_title or 'Current song'}end}end
     if path:match('solo_tempo.lua$') then return T end
     if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,
       cancel_drag=function()local had=f.pending_drag;f.pending_drag=false;return had end,history_changed=function()f.history_refreshed=true end,
@@ -176,16 +177,16 @@ pf.key=110;pf.frame();pf.key=nil;check(pf.project_key==110 and #pf.calls==0,'Pro
 pf.key=114;pf.frame();pf.key=nil;check(pf.project_key==114 and #pf.calls==0,'Recording hotkey is consumed while browsing songs')
 pf.projects_ui.opened('Ready');pf.frame();pf.projects_drawn=false;pf.frame();check(not pf.projects_drawn,'Opening a project returns the panel to its timeline')
 pf.key=112;pf.frame();pf.key=nil;pf.frame();check(pf.projects_drawn,'P opens Projects from the recording workspace')
-pf=fixture();pf.click(450,40);check(pf.projects_drawn,'Projects button opens the library')
+pf=fixture();pf.click(998,40);check(pf.projects_drawn,'Projects button opens the library')
 pf.project='new project';pf.frame();check(pf.projects_reset,'Native project changes invalidate the project list')
 pf=fixture('mix');pf.project='another project';pf.frame();check(pf.mix_closed==1,'Changing native project releases the old mix session view')
 local launched=fixture('mix');launched.mix_busy=true;launched.extstate.panel_raise='1';launched.frame()
 check(launched.window_closed and launched.extstate.panel_raise==''and launched.extstate.panel_open=='1','Desktop relaunch raises the existing panel and consumes its request')
 check(not launched.mix_closed and launched.mix_busy and #launched.calls==0,'Raising the panel preserves the mix worker and project without cleanup')
 launched.cleanup();check(launched.extstate.panel_open==''and launched.mix_closed==1,'Panel exit clears its nonpersistent launcher marker')
-local hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.playing=true;hf.click(260,40)
+local hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.playing=true;hf.click(805,40)
 check(hf.calls[1][1]=='undo'and hf.history_refreshed and hf.playing,'Undo button reverses the native edit, refreshes the timeline, and preserves playback')
-hf.click(346,40);check(hf.calls[2][1]=='redo','Redo button reapplies the native boundary edit')
+hf.click(889,40);check(hf.calls[2][1]=='redo','Redo button reapplies the native boundary edit')
 hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.key=26;hf.frame();hf.key=nil
 check(hf.calls[1][1]=='undo','Cmd/Ctrl+Z works while the panel has focus')
 hf.gfx.mouse_cap=8;hf.key=26;hf.frame();hf.key=nil
@@ -194,9 +195,9 @@ hf=fixture();hf.redo_label='Solo Studio: move comp boundary';hf.key=25;hf.frame(
 check(hf.calls[1][1]=='redo','Ctrl+Y also performs Redo')
 hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.pending_drag=true;hf.key=26;hf.frame();hf.key=nil
 check(#hf.calls==0 and not hf.pending_drag,'Undo during a drag cancels the preview before touching committed history')
-hf=fixture();hf.click(260,40);hf.key=26;hf.frame();hf.key=nil
+hf=fixture();hf.click(805,40);hf.key=26;hf.frame();hf.key=nil
 check(#hf.calls==0 and #hf.errors==0,'Empty history disables Undo and shortcuts are harmless')
-hf=fixture();hf.undo_label='Solo Studio: move comp boundary';hf.recording=true;hf.click(260,40);hf.key=26;hf.frame()
+hf=fixture();hf.undo_label='Solo Studio: move comp boundary';hf.recording=true;hf.click(805,40);hf.key=26;hf.frame()
 check(#hf.calls==0,'Recording blocks both Undo buttons and shortcuts')
 local tf=fixture('tracks')
 check(tf.track_drawn,'The saved Tracks tab opens the project-track interface')

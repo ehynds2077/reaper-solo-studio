@@ -139,7 +139,7 @@ sets dismisses the old dialog. Mixed microphone monitoring is shown explicitly;
 
 ### Visual song timeline
 
-Open **Timeline** in the view-tab row beneath the instrument tabs. The horizontal ruler shows bars; colored blocks are song sections. The gold line is the cursor/playhead. **Takes** opens take review, **Tracks** manages project tracks, and **Mix** opens the mixing workspace. Tempo and click controls stay visible in the shared header.
+Open **Timeline** in the view-tab row beneath the instrument tabs. The horizontal ruler shows bars; colored blocks are song sections. The gold line is the cursor/playhead. **Takes** opens take review, **Tracks** manages project tracks, and **Mix** opens the mixing workspace. The shared header shows the current song title, with Undo, Redo, Projects, and Save project on the right. Tempo, click controls, and Tuner stay visible in the row below. Hover a shortened song title to see its full name in the status line.
 
 - **Create visually:** drag across empty timeline space from the desired start to the desired end. A preview shows the bounds and duration. Releasing creates and selects the section; click its name below to rename it.
 - **Create with an exact length:** click **New section...**, enter a name, start bar, and length in bars. Example: `Verse`, start `9`, length `8` ends at bar `17`.

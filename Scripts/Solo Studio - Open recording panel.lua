@@ -13,6 +13,7 @@ local all_rows,lastset,was_recording={},nil,false
 local buttons={}
 local sliders,drag={},nil
 local header_hint
+local title_source,song_identity
 local track_settings
 local template_settings
 local set_tab_first,set_tab_active,set_tab_layout=1,nil,nil
@@ -159,6 +160,33 @@ local function click_input()
  local ok,s=R.GetUserInputs('Click volume',1,'Volume (-60 to 0 dB):',string.format('%.1f',db and db>-60 and math.min(0,db) or -12))
  if ok then T.set_click_db(tonumber(s));status='Click volume updated.' end
 end
+local function current_song_title()
+ local project,path=R.EnumProjects(-1,'');local now=R.time_precise()
+ if not song_identity or song_identity.project~=project or song_identity.path~=path or now-song_identity.at>1 then
+  -- Share the bounce library's title lookup, including project-library renames
+  -- and restored mix snapshots, without scanning or changing the song catalog.
+  title_source=title_source or dofile(dir..'/solo_bounces.lua')
+  local ok,identity=pcall(title_source.identity)
+  local title=ok and identity.title or (path or ''):match('([^/\\]+)%.[Rr][Pp][Pp]$')or 'Untitled song'
+  song_identity={project=project,path=path,at=now,title=title:gsub('%c',' ')}
+ end
+ return song_identity.title
+end
+local function draw_song_title(right)
+ local title=current_song_title();local label=title;local width=right-248
+ gfx.setfont(4)
+ if gfx.measurestr(label)>width then
+  repeat
+   label=label:sub(1,(utf8.offset(label,-1)or #label)-1)
+  until label==''or gfx.measurestr(label..'…')<=width
+  label=label..'…'
+ end
+ color(C.line);gfx.line(205,25,205,52)
+ text(label,224,29,4,C.text,width)
+ if gfx.mouse_x>=224 and gfx.mouse_x<right-24 and gfx.mouse_y>=20 and gfx.mouse_y<56 then
+  header_hint='Current song: '..title
+ end
+end
 -- Shared song controls are drawn before every view, including Projects and Mix.
 local function song_header(recording)
  local extra=gfx.w-1200;local offset=extra*.45
@@ -177,9 +205,10 @@ local function song_header(recording)
  end,T.click_db()~=nil)
  local click_on=R.GetToggleCommandStateEx(0,40364)==1
  button(click_on and 'Click on'or 'Click off',gfx.w-334,59,100,24,function()R.Main_OnCommand(40364,0)end,click_on and C.blue or nil)
- button('Click sound...',gfx.w-222,59,198,24,function()
+ button('Click sound...',gfx.w-222,59,114,24,function()
   T.sound_settings();status='Click sound: choose a waveform, pitch, or custom sample in REAPER.'
  end)
+ button('Tuner',gfx.w-100,59,76,24,function()dofile(dir..'/solo_tuner.lua').open()end)
  if gfx.mouse_y>=59 and gfx.mouse_y<84 then
   if gfx.mouse_x>=24 and gfx.mouse_x<444+offset then
    header_hint=tempo_enabled and 'Song tempo: drag for 20–300 BPM, or click the value to enter an exact tempo.'
@@ -523,17 +552,18 @@ local function frame()
  else
   local w=gfx.w-300;local active=M.get('active');local recording=R.GetPlayState() & 4 ~= 0
   text('Solo Studio',24,20,2)
+  local actions_x=gfx.w-433
+  draw_song_title(actions_x)
   local undo_label,redo_label=R.Undo_CanUndo2(0),R.Undo_CanRedo2(0)
   local history_enabled=not recording and (not X or not X.busy())
-  button('Undo',224,24,76,32,function()history(false)end,nil,history_enabled and (undo_label or '')~='')
-  button('Redo',308,24,76,32,function()history(true)end,nil,history_enabled and (redo_label or '')~='')
-  if gfx.mouse_y>=24 and gfx.mouse_y<56 and gfx.mouse_x>=224 and gfx.mouse_x<384 then
-   local redo=gfx.mouse_x>=308;local label=undo_label;if redo then label=redo_label end
+  button('Undo',actions_x,24,76,32,function()history(false)end,nil,history_enabled and (undo_label or '')~='')
+  button('Redo',actions_x+84,24,76,32,function()history(true)end,nil,history_enabled and (redo_label or '')~='')
+  if gfx.mouse_y>=24 and gfx.mouse_y<56 and gfx.mouse_x>=actions_x and gfx.mouse_x<actions_x+160 then
+   local redo=gfx.mouse_x>=actions_x+84;local label=undo_label;if redo then label=redo_label end
    header_hint=label and label~=''and ((redo and 'Redo: 'or 'Undo: ')..label:gsub('^Solo Studio: ',''))or 'No earlier edits'
   end
-  button('Projects',404,24,110,32,function()change_view(view=='projects'and 'timeline'or 'projects')end,view=='projects'and C.blue or nil)
-  button('Save project',522,24,115,32,function()R.Main_OnCommand(40026,0) end)
-  button('Tuner',gfx.w-96,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
+  button('Projects',gfx.w-257,24,110,32,function()change_view(view=='projects'and 'timeline'or 'projects')end,view=='projects'and C.blue or nil)
+  button('Save project',gfx.w-139,24,115,32,function()R.Main_OnCommand(40026,0) end)
   song_header(recording)
   if view=='projects'then
    project_view().draw(24,96,gfx.w-48,gfx.h-182)
