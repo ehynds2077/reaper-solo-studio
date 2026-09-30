@@ -532,9 +532,8 @@ local function frame()
    header_hint=label and label~=''and ((redo and 'Redo: 'or 'Undo: ')..label:gsub('^Solo Studio: ',''))or 'No earlier edits'
   end
   button('Projects',404,24,110,32,function()change_view(view=='projects'and 'timeline'or 'projects')end,view=='projects'and C.blue or nil)
-  button('Tuner',gfx.w-308,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
-  button('Save project',gfx.w-225,24,115,32,function()R.Main_OnCommand(40026,0) end)
-  button('Dock',gfx.w-98,24,72,32,function()gfx.dock(gfx.dock(-1)&1==1 and 0 or 1) end)
+  button('Save project',522,24,115,32,function()R.Main_OnCommand(40026,0) end)
+  button('Tuner',gfx.w-96,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
   song_header(recording)
   if view=='projects'then
    project_view().draw(24,96,gfx.w-48,gfx.h-182)
