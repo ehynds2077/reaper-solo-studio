@@ -450,14 +450,14 @@ change_view=function(value)
  view=value;if value=='projects'then if P then P.reset()end;status='Choose a song, or start a full-band song in Desktop/Solo Studio Songs.'end;selection.sync(candidates());drag=nil;V.cancel();R.SetExtState(M.ns,'panel_view',value,true)
 end
 local function section_sidebar(x,w,recording)
- button('Edit song timeline',x,212,w,36,function()change_view('timeline')end,C.blue)
- local list_y=286;local visible=math.max(1,math.floor((gfx.h-120-list_y)/48))
+ button('Edit song timeline',x,245,w,36,function()change_view('timeline')end,C.blue)
+ local list_y=319;local visible=math.max(1,math.floor((gfx.h-120-list_y)/48))
  section_scroll=math.max(0,math.min(section_scroll,#sections-visible))
- text('Song sections',x,260,4)
+ text('Song sections',x,293,4)
  local active=S.active()
  if #sections==0 then
-  text('Open Song timeline to draw',x,312,1,C.muted)
-  text('a section or enter its length.',x,338,1,C.muted)
+  text('Open Song timeline to draw',x,345,1,C.muted)
+  text('a section or enter its length.',x,371,1,C.muted)
  else for i=section_scroll+1,math.min(#sections,section_scroll+visible)do
   local row=sections[i];local y=list_y+(i-section_scroll-1)*48
   color(active and active.key==row.key and {0.25,0.35,0.43}or C.surface);gfx.rect(x,y,w,43,1)
@@ -516,9 +516,10 @@ local function frame()
   gfx.quit();open_window(w or 1200,h or 730,dock,x,y)
  end
  refresh();if X then X.poll() end;buttons={};sliders={};header_hint=nil;set_tab_strip=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
- if gfx.w<1180 or gfx.h<(view=='timeline' and 710 or 650) then
+ local min_height=view=='timeline'and 710 or view=='mix'and 730 or view=='projects'and 650 or 683
+ if gfx.w<1180 or gfx.h<min_height then
   V.reset()
-  text('Make this panel at least 1180 x 710 to show the song timeline.',20,25,1)
+  text('Make this panel at least 1180 x '..min_height..' to show this workspace.',20,25,1)
  else
   local w=gfx.w-300;local active=M.get('active');local recording=R.GetPlayState() & 4 ~= 0
   text('Solo Studio',24,20,2)
@@ -531,9 +532,9 @@ local function frame()
    header_hint=label and label~=''and ((redo and 'Redo: 'or 'Undo: ')..label:gsub('^Solo Studio: ',''))or 'No earlier edits'
   end
   button('Projects',404,24,110,32,function()change_view(view=='projects'and 'timeline'or 'projects')end,view=='projects'and C.blue or nil)
-  button('Tuner',w-308,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
-  button('Save project',w-225,24,115,32,function()R.Main_OnCommand(40026,0) end)
-  button('Dock',w-98,24,72,32,function()gfx.dock(gfx.dock(-1)&1==1 and 0 or 1) end)
+  button('Tuner',gfx.w-308,24,72,32,function()dofile(dir..'/solo_tuner.lua').open() end)
+  button('Save project',gfx.w-225,24,115,32,function()R.Main_OnCommand(40026,0) end)
+  button('Dock',gfx.w-98,24,72,32,function()gfx.dock(gfx.dock(-1)&1==1 and 0 or 1) end)
   song_header(recording)
   if view=='projects'then
    project_view().draw(24,96,gfx.w-48,gfx.h-182)
@@ -541,49 +542,47 @@ local function frame()
   local record_label=S.mode()=='section' and 'Record section' or (S.mode()=='full' and 'Record full song' or 'Record')
   button(recording and 'Stop & keep' or record_label,24,88,160,49,function()M.record() end,C.record)
   button(R.GetPlayState()~=0 and 'Stop' or 'Play',195,88,115,49,play)
-  button('Another take',321,88,160,49,function()M.another() end)
-  button('Track settings...',w-184,96,160,33,show_track_settings,nil,#tracks>0)
-  recording_set_tabs(w,active,recording)
-  button('+ Instrument',w-164,152,140,33,function()add_instrument(w-164,185)end)
-  color(C.line);gfx.line(24,201,w-24,201)
-  local sx=w+12
-  button('Timeline',sx,24,84,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
-  button('Takes',sx+88,24,56,33,function()change_view('review')end,view=='review' and C.blue or nil)
-  button('Tracks',sx+148,24,66,33,function()change_view('tracks')end,view=='tracks' and C.blue or nil)
-  button('Mix',sx+218,24,46,33,function()change_view('mix')end,view=='mix' and C.blue or nil)
-  text('Record: '..S.label(),sx,88,3,C.muted,264)
-  button('Full song',sx,107,264,33,function()S.full_song();status='Ready to record the whole song. Stop & keep when finished.'end,S.mode()=='full' and C.blue or nil,not recording)
-  button('One pass',sx,152,128,33,function()S.set_loop(false)end,not S.looping() and C.blue or nil,not recording)
-  button('Loop takes',sx+136,152,128,33,function()S.set_loop(true)end,S.looping() and C.blue or nil,not recording)
+  button('Full song',326,96,104,33,function()S.full_song();status='Ready to record the whole song. Stop & keep when finished.'end,S.mode()=='full' and C.blue or nil,not recording)
+  button('One pass',446,96,102,33,function()S.set_loop(false)end,not S.looping() and C.blue or nil,not recording)
+  button('Loop takes',555,96,114,33,function()S.set_loop(true)end,S.looping() and C.blue or nil,not recording)
+  text('Record: '..S.label(),689,106,3,C.muted,gfx.w-889)
+  button('Track settings...',gfx.w-184,96,160,33,show_track_settings,nil,#tracks>0)
+  recording_set_tabs(gfx.w,active,recording)
+  button('+ Instrument',gfx.w-164,152,140,33,function()add_instrument(gfx.w-164,185)end)
+  button('Timeline',24,197,104,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
+  button('Takes',136,197,80,33,function()change_view('review')end,view=='review' and C.blue or nil)
+  button('Tracks',224,197,88,33,function()change_view('tracks')end,view=='tracks' and C.blue or nil)
+  button('Mix',320,197,72,33,function()change_view('mix')end,view=='mix' and C.blue or nil)
+  color(C.line);gfx.line(24,239,gfx.w-24,239)
   if view=='timeline' then
-   V.draw(24,215,gfx.w-48,gfx.h-300,recording)
+   V.draw(24,248,gfx.w-48,gfx.h-333,recording)
   elseif view=='mix' then
-   mix().draw(24,215,gfx.w-48,gfx.h-300)
+   mix().draw(24,248,gfx.w-48,gfx.h-333)
   elseif view=='tracks' then
-   track_view().draw(24,215,gfx.w-48,gfx.h-300,recording)
+   track_view().draw(24,248,gfx.w-48,gfx.h-333,recording)
   else
-  text('Passage',24,224,4)
-  button('4 bars',122,215,78,34,function()M.loop_bars(4) end)
-  button('8 bars',208,215,78,34,function()M.loop_bars(8) end)
-  button('Loop selection',294,215,133,34,function()
+  text('Passage',24,257,4)
+  button('4 bars',122,248,78,34,function()M.loop_bars(4) end)
+  button('8 bars',208,248,78,34,function()M.loop_bars(8) end)
+  button('Loop selection',294,248,133,34,function()
    S.manual()
    local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false);if e<=s then error('Drag a time selection in the timeline first.',0) end
    R.GetSet_LoopTimeRange2(0,true,true,s,e,false);R.GetSetRepeat(1);R.SetEditCurPos2(0,s,true,false)
   end)
-  button('Count-in...',435,215,120,34,function()R.Main_OnCommand(40363,0) end)
+  button('Count-in...',435,248,120,34,function()R.Main_OnCommand(40363,0) end)
   local punch=R.GetToggleCommandStateEx(0,40076)==1
-  button(punch and 'Punch on' or 'Punch off',563,215,w-587,34,function()S.manual();R.Main_OnCommand(punch and 40252 or 40076,0) end)
+  button(punch and 'Punch on' or 'Punch off',563,248,w-587,34,function()S.manual();R.Main_OnCommand(punch and 40252 or 40076,0) end)
   local s,e=R.GetSet_LoopTimeRange2(0,false,false,0,0,false)
-  text(e>s and ('Selected: '..R.format_timestr_pos(s,'',2)..' to '..R.format_timestr_pos(e,'',2)) or 'Select a passage in the timeline to compare or comp.',25,261,3,C.muted,w-370)
-  button('Clear selection',w-174,254,150,28,function()
+  text(e>s and ('Selected: '..R.format_timestr_pos(s,'',2)..' to '..R.format_timestr_pos(e,'',2)) or 'Select a passage in the timeline to compare or comp.',25,294,3,C.muted,w-370)
+  button('Clear selection',w-174,287,150,28,function()
    S.manual();R.Main_OnCommand(40020,0);status='Time selection and loop range cleared.'
   end,nil,not recording)
   local selected_count=#selected_rows();local single=not recording and selected_count==1
-  text((S.mode()=='section' and 'Section takes' or 'Takes')..(selected_count>1 and (' / '..selected_count..' selected')or ''),24,296,4)
-  button('Tempo...',w-322,286,94,34,tempo_menu,nil,not recording and #rows>0)
-  button('Previous',w-220,286,92,34,function()select_step(-1) end,nil,not recording)
-  button('Next',w-120,286,96,34,function()select_step(1) end,nil,not recording)
-  local table_y=334; local table_end=gfx.h-180;local visible=math.max(1,math.floor((table_end-table_y)/42))
+  text((S.mode()=='section' and 'Section takes' or 'Takes')..(selected_count>1 and (' / '..selected_count..' selected')or ''),24,329,4)
+  button('Tempo...',w-322,319,94,34,tempo_menu,nil,not recording and #rows>0)
+  button('Previous',w-220,319,92,34,function()select_step(-1) end,nil,not recording)
+  button('Next',w-120,319,96,34,function()select_step(1) end,nil,not recording)
+  local table_y=367; local table_end=gfx.h-180;local visible=math.max(1,math.floor((table_end-table_y)/42))
   local focus=chosen()
   if focus and focus.key~=review_focus then
    for i,row in ipairs(rows)do if row.key==focus.key then
@@ -593,8 +592,8 @@ local function frame()
   review_focus=focus and focus.key
   scroll=math.max(0,math.min(scroll,#rows-visible))
   if #rows==0 then
-   text(#tracks==0 and 'Add an instrument to begin.' or 'Your recorded takes will appear here.',30,354,1,C.muted)
-   text('Use one recording set for a single instrument or all microphones of a kit.',30,382,3,C.muted)
+   text(#tracks==0 and 'Add an instrument to begin.' or 'Your recorded takes will appear here.',30,387,1,C.muted)
+   text('Use one recording set for a single instrument or all microphones of a kit.',30,415,3,C.muted)
   else
    for i=scroll+1,math.min(#rows,scroll+visible) do
     local row=rows[i];local y=table_y+(i-scroll-1)*42
@@ -615,8 +614,8 @@ local function frame()
   button('Rename',386,fy,89,35,rename,nil,single)
   button(selected_count>1 and ('Delete '..selected_count..' takes')or 'Delete take',483,fy,160,35,function()take_action('delete')end,C.record,not recording and selected_count>0)
   button('Use in comp',w-207,fy,183,35,function()take_action('comp')end,C.blue,single)
-  button('Comp',w-322,254,64,28,function()take_action('listen_comp')end,listen_mode=='comp'and C.blue or nil,not recording and comp_row~=nil)
-  button('Take',w-254,254,68,28,function()take_action('listen_take')end,listen_mode=='take'and C.blue or nil,single)
+  button('Comp',w-322,287,64,28,function()take_action('listen_comp')end,listen_mode=='comp'and C.blue or nil,not recording and comp_row~=nil)
+  button('Take',w-254,287,68,28,function()take_action('listen_take')end,listen_mode=='take'and C.blue or nil,single)
   local cr=chosen();local sn=cr and e>s and M.section_note(cr.lane,s,e) or ''
   text(sn~='' and ('Passage note: '..sn) or 'Cmd-click: toggle takes / Shift-click: range. Delete removes whole passes; Cmd+Z in REAPER restores them.',25,fy+46,3,C.muted,w-50)
   section_sidebar(w+12,264,recording)
