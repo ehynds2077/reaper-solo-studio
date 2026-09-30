@@ -17,6 +17,12 @@
 !/Mix/
 !/Bounces/
 !/Ableton/
+!/Launcher/
+
+/Launcher/*
+!/Launcher/*.swift
+!/Launcher/*.py
+!/Launcher/*.lua
 
 /Scripts/*
 !/Scripts/*.lua

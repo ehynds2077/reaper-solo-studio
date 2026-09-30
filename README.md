@@ -30,6 +30,14 @@ project, not required installation steps. Use the supplied templates for new son
 
 ## Open the workspace
 
+On the original Mac, double-click **Solo Studio.app** on the Desktop. It starts
+REAPER if needed and opens the panel; opening it again brings back the existing
+panel. You can drag the app into the Dock or move it into Applications.
+To build this launcher on another Mac with Apple's command-line developer tools,
+run `python3 Launcher/build.py` after installing the scripts. The launcher uses
+[REAPER's native command-line ReaScript support](https://www.cockos.com/reaper/download-old.php?ver=6x)
+and does not require Accessibility permissions or a Terminal window.
+
 Press **Cmd+Option+Shift+P** from REAPER's arrangement to open the panel. Or, in **Actions → Show action list**, search **Solo Studio**, then run **Solo Studio - Open recording panel**. The other Solo Studio actions can also be assigned to keyboard shortcuts or MIDI controller buttons through this action list. On the original setup this shortcut is already assigned; new installations assign it during the steps above.
 
 On macOS, installed scripts live in `~/Library/Application Support/REAPER/Scripts/Solo Studio`. This repository holds their editable source, templates, and checks. Original settings backups remain local and are not included here.

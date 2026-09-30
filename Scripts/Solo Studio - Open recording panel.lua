@@ -334,10 +334,22 @@ local function refresh()
  was_recording=recording
  selection.sync(candidates())
 end
-gfx.init('Solo Studio | Record & review',1200,730,tonumber(R.GetExtState(M.ns,'dock')) or 0)
-gfx.setfont(1,'Helvetica',16);gfx.setfont(2,'Helvetica',28,98);gfx.setfont(3,'Helvetica',13);gfx.setfont(4,'Helvetica',19,98)
-R.atexit(function()if X then X.close() end;R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
+local function open_window(w,h,dock,x,y)
+ if x and y then gfx.init('Solo Studio | Record & review',w,h,dock,x,y)
+ else gfx.init('Solo Studio | Record & review',w,h,dock)end
+ gfx.setfont(1,'Helvetica',16);gfx.setfont(2,'Helvetica',28,98);gfx.setfont(3,'Helvetica',13);gfx.setfont(4,'Helvetica',19,98)
+end
+open_window(1200,730,tonumber(R.GetExtState(M.ns,'dock')) or 0)
+R.SetExtState(M.ns,'panel_open','1',false);R.SetExtState(M.ns,'panel_raise','',false)
+R.atexit(function()R.SetExtState(M.ns,'panel_open','',false);if X then X.close() end;R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
 local function frame()
+ if R.GetExtState(M.ns,'panel_raise')=='1'then
+  R.SetExtState(M.ns,'panel_raise','',false)
+  local dock,x,y,w,h=gfx.dock(-1)
+  -- Recreate only the native window to unminimize/raise it. The Lua panel,
+  -- selection, and any active mix worker stay alive without running cleanup.
+  gfx.quit();open_window(w or 1200,h or 730,dock,x,y)
+ end
  refresh();if X then X.poll() end;buttons={};sliders={};header_hint=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
  if gfx.w<1180 or gfx.h<(view=='timeline' and 710 or 650) then
   V.reset()

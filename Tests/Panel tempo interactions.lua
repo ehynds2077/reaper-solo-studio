@@ -2,7 +2,7 @@
 local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0
 local function fixture(initial_view)
-  local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={},sections={},view=initial_view or 'review'}
+  local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={},sections={},extstate={},view=initial_view or 'review'}
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
   f.saved_comp={is_comp=true,key='saved-comp',lane=99,playing=true,name='Comp',note='',items={{s=0,e=24}}}
   local function activate(lane)
@@ -47,17 +47,18 @@ local function fixture(initial_view)
   local R={ValidatePtr2=function()return true end,EnumProjects=function()return f.project end,
     Undo_CanUndo2=function()return f.undo_label end,Undo_CanRedo2=function()return f.redo_label end,
     time_precise=function()f.clock=f.clock+1;return f.clock end,
-    GetExtState=function(_,key)return key=='panel_view' and f.view or ''end,SetExtState=function()end,
+    GetExtState=function(_,key)return key=='panel_view' and f.view or f.extstate[key]or ''end,SetExtState=function(_,key,value)f.extstate[key]=value end,
     OnPlayButton=function()f.playing=true end,GetPlayState=function()return f.recording and 4 or f.playing and 1 or 0 end,
     GetMediaTrackInfo_Value=function()return 0 end,GetMediaItemInfo_Value=function(it,k)return k=='D_POSITION' and it.s or it.e-it.s end,
     GetToggleCommandStateEx=function()return 0 end,
     GetSet_LoopTimeRange2=function()return 0,0 end,
-    atexit=function()end,defer=function(fn)f.frame=fn end}
+    atexit=function(fn)f.cleanup=fn end,defer=function(fn)f.frame=fn end}
   local g={mouse_x=0,mouse_y=0,mouse_cap=0,mouse_wheel=0}
   for _,key in ipairs({'set','setfont','rect','line','circle','drawstr','update'}) do g[key]=function()end end
   g.measurestr=function(s)return #s*8,16 end
   g.init=function(_,w,h)g.w=w;g.h=h end
   g.dock=function()return 0 end
+  g.quit=function()f.window_closed=true end
   g.getchar=function()return f.key or 0 end
   g.showmenu=function()return f.menu_choice or 0 end
   g.drawstr=function(s)f.labels[#f.labels+1]=s end
@@ -96,6 +97,10 @@ pf.key=112;pf.frame();pf.key=nil;pf.frame();check(pf.projects_drawn,'P opens Pro
 pf=fixture();pf.click(450,40);check(pf.projects_drawn,'Projects button opens the library')
 pf.project='new project';pf.frame();check(pf.projects_reset,'Native project changes invalidate the project list')
 pf=fixture('mix');pf.project='another project';pf.frame();check(pf.mix_closed==1,'Changing native project releases the old mix session view')
+local launched=fixture('mix');launched.mix_busy=true;launched.extstate.panel_raise='1';launched.frame()
+check(launched.window_closed and launched.extstate.panel_raise==''and launched.extstate.panel_open=='1','Desktop relaunch raises the existing panel and consumes its request')
+check(not launched.mix_closed and launched.mix_busy and #launched.calls==0,'Raising the panel preserves the mix worker and project without cleanup')
+launched.cleanup();check(launched.extstate.panel_open==''and launched.mix_closed==1,'Panel exit clears its nonpersistent launcher marker')
 local hf=fixture('timeline');hf.undo_label='Solo Studio: move comp boundary';hf.playing=true;hf.click(260,40)
 check(hf.calls[1][1]=='undo'and hf.history_refreshed and hf.playing,'Undo button reverses the native edit, refreshes the timeline, and preserves playback')
 hf.click(346,40);check(hf.calls[2][1]=='redo','Redo button reapplies the native boundary edit')

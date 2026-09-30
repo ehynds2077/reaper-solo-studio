@@ -42,6 +42,11 @@ tempo, region count, and record arming.
 
 The tuner has its own [DSP validation workbench](../Tuner/Tests/README.md).
 
+`Desktop launcher.lua` checks opening the installed panel action, reusing an
+existing panel, and missing-installation errors. `Panel tempo interactions.lua`
+also verifies that raising the window preserves the active mix worker and that
+closing the panel clears its nonpersistent launcher marker.
+
 `Run mix playback checks.lua` tests repeated Original/Candidate switches, Keep,
 and Revert during real playback in a separate project with no hardware sends.
 Generate `Tests/mix-tone.wav` using the command in the [mixing checks](../Mix/README.md#validation)
