@@ -13,7 +13,7 @@ return function(M,ui,options)
  end
  local function new_song()
   local project=P.prompt_new()
-  if project then refresh();ui.opened('New song saved and ready for scratch guitar + vocal. Choose Inputs if your interface assignments differ.')end
+  if project then refresh();ui.opened('New song saved and ready for scratch guitar + vocal. Use Track settings if your interface assignments differ.')end
  end
  local function import_ableton()
   if import_job or not P.available()then return end

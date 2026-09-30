@@ -171,7 +171,7 @@ function M.arm()
   local n=R.GetNumAudioInputs()
   for _,tr in ipairs(tracks) do
     local input=R.GetMediaTrackInfo_Value(tr,'I_RECINPUT')
-    if input<0 or input>=4096 or (input & 1023)>=n then error('Choose a connected audio input for '..M.track_name(tr)..' using Inputs first.',0) end
+    if input<0 or input>=4096 or (input & 1023)>=n then error('Choose a connected audio input for '..M.track_name(tr)..' in Track settings > Assign inputs first.',0) end
   end
   M.edit('arm recording set',function()
     R.ClearAllRecArmed()

@@ -46,6 +46,9 @@ The tuner has its own [DSP validation workbench](../Tuner/Tests/README.md).
 existing panel, and missing-installation errors. `Panel tempo interactions.lua`
 also verifies that raising the window preserves the active mix worker and that
 closing the panel clears its nonpersistent launcher marker.
+The same panel checks cover the Track settings dialog: input assignment, arming,
+mixed monitoring, recording/AI locks, stale recording sets, and isolation from
+background clicks, keyboard shortcuts, and timeline gestures.
 
 `Run mix playback checks.lua` tests repeated Original/Candidate switches, Keep,
 and Revert during real playback in a separate project with no hardware sends.

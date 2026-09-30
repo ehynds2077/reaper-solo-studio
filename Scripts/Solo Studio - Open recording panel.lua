@@ -13,6 +13,7 @@ local all_rows,lastset,was_recording={},nil,false
 local buttons={}
 local sliders,drag={},nil
 local header_hint
+local track_settings
 local section_scroll,sections=0,{}
 local saved_view=R.GetExtState(M.ns,'panel_view')
 local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks' or saved_view=='projects') and saved_view or 'timeline'
@@ -202,9 +203,19 @@ local function add_instrument()
   names={};for name in s:gmatch('[^;]+') do name=name:match('^%s*(.-)%s*$');if name~='' then names[#names+1]=name end end
   if #names==0 or #names>32 then error('Enter between 1 and 32 microphone names.',0) end
  end
- M.add_instrument(kind,names);selection.reset();status=kind..' added. Choose Inputs before recording.'
+ M.add_instrument(kind,names);selection.reset();status=kind..' added. Choose Track settings > Assign inputs before recording.'
+end
+local function settings_guard(expected_tracks)
+ assert(track_settings and track_settings.project==R.EnumProjects(-1,'')and track_settings.set==M.get('active'),'The recording set changed. Reopen Track settings.')
+ assert(not (X and X.busy()),'Finish the current AI mix operation before changing track settings.')
+ M.stopped()
+ if expected_tracks then
+  local current=M.require_tracks();assert(#current==#expected_tracks,'The recording tracks changed. Reopen Track settings.')
+  for i,tr in ipairs(current)do assert(tr==expected_tracks[i],'The recording tracks changed. Reopen Track settings.')end
+ end
 end
 local function inputs()
+ settings_guard()
  local ts=M.require_tracks();local n=R.GetNumAudioInputs()
  if n==0 then error('REAPER has no audio inputs. Connect your interface and choose it in REAPER > Settings > Audio > Device.',0) end
  local lines={'Available mono inputs:'};for i=0,n-1 do lines[#lines+1]=(i+1)..': '..R.GetInputChannelName(i) end
@@ -212,7 +223,12 @@ local function inputs()
  for _,tr in ipairs(ts) do labels[#labels+1]=M.track_name(tr);defaults[#defaults+1]=tostring(math.max(1,R.GetMediaTrackInfo_Value(tr,'I_RECINPUT')+1)) end
  M.message(table.concat(lines,'\n')..'\n\nNext, enter input numbers in this order:\n'..table.concat(labels,'; '))
  local ok,s=R.GetUserInputs('Assign inputs: '..table.concat(labels,' / '),1,'Input numbers separated by semicolons:,extrawidth=260',table.concat(defaults,';'))
- if ok then local values={};for v in s:gmatch('[^;]+') do values[#values+1]=tonumber(v) or -1 end;M.inputs(values);status='Inputs assigned. Arm set when you are ready.' end
+ if ok then
+  settings_guard(ts)
+  local values={};for v in s:gmatch('[^;]+') do values[#values+1]=tonumber(v) or -1 end
+  M.inputs(values);status='Inputs assigned. Record will arm this set automatically.'
+  track_settings.message=status
+ end
 end
 local function annotate(section)
  with_row(function(row)
@@ -275,9 +291,45 @@ local function select_step(d)
  if listen_mode=='take'then take_action('listen_take')end
 end
 local function monitoring()
- local ts=M.require_tracks();local on=R.GetMediaTrackInfo_Value(ts[1],'I_RECMON')==0
+ settings_guard()
+ local ts=M.require_tracks();local on=true
+ for _,tr in ipairs(ts)do if R.GetMediaTrackInfo_Value(tr,'I_RECMON')>0 then on=false end end
  M.edit('input monitoring',function()for _,tr in ipairs(ts) do R.SetMediaTrackInfo_Value(tr,'I_RECMON',on and 1 or 0) end end)
  status=on and 'Software monitoring on. Use headphones while recording microphones.' or 'Software monitoring off. Use interface monitoring if needed.'
+ track_settings.message=status
+end
+local function show_track_settings()
+ drag=nil;V.cancel()
+ track_settings={project=R.EnumProjects(-1,''),set=M.get('active')}
+end
+local function draw_track_settings()
+ local w,h=650,390;local x,y=(gfx.w-w)/2,math.max(16,(gfx.h-h)/2)
+ gfx.set(0,0,0,.58);gfx.rect(0,0,gfx.w,gfx.h,1)
+ color(C.line);gfx.rect(x-1,y-1,w+2,h+2,1);color(C.bg);gfx.rect(x,y,w,h,1)
+ text('Track settings',x+24,y+20,2)
+ button('Done',x+w-114,y+22,90,32,function()track_settings=nil end)
+ local ts=M.tracks();local count=#ts;local armed,monitored=0,0
+ for _,tr in ipairs(ts)do
+  if R.GetMediaTrackInfo_Value(tr,'I_RECARM')~=0 then armed=armed+1 end
+  if R.GetMediaTrackInfo_Value(tr,'I_RECMON')>0 then monitored=monitored+1 end
+ end
+ text((M.get('set.'..M.get('active')..'.name')or 'Recording set')..'  ·  '..count..(count==1 and ' track'or ' tracks'),x+24,y+64,3,C.muted,w-48)
+ local recording=R.GetPlayState()&4~=0;local busy=X and X.busy()
+ local enabled=count>0 and not recording and not busy
+ local function row(title,description,offset,label,fn)
+  color(C.line);gfx.line(x+24,y+offset-12,x+w-24,y+offset-12)
+  text(title,x+24,y+offset,4)
+  text(description,x+24,y+offset+28,3,C.muted,w-245)
+  button(label,x+w-190,y+offset+5,166,36,fn,nil,enabled)
+ end
+ row('Audio inputs','Assign an interface input to each track.',112,'Assign inputs...',inputs)
+ row('Recording',armed..' of '..count..' armed. Record arms this set automatically.',190,'Arm set',function()
+  settings_guard();M.arm();status='Only this recording set is armed.';track_settings.message=status
+ end)
+ local description=monitored==0 and 'Off. Listen through your interface.'or monitored==count and 'On. Listen to the input through REAPER.'or 'Mixed: some tracks have monitoring on.'
+ row('Input monitoring',description,268,monitored>0 and 'Turn off'or 'Turn on',monitoring)
+ local message=recording and 'Finish recording to change these settings.'or busy and 'Finish the AI mix operation to change these settings.'or track_settings.message or 'Changes apply immediately. Press Esc to close.'
+ text(message,x+24,y+h-35,3,C.muted,w-48)
 end
 local function mark_transition()
  local row=S.split();status='Transition marked. Rename '..row.name..' when you are ready.'
@@ -315,6 +367,7 @@ V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=
  selected=selection.has,selection_count=function()return #selected_rows()end,select=select_take})
 local function refresh()
  local proj=R.EnumProjects(-1,'')
+ if track_settings and (track_settings.project~=proj or track_settings.set~=M.get('active'))then track_settings=nil end
  if proj~=lastproject then if X then X.close();X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
@@ -377,10 +430,7 @@ local function frame()
   button(recording and 'Stop & keep' or record_label,24,88,160,49,function()M.record() end,C.record)
   button(R.GetPlayState()~=0 and 'Stop' or 'Play',195,88,115,49,play)
   button('Another take',321,88,160,49,function()M.another() end)
-  button('Arm set',492,88,109,49,function()M.arm();status='Only this recording set is armed.' end)
-  button('Inputs...',612,88,105,49,inputs)
-  local mon=#tracks>0 and R.GetMediaTrackInfo_Value(tracks[1],'I_RECMON')>0
-  button(mon and 'Monitor on' or 'Monitor off',728,88,w-752,49,monitoring)
+  button('Track settings...',w-184,96,160,33,show_track_settings,nil,#tracks>0)
   local setlist=M.sets();local x=24
   if #setlist>4 then
    button('Recording set: '..M.get('set.'..active..'.name'),24,152,w-356,33,function()
@@ -473,10 +523,12 @@ local function frame()
   end
   color(C.line);gfx.line(24,gfx.h-78,gfx.w-24,gfx.h-78)
   text(header_hint or status,25,gfx.h-64,3,C.text,gfx.w-50)
-  text(view=='projects'and 'P: back to song   N: new song   Up/Down: choose song   Enter: open song   Space: play/stop' or 'P: projects   Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo',25,gfx.h-36,3,C.muted,gfx.w-50)
+  text(view=='projects'and 'P: back to song   N: new song   Up/Down: choose song   Enter: open song   Space: play/stop' or 'P: projects   S: track settings   Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo',25,gfx.h-36,3,C.muted,gfx.w-50)
  end
+ local modal=track_settings~=nil
+ if modal then buttons={};sliders={};draw_track_settings()end
  local down=gfx.mouse_cap&1==1
- local consumed=view=='timeline' and V.mouse(down,down and not mouse_down,R.GetPlayState()&4~=0)
+ local consumed=not modal and view=='timeline' and V.mouse(down,down and not mouse_down,R.GetPlayState()&4~=0)
  if down and not mouse_down and not consumed then
   for _,s in ipairs(sliders) do
    if gfx.mouse_x>=s.x-6 and gfx.mouse_x<s.x+s.w+6 and gfx.mouse_y>=s.y and gfx.mouse_y<s.y+s.h then
@@ -494,7 +546,7 @@ local function frame()
   end
  end
  mouse_down=down
- if gfx.mouse_wheel~=0 then
+ if gfx.mouse_wheel~=0 and not modal then
   local delta=gfx.mouse_wheel>0 and 1 or -1
   if view=='timeline' then V.wheel(delta)
   elseif view=='mix' then mix().wheel(delta)
@@ -503,7 +555,12 @@ local function frame()
   elseif gfx.mouse_x>gfx.w-300 then section_scroll=section_scroll-delta else scroll=scroll-delta end
   gfx.mouse_wheel=0
  end
+ if modal then gfx.mouse_wheel=0 end
  local ch=gfx.getchar()
+ if modal and ch>=0 then
+  if ch==27 or ch==13 then track_settings=nil end
+  ch=0 -- Settings never trigger recording, playback, Undo, or take shortcuts.
+ end
  if ch==26 or ch==25 then
   run(function()history(ch==25 or gfx.mouse_cap&8~=0)end);ch=0
  end
@@ -512,6 +569,7 @@ local function frame()
  if view=='projects'and P and P.key(ch)then ch=0 end
  if ch==112 or ch==80 then run(function()change_view(view=='projects'and 'timeline'or 'projects')end)
  elseif ch==109 or ch==77 then run(function()change_view('mix')end)
+ elseif (ch==115 or ch==83)and view~='projects'and #tracks>0 then run(show_track_settings)
  elseif ch==32 then run(play) elseif ch==114 or ch==82 then run(M.record)
  elseif ch==110 or ch==78 then run(M.another)
  elseif ch==1818584692 and view~='tracks' then run(function()select_step(-1) end)

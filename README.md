@@ -126,10 +126,16 @@ desktop exports do not upload anything.
 
 1. Start from **File → Project templates → Solo Studio - One person band**, **One instrument**, or **Drums**. Save the project into its own folder before recording. New audio goes into `Media` within that folder.
 2. Open Solo Studio. Choose the instrument's recording set. For an existing project, select the instrument track or all microphone tracks, then click **Use selected tracks**. Select the microphone tracks themselves, leaving their folder unselected.
-3. Connect your interface and select it under **REAPER → Settings → Audio → Device**. Click **Inputs...** in Solo Studio to map one mono input per track. Use ordinary REAPER input controls for stereo sources. The templates have inputs unassigned until you do this.
-4. Set the song tempo. Your setup uses a **two-bar musical lead-in before recording**; open **Count-in...** to adjust the native pre-roll settings. The click is enabled. **Arm set** arms only that instrument's tracks. Software monitoring starts off; enable it with headphones if you need to hear through REAPER, or use your interface's direct monitoring.
+3. Connect your interface and select it under **REAPER → Settings → Audio → Device**. Open **Track settings → Assign inputs...** in Solo Studio to map one mono input per track. Use ordinary REAPER input controls for stereo sources. The generic templates have inputs unassigned until you do this; the X32 template includes its documented assignments.
+4. Set the song tempo. Your setup uses a **two-bar musical lead-in before recording**; open **Count-in...** to adjust the native pre-roll settings. The click is enabled. **Record** automatically arms only that instrument's tracks. **Track settings** also contains manual **Arm set** and **Input monitoring** controls. Monitoring starts off for interface monitoring; turn it on with headphones if you need to hear through REAPER.
 5. Click **Record**. Click **Stop & keep** to finish without deleting the pass. **Another take** stops and retains the current pass, returns to the selected passage's beginning, and records again. It uses the chosen song section, Full song, or a manual time selection.
 6. For repeated passes, place the edit cursor at the section, click **4 bars** or **8 bars**, then record with Repeat enabled. Each pass goes to a fixed lane. **Clear selection** clears the time selection and loop range; it is disabled during recording. **Punch on** limits the recorded item to the selected passage while allowing playback around it; **Punch off** restores normal recording.
+
+**Track settings** (also **S** from the recording workspace) applies to the currently selected recording set. Changes take
+effect immediately; **Done**, Enter, or Escape closes the dialog. Its controls
+are disabled during recording or an active AI mix. Changing projects or recording
+sets dismisses the old dialog. Mixed microphone monitoring is shown explicitly;
+**Turn off** disables it across the entire set.
 
 ### Visual song timeline
 
@@ -219,7 +225,7 @@ Tempo-map recordings retain their map and show **Tempo map**. If the project tem
 
 Use **File → Project templates → Solo Studio - Ethan X32** for a new song. The original local setup also has a configured **Starter song**, which is not distributed. Save each new song in its own folder. This personal template has a dedicated scratch vocal/guitar pair, nine drum mics, electric guitar, acoustic guitar, vocals, and bass.
 
-Start with **Scratch guitar + vocal**, which arms **Scratch vocal on USB 9** and **Scratch guitar on USB 15** together. These two guide tracks are grouped for synchronized takes and comping. The template opens with only this pair armed and input monitoring off. After the guide performance, choose **Drums** and click **Arm set** or **Record**; the scratch tracks remain available for playback. Mute the scratch tracks when replacing them with final parts.
+Start with **Scratch guitar + vocal**, which arms **Scratch vocal on USB 9** and **Scratch guitar on USB 15** together. These two guide tracks are grouped for synchronized takes and comping. The template opens with only this pair armed and input monitoring off. After the guide performance, choose **Drums** and click **Record**; the scratch tracks remain available for playback. Manual arming is available in **Track settings → Arm set**. Mute the scratch tracks when replacing them with final parts.
 
 | Drum microphone | X32 USB input |
 |---|---|
@@ -233,11 +239,11 @@ Start with **Scratch guitar + vocal**, which arms **Scratch vocal on USB 9** and
 | Overhead R | 8 |
 | Ride | 11 |
 
-The **Drums** recording set includes all nine microphones in one media-edit group with fixed lanes. The overheads are panned left/right. Select **Drums**, then **Arm set** or **Record**, to arm all nine drum tracks. The click and two-bar musical pre-roll are enabled; set the song tempo before recording.
+The **Drums** recording set includes all nine microphones in one media-edit group with fixed lanes. The overheads are panned left/right. Select **Drums**, then **Record**, to arm and record all nine drum tracks. Manual arming is available in **Track settings → Arm set**. The click and two-bar musical pre-roll are enabled; set the song tempo before recording.
 
 Monitor live inputs through the X32. REAPER's track input monitoring is **off**, which still allows recording and input metering. These are computer USB input numbers; the X32's card routing must supply the corresponding microphones. Playback return routing is unchanged.
 
-The final **Vocals** set uses USB **9**, and **Electric guitar** uses USB **15**. **Acoustic guitar** and **Bass** still need their input channels assigned. Choose a set from the blue **Recording set** menu, use **Inputs...** to assign or change its X32 USB input, then **Arm set** or **Record** to switch the armed tracks. If recording a guitar DI and an amp mic simultaneously, add both tracks to the same recording set.
+The final **Vocals** set uses USB **9**, and **Electric guitar** uses USB **15**. **Acoustic guitar** and **Bass** still need their input channels assigned. Choose a set from the blue **Recording set** menu, use **Track settings → Assign inputs...** to assign or change its X32 USB input, then **Record** to switch the armed tracks and start recording. If recording a guitar DI and an amp mic simultaneously, add both tracks to the same recording set.
 
 The setup was checked inside REAPER: all nine drum input assignments, monitoring off, media-edit grouping, fixed lanes, and drum-only arming. No performance was recorded during setup; confirm microphone signals on the input meters before your first take. A copy of the starter before these changes is in `Backups/before-x32-recording`.
 

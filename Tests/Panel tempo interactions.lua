@@ -4,6 +4,7 @@ local passed=0
 local function fixture(initial_view)
   local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={},sections={},extstate={},view=initial_view or 'review'}
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
+  f.track_list={'track'};f.track_values={track={}}
   f.saved_comp={is_comp=true,key='saved-comp',lane=99,playing=true,name='Comp',note='',items={{s=0,e=24}}}
   local function activate(lane)
     if f.saved_comp then f.saved_comp.playing=lane==f.saved_comp.lane end
@@ -20,7 +21,11 @@ local function fixture(initial_view)
     stop=function()f.playing=false end,
     use_in_comp=function(key,s,e)activate(99);call('comp',{key=key,s=s,e=e})end,
     listen_comp=function()assert(f.saved_comp);activate(99);call('back',true)end,
-    require_tracks=function()return {'track'}end,tracks=function()return {'track'}end,
+    require_tracks=function()return f.track_list end,tracks=function()return f.track_list end,
+    track_name=function(tr)return tr end,
+    arm=function()call('arm',f.set);for _,tr in ipairs(f.track_list)do f.track_values[tr].I_RECARM=1 end end,
+    inputs=function(values)call('inputs',values)end,
+    edit=function(_,fn)assert(not f.recording);fn()end,
     lanes=function()local rows={};for _,row in ipairs(f.rows)do rows[#rows+1]=row end;if f.saved_comp then rows[#rows+1]=f.saved_comp end;return rows end,
     row_for_key=function(key)for _,row in ipairs(f.rows)do if row.key==key then return row end end end,
     audition=function(lane,whole_lane)assert(not f.recording);assert(whole_lane,'Toggle must play the whole source lane');assert(not f.audition_fail,'Simulated audition failure');activate(lane);call('audition',lane)end,
@@ -49,7 +54,11 @@ local function fixture(initial_view)
     time_precise=function()f.clock=f.clock+1;return f.clock end,
     GetExtState=function(_,key)return key=='panel_view' and f.view or f.extstate[key]or ''end,SetExtState=function(_,key,value)f.extstate[key]=value end,
     OnPlayButton=function()f.playing=true end,GetPlayState=function()return f.recording and 4 or f.playing and 1 or 0 end,
-    GetMediaTrackInfo_Value=function()return 0 end,GetMediaItemInfo_Value=function(it,k)return k=='D_POSITION' and it.s or it.e-it.s end,
+    GetMediaTrackInfo_Value=function(tr,key)return (f.track_values[tr]or {})[key]or 0 end,
+    SetMediaTrackInfo_Value=function(tr,key,value)f.track_values[tr][key]=value;call('monitor',value)end,
+    GetNumAudioInputs=function()return 16 end,GetInputChannelName=function(i)return 'Input '..(i+1)end,
+    GetUserInputs=function()if f.on_input then f.on_input()end;return f.input_ok~=false,f.input_reply or '1'end,
+    GetMediaItemInfo_Value=function(it,k)return k=='D_POSITION' and it.s or it.e-it.s end,
     GetToggleCommandStateEx=function()return 0 end,
     GetSet_LoopTimeRange2=function()return 0,0 end,
     atexit=function(fn)f.cleanup=fn end,defer=function(fn)f.frame=fn end}
@@ -67,7 +76,7 @@ local function fixture(initial_view)
     if path:match('solo_tempo.lua$') then return T end
     if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,
       cancel_drag=function()local had=f.pending_drag;f.pending_drag=false;return had end,history_changed=function()f.history_refreshed=true end,
-      draw=function()end,mouse=function()end,wheel=function()end}end end
+      draw=function()end,mouse=function()f.timeline_mouse=(f.timeline_mouse or 0)+1 end,wheel=function()f.timeline_wheel=true end}end end
     if path:match('solo_tracks_view.lua$')then return function()return {reset=function()f.track_reset=true end,draw=function()f.track_drawn=true end,wheel=function(delta)f.track_wheel=delta end}end end
     if path:match('solo_projects_view.lua$')then return function(_,ui,options)
       f.projects_ui=ui;f.projects_options=options
@@ -88,6 +97,41 @@ local function fixture(initial_view)
   f.gfx=g;return f
 end
 local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..name)end
+local function labeled(f,label)for _,v in ipairs(f.labels)do if v==label then return true end end;return false end
+local settings=fixture('timeline')
+check(labeled(settings,'Track settings...')and not labeled(settings,'Arm set')and not labeled(settings,'Inputs...')and not labeled(settings,'Monitor off'),'Toolbar replaces the three seldom-used controls with Track settings')
+settings.click(790,112)
+check(labeled(settings,'Track settings')and labeled(settings,'Assign inputs...')and labeled(settings,'Arm set')and labeled(settings,'Turn on'),'Track settings exposes inputs, arming, and monitoring together')
+local gestures=settings.timeline_mouse
+settings.click(40,115);settings.key=114;settings.frame();settings.key=32;settings.frame();settings.key=26;settings.frame();settings.key=nil
+settings.gfx.mouse_wheel=-120;settings.frame()
+check(#settings.calls==0 and #settings.errors==0 and settings.timeline_mouse==gestures and not settings.timeline_wheel,'Settings consume background clicks, record/play/undo shortcuts, and timeline gestures')
+settings.click(815,383);check(settings.calls[1][1]=='arm','Arm set remains available inside settings')
+settings.click(815,461);check(settings.track_values.track.I_RECMON==1,'Monitoring can be enabled inside settings')
+settings.click(815,461);check(settings.track_values.track.I_RECMON==0,'Monitoring can be disabled inside settings')
+settings.input_reply='15';settings.click(815,305)
+check(settings.calls[#settings.calls][1]=='inputs'and settings.calls[#settings.calls][2][1]==15,'Input assignment uses the selected recording set from settings')
+settings.key=27;settings.frame();settings.key=nil;settings.labels={};settings.frame()
+check(not labeled(settings,'Assign inputs...')and not settings.window_closed,'Escape closes settings without closing Solo Studio')
+settings.click(790,112);settings.click(845,207);settings.labels={};settings.frame()
+check(not labeled(settings,'Assign inputs...'),'Done closes the settings dialog')
+settings.key=115;settings.frame();settings.key=nil;settings.labels={};settings.frame()
+check(labeled(settings,'Track settings'),'S opens Track settings without recording or changing the project')
+settings=fixture('timeline');settings.click(790,112);settings.project='different';settings.labels={};settings.frame()
+check(not labeled(settings,'Assign inputs...'),'Native project changes dismiss settings for the previous song')
+settings=fixture('timeline');settings.click(790,112);settings.set='guitar';settings.labels={};settings.frame()
+check(not labeled(settings,'Assign inputs...'),'Recording-set changes dismiss stale settings')
+for _,lock in ipairs({'recording','mix_busy'})do
+ settings=fixture(lock=='mix_busy'and 'mix'or 'timeline');settings[lock]=true;settings.click(790,112)
+ settings.click(815,305);settings.click(815,383);settings.click(815,461)
+ check(#settings.calls==0,'Settings edits are disabled during '..lock)
+end
+settings=fixture('timeline');settings.click(790,112);settings.on_input=function()settings.set='another set'end;settings.click(815,305)
+check(#settings.calls==0 and settings.errors[#settings.errors]:find('recording set changed',1,true),'Input dialog cannot apply changes after its recording set changes')
+settings=fixture('timeline');settings.track_list={'track','second'};settings.track_values.second={I_RECMON=2};settings.click(790,112)
+check(labeled(settings,'Mixed: some tracks have monitoring on.')and labeled(settings,'Turn off'),'Mixed monitoring is identified instead of using only the first microphone')
+settings.click(815,461)
+check(settings.track_values.track.I_RECMON==0 and settings.track_values.second.I_RECMON==0,'Mixed monitoring switches the whole set off together')
 local pf=fixture('projects');check(pf.projects_drawn,'Projects can be restored as the saved panel view')
 pf.gfx.mouse_wheel=-120;pf.frame();check(pf.projects_wheel==-1,'Project library receives scrolling')
 pf.key=110;pf.frame();pf.key=nil;check(pf.project_key==110 and #pf.calls==0,'Projects handles N without triggering another recording take')
