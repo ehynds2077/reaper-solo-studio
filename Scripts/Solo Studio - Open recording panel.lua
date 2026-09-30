@@ -3,7 +3,7 @@ local M=dofile(dir..'/solo_core.lua')
 local T=dofile(dir..'/solo_tempo.lua')
 local S=M.sections()
 local R=reaper
-local C={bg={0.16,0.18,0.21},surface={0.21,0.24,0.28},line={0.32,0.36,0.40},text={0.93,0.94,0.95},muted={0.67,0.72,0.77},blue={0.35,0.58,0.76},record={0.73,0.34,0.39},gold={0.91,0.72,0.35}}
+local C={bg={0.16,0.18,0.21},header={0.21,0.28,0.34},content={0.11,0.13,0.16},surface={0.21,0.24,0.28},line={0.32,0.36,0.40},text={0.93,0.94,0.95},muted={0.67,0.72,0.77},blue={0.35,0.58,0.76},record={0.73,0.34,0.39},gold={0.91,0.72,0.35}}
 local selection=dofile(dir..'/solo_take_selection.lua')()
 local mouse_down,scroll=false,0
 local review_focus
@@ -551,6 +551,9 @@ local function frame()
   text('Make this panel at least 1180 x '..min_height..' to show this workspace.',20,25,1)
  else
   local w=gfx.w-300;local active=M.get('active');local recording=R.GetPlayState() & 4 ~= 0
+  color(C.header);gfx.rect(0,0,gfx.w,64,1)
+  local content_y=view=='projects'and 104 or 217
+  color(C.content);gfx.rect(0,content_y,gfx.w,gfx.h-content_y,1)
   text('Solo Studio',24,20,2)
   local actions_x=gfx.w-433
   draw_song_title(actions_x)
