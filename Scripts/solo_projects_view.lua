@@ -2,14 +2,26 @@ local R=reaper
 local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 return function(M,ui,options)
  local P=dofile(dir..'/solo_projects.lua')(M,options);local V={};local C=ui.colors
- local rows,selected,scroll,box={},nil,0,nil;local query='';local last_refresh=0
+ local rows,selected,scroll,box={},nil,0,nil;local query='';local last_refresh=0;local last_click
  local A,import_job,import_status,import_report
  local function refresh()
-  P.refresh();last_refresh=R.time_precise()
+  P.refresh();last_refresh=R.time_precise();last_click=nil
  end
  local function chosen()for _,row in ipairs(rows)do if row.key==selected then return row end end end
  local function opened(row)
   P.open(row);refresh();ui.opened('Opened '..row.title..'. Previous songs remain open in REAPER tabs.')
+ end
+ local function select_row(row)
+  selected=row.key
+  local now,project=R.time_precise(),R.EnumProjects(-1,'')
+  local previous=last_click;last_click=nil
+  if not P.available()or row.missing then return end
+  if previous and previous.key==row.key and previous.project==project and previous.scroll==scroll
+   and now-previous.time<0.35 and math.abs(gfx.mouse_x-previous.x)<7 and math.abs(gfx.mouse_y-previous.y)<7 then
+   opened(row)
+  else
+   last_click={key=row.key,project=project,time=now,x=gfx.mouse_x,y=gfx.mouse_y,scroll=scroll}
+  end
  end
  local function new_song()
   local project=P.prompt_new()
@@ -51,11 +63,12 @@ return function(M,ui,options)
    for i,song in ipairs(P.list())do if song.key==selected then scroll=math.max(0,i-(box and box.visible or 1));break end end
   end
  end
- function V.reset()last_refresh=0 end
+ function V.reset()last_refresh=0;last_click=nil end
  function V.wheel(delta)
-  if box and gfx.mouse_y>=box.y and gfx.mouse_y<box.y+box.h then scroll=math.max(0,scroll-delta);return true end
+  if box and gfx.mouse_y>=box.y and gfx.mouse_y<box.y+box.h then last_click=nil;scroll=math.max(0,scroll-delta);return true end
  end
  function V.key(ch)
+  if ch>0 then last_click=nil end
   if ch==110 or ch==78 then ui.run(new_song);return true end
   if ch==26162 then ui.run(rename);return true end -- F2
   if ch==13 then local row=chosen();if row then ui.run(function()opened(row)end)end;return true end
@@ -119,12 +132,12 @@ return function(M,ui,options)
    ui.text(state,x+w*.44,ry+18,3,row.missing and C.gold or C.text,w*.21-12)
    ui.text((row.bpm and string.format('%.0f BPM',row.bpm)or '—')..' / '..(row.tracks or 0),x+w*.66,ry+18,3,C.muted,w*.15-12)
    ui.text(row.last_opened>0 and os.date('%b %d, %Y',row.last_opened)or '—',x+w*.81,ry+18,3,C.muted,w*.19-14)
-   ui.hit(x,ry,w,52,function()selected=row.key end,true)
+   ui.hit(x,ry,w,52,function()select_row(row)end,true)
   end
   if #rows==0 then ui.text(query~=''and 'No matching songs. Clear the search to see all projects.'or 'Start a new song, or add a saved REAPER project.',x+16,box.y+18,1,C.muted,w-32)end
   local row=chosen();local bottom=y+h-56
   ui.text(row and (row.path~=''and row.path or 'Unsaved project — use Save project above.')or P.root,x,bottom,3,C.muted,w-332)
-  ui.text(available and 'N: new song   F2: rename   Enter: open song   Unsaved edits stay open.'or 'Finish recording or the current AI mix operation to switch songs.',x,bottom+28,3,C.muted,w-332)
+  ui.text(available and 'Double-click / Enter: open   N: new song   F2: rename   Unsaved edits stay open.'or 'Finish recording or the current AI mix operation to switch songs.',x,bottom+28,3,C.muted,w-332)
   ui.button('Rename...',x+w-310,bottom,126,43,rename,nil,available and row~=nil and row.path~='')
   ui.button(row and row.current and 'Back to song'or 'Open song',x+w-174,bottom,174,43,function()if row then opened(row)end end,C.blue,available and row~=nil and not row.missing)
  end

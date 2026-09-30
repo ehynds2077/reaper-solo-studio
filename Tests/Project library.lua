@@ -65,5 +65,50 @@ check(B.identity().title=='New song title'and B.identity().id==song,'Future boun
 R.GetProjExtState=function(_,_,key)return 1,key=='source'and song or 'Old archive title'end
 check(B.identity().title=='New song title'and B.identity().id==song,'Restored archived sessions retain their mix history and follow the current song name')
 R.GetProjExtState=old_ext
+
+-- Exercise the real Projects view against the same isolated project library.
+local clock,opened_count,hits=1,0,{}
+R.time_precise=function()return clock end;R.file_exists=function()return false end
+local g={mouse_x=0,mouse_y=0,rect=function()end}
+local ui={colors={},text=function()end,color=function()end,button=function()end,
+ hit=function(x,y,w,h,fn)hits[#hits+1]={x=x,y=y,fn=fn}end,
+ run=function(fn)fn()end,opened=function()opened_count=opened_count+1 end}
+local view_env=setmetatable({reaper=R,gfx=g,dofile=function(path)
+ assert(path:match('/solo_projects.lua$'));return function()return P end
+end},{__index=_G})
+local V=assert(loadfile(root..'/Scripts/solo_projects_view.lua','t',view_env))()({},ui)
+local function click_song(path,delay,offset)
+ clock=clock+delay;hits={};V.draw(24,120,1152,900)
+ for i,row in ipairs(P.list())do if row.path==path then
+  local hit=assert(hits[i]);g.mouse_x=hit.x+20+(offset or 0);g.mouse_y=hit.y+20;hit.fn();return
+ end end
+ error('Song not visible: '..path)
+end
+local old_loads=loads
+click_song(ordinary,.1)
+check(opened_count==0 and loads==old_loads and current==projects[1],'A single project-row click only selects the song')
+click_song(ordinary,.2)
+check(opened_count==1 and loads==old_loads+1 and current.path==ordinary and projects[1].dirty==1,'Double-click opens the selected song once and preserves the previous dirty project')
+click_song(ordinary,.1)
+check(opened_count==1,'A third rapid click cannot reuse the completed double-click')
+click_song(ordinary,.1)
+check(opened_count==2 and loads==old_loads+1,'Double-clicking the current song returns to it without reloading its file')
+V.reset();click_song(song,.1);click_song(song,.6)
+check(opened_count==2,'Two slow project clicks stay selection-only')
+V.reset();click_song(song,.1);click_song('',.1)
+check(opened_count==2,'Quick clicks on different songs cannot open either project')
+V.reset();click_song(song,.1);click_song(song,.1,20)
+check(opened_count==2,'Widely separated clicks in one song row are not a double-click')
+for _,lock in ipairs({'recording','mixing','missing'})do
+ V.reset();state=lock=='recording'and 4 or 0;busy=lock=='mixing'
+ local path=lock=='missing'and other or song
+ click_song(path,.1);click_song(path,.1)
+ check(opened_count==2 and current.path==ordinary,'Double-click respects the '..lock..' project-opening restriction')
+end
+state=0;busy=false
+V.reset();click_song(song,.1);V.reset();click_song(song,.1)
+check(opened_count==2,'Reopening Projects clears an unfinished double-click')
+V.reset();click_song(song,.1);V.wheel(1);click_song(song,.1)
+check(opened_count==2,'Scrolling the project list clears an unfinished double-click')
 for _,path in ipairs(files)do os.remove(path)end
 print(passed..' project library checks passed')
