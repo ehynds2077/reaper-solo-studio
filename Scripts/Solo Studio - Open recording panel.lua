@@ -238,7 +238,10 @@ local function recording_set_tabs(w,active,recording)
  end
  local layout=table.concat(signature,'\n')
  local overflow=total>w-202
- local left,right=overflow and 58 or 24,overflow and w-212 or w-178
+ gfx.setfont(3)
+ local badge_width=math.max(19,gfx.measurestr(tostring(#sets))+8)
+ local arrow_width=badge_width+30
+ local left,right=overflow and 24+arrow_width+7 or 24,overflow and w-178-arrow_width-7 or w-178
  local available=right-left
  local function last_visible(first)
   local used,last=0,first-1
@@ -264,12 +267,23 @@ local function recording_set_tabs(w,active,recording)
  set_tab_active=active;set_tab_layout=layout
  local function move(delta)set_tab_first=math.max(1,math.min(last_start,set_tab_first+delta))end
  set_tab_strip={x=24,y=152,w=w-202,h=33,move=move}
+ local last=last_visible(set_tab_first)
  if overflow then
-  button('<',24,152,27,33,function()move(-1)end,nil,set_tab_first>1)
-  button('>',w-205,152,27,33,function()move(1)end,nil,set_tab_first<last_start)
+  local function arrow(label,x,count,direction)
+   button('',x,152,arrow_width,33,function()move(direction)end,nil,count>0)
+   text(label,x+8,160,1,count>0 and C.text or C.muted)
+   color(count>0 and C.blue or C.line);gfx.rect(x+25,159,badge_width,19,1)
+   gfx.setfont(3);local tw,th=gfx.measurestr(tostring(count))
+   text(tostring(count),x+25+(badge_width-tw)/2,159+(19-th)/2,3,count>0 and C.text or C.muted)
+   if gfx.mouse_x>=x and gfx.mouse_x<x+arrow_width and gfx.mouse_y>=152 and gfx.mouse_y<185 then
+    header_hint=count..(count==1 and ' recording set hidden to the 'or ' recording sets hidden to the ')..(direction<0 and 'left.'or 'right.')
+   end
+  end
+  arrow('<',24,set_tab_first-1,-1)
+  arrow('>',w-178-arrow_width,#sets-last,1)
  end
  local x=left
- for i=set_tab_first,last_visible(set_tab_first)do
+ for i=set_tab_first,last do
   local set=sets[i];local sw=widths[i]
   button(set.name,x,152,sw,33,function()
    M.choose_set(set.id);selection.reset();scroll=0
