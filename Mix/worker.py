@@ -25,6 +25,9 @@ ROOT = Path(__file__).resolve().parent
 DATA = Path(os.environ.get('SOLO_STUDIO_DATA', str(Path.home() / 'Library/Application Support/Solo Studio/Mix')))
 API = 'https://openrouter.ai/api/v1'
 DEFAULT_MODEL = 'openai/gpt-6-luna'
+DEFAULT_ROUNDS = 60
+MAX_ROUNDS = 100
+MAX_BRIDGE_CALLS = 640
 MODEL_CATALOG = API + '/models?supported_parameters=tools&sort=intelligence-high-to-low'
 sys.path.insert(0, str(ROOT.parent / 'ReferenceLab'))
 
@@ -422,6 +425,9 @@ differences require a stated adjustment to the target, not abandoning the refere
 Measure after each meaningful batch of changes, check whether the important gaps
 actually shrank, and revise moves that worsen the result. Spend the limited rounds
 on the largest gaps; solo-render only tracks needed to resolve a specific question.
+The round budget is a maximum, not a target: finish when measured work is complete.
+If a tool returns an error, correct its arguments or choose another approach;
+do not repeat the same failed request unchanged.
 Rendering is expensive. Batch related fader/EQ/dynamics edits before measuring;
 do not request a solo render of every track as a routine inventory step. The shared
 diagnostic window is chosen from an energetic 30 seconds of the original passage.
@@ -575,7 +581,7 @@ class Session:
         if self.cancelled():
             raise RuntimeError('Session cancelled')
         self.calls += 1
-        if self.calls > 160:
+        if self.calls > MAX_BRIDGE_CALLS:
             raise RuntimeError('Tool-call limit reached')
         ident = self.nonce + '-' + str(self.calls)
         write(self.dir / 'request.json', {'id': ident, 'name': name, 'arguments': args})
@@ -716,9 +722,10 @@ class Session:
                 'excerpt_seconds': self.config['bounds'], 'diagnostic_seconds': self.diagnostic_bounds, 'project': project,
                 'original': original, 'references': refs}, allow_nan=False)}]
             self.attach_images(messages)
-            rounds = min(20, max(1, int(self.config.get('rounds', 8))))
+            rounds = min(MAX_ROUNDS, max(1, int(self.config.get('rounds', DEFAULT_ROUNDS))))
             empty_retries = 0
             completion_checks = 0
+            failed_rounds = 0
             self.completion_reason = 'round_limit'
             for turn in range(rounds):
                 if self.cancelled():
@@ -789,6 +796,7 @@ class Session:
                         self.completion_reason = 'cost_limit'
                         break
                     continue
+                failed_calls = 0
                 for call in calls:
                     fn = call['function']; name = fn['name']
                     try:
@@ -810,11 +818,19 @@ class Session:
                             result = self.bridge(name, args)
                     except (ValueError, KeyError, TypeError) as error:
                         result = {'error': str(error)}
+                    if isinstance(result, dict) and result.get('error'):
+                        failed_calls += 1
+                        self.publish(name.replace('_', ' ') + ' failed: ' + str(result['error']), 'tool')
                     messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(result, allow_nan=False)})
                 # This is a post-response stop threshold, not a guaranteed billing cap.
                 if self.cost >= self.config.get('stop_after_usd', 2):
                     self.completion_reason = 'cost_limit'
                     self.publish('Configured reported-cost threshold reached; stopping further requests.')
+                    break
+                failed_rounds = failed_rounds + 1 if failed_calls == len(calls) else 0
+                if failed_rounds >= 3:
+                    self.completion_reason = 'repeated_tool_errors'
+                    self.publish('Three consecutive rounds failed every tool request. Pausing for review; see the tool errors above.')
                     break
             final = self.measure('Final candidate')
             self.reference_issues = reference_issues(final, refs)
@@ -831,7 +847,7 @@ class Session:
                 self.state = 'review'
                 if self.reference_issues:
                     self.publish('Pass ended with reference targets still off: ' + ' '.join(self.reference_issues) + ' Audition, give feedback, or revert; this is not a completed reference match.')
-                elif self.completion_reason in ('incomplete_model_response', 'round_limit', 'cost_limit'):
+                elif self.completion_reason in ('incomplete_model_response', 'round_limit', 'cost_limit', 'repeated_tool_errors'):
                     self.publish('Pass stopped (' + self.completion_reason.replace('_', ' ') + '). Measured candidate available for review; further work may be needed.')
                 else:
                     self.publish('Candidate ready. Compare Original / Candidate, then Keep or Revert.')

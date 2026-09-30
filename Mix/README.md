@@ -199,8 +199,16 @@ the song automatically; use your normal REAPER save workflow.
   above-full-scale samples. A final true peak above -1 dBTP prevents Keep.
 - Edits/transport changes stop tool execution. Tool schemas, finite bounds and
   plugin ownership are enforced in code; model instructions alone do not enforce
-  these rules. Requests have timeouts and round limits, at most 160 bridge calls
-  per worker pass and 40 renders per bridge session.
+  these rules. A pass defaults to 60 model rounds, configurable from 1–100 in
+  Advanced settings or the review screen's Pass limits. A round is one model
+  response, potentially containing several tool calls. It can finish early.
+  Continue mixing starts another pass from the candidate using the current
+  limits; Give feedback does the same with your direction. Both preserve the
+  original A/B snapshot and reuse owned effects. The reported-cost stop applies
+  separately to each pass (default $2), checked after each response.
+  Three consecutive rounds in which every tool fails pause for review; errors
+  appear in the log. Requests have timeouts, at most 640 bridge calls per worker
+  pass and 160 renders per bridge session. Cached measurements do not use renders.
 
 OpenRouter receives track names/settings, selected reference metrics, user mix
 direction/feedback, tool results, decision messages and, with visual analysis

@@ -20,7 +20,7 @@ return function(M,ui)
  local config=read(data..'/settings.json',{})
  config.model=config.model or Models.default
  config.direction=config.direction or 'Natural indie rock. Clear vocals, punchy drums, preserve dynamics and performance.'
- config.rounds=config.rounds or 8;config.stop_after_usd=config.stop_after_usd or 2
+ config.rounds=config.rounds or 60;config.stop_after_usd=config.stop_after_usd or 2
  if config.visual_analysis==nil then config.visual_analysis=true end
  local lib=read(data..'/library.json',{references=J.array(),default=''})
  local selected=config.references or (lib.default~=''and J.array({lib.default})or J.array())
@@ -152,10 +152,10 @@ return function(M,ui)
   end
  end
  local function advanced()
-  local ok,value=R.GetUserInputs('OpenRouter settings',2,'Maximum model rounds (1-20),Stop after reported cost USD,extrawidth=220',config.rounds..','..config.stop_after_usd)
+  local ok,value=R.GetUserInputs('Limits per mixing pass',2,'Maximum model rounds (1-100),Stop after reported cost USD,extrawidth=220',config.rounds..','..config.stop_after_usd)
   if ok then
    local rounds,cost=value:match('^([^,]+),([^,]+)$');rounds=tonumber(rounds);cost=tonumber(cost)
-   assert(rounds and rounds%1==0 and rounds>=1 and rounds<=20,'Rounds must be 1–20.')
+   assert(rounds and rounds%1==0 and rounds>=1 and rounds<=100,'Rounds must be 1–100.')
    assert(cost and cost>0 and cost<=20,'Reported cost threshold must be above 0 and at most $20.')
    config.rounds=rounds;config.stop_after_usd=cost;save_config()
   end
@@ -177,17 +177,26 @@ return function(M,ui)
   return lines
  end
  local function metric(value)return type(value)=='number'and string.format('%.1f',value)or '—'end
+ local function resume(value)
+  assert(not X.busy()and state,'Wait for the current pass before giving feedback.')
+  B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
+  local job=read(session.path..'/config.json');job.resume=true
+  job.direction=job.direction..'\nUser feedback: '..value
+  job.rounds=config.rounds;job.stop_after_usd=config.stop_after_usd
+  J.write(session.path..'/config.json',job)
+  os.remove(session.path..'/cancel')
+  state.events[#state.events+1]={role='user',text=value};state.state='running';state.updated=os.time();J.write(session.path..'/status.json',state)
+  local ok,err=pcall(launch,{'--session',session.path});if not ok then state.state='error';error(err)end
+  status='Continuing the candidate with a fresh pass budget.'
+ end
  local function refine()
   assert(not X.busy()and state,'Wait for the current pass before giving feedback.')
   B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
   local ok,value=R.GetUserInputs('Refine this candidate',1,'Your feedback:,extrawidth=350','')
-  if ok and value~=''then
-   os.remove(session.path..'/cancel')
-   local job=read(session.path..'/config.json');job.resume=true;job.direction=job.direction..'\nUser feedback: '..value
-   J.write(session.path..'/config.json',job)
-   state.events[#state.events+1]={role='user',text=value};state.state='running';state.updated=os.time();J.write(session.path..'/status.json',state)
-   launch({'--session',session.path});status='Refining the current candidate with your feedback.'
-  end
+  if ok and value~=''then resume(value)end
+ end
+ local function continue_mix()
+  resume('Continue from this candidate. Inspect and reuse session-owned effects, measure the current result, and address the remaining reference, balance and output-peak gaps. Finish when the measured result is ready for audition.')
  end
  function X.draw(x,y,w,h)
   X.poll();text('Mix',x,y,2)
@@ -262,7 +271,9 @@ return function(M,ui)
    button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,reviewing or stopped)
    button('Show analysis files',x+510,y+85,169,32,function()R.ExecProcess('/usr/bin/open '..quote(session.path),-1)end)
    button('Give feedback…',x+690,y+85,155,32,refine,nil,not busy and stopped and state~=nil)
-   text('A/B switches live at actual mix levels.  1: Original  /  2: Candidate  /  Space: play or stop  /  G: feedback',x,y+126,3,C.muted)
+   text('A/B at actual levels.  1: Original  /  2: Candidate  /  Space: play or stop',x,y+126,3,C.muted,680)
+   button('Continue mixing',x+690,y+121,155,27,continue_mix,nil,not busy and stopped and state~=nil and session.mode=='candidate')
+   button('Pass limits: '..config.rounds..' rounds…',x+855,y+121,233,27,advanced,nil,not busy)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
    button('New mix…',x+970,y+85,118,32,restart,nil,not busy and stopped)
    if show_graphs and #measurements>1 then

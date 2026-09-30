@@ -15,6 +15,10 @@ class WorkerTests(unittest.TestCase):
         # Ordinary protocol tests never look up model capabilities on the network.
         support = patch.object(worker, 'image_support', return_value=False)
         support.start(); self.addCleanup(support.stop)
+        # Protocol fixtures contain partial profiles; chart rendering has its own
+        # suite. Avoid leaving partial matplotlib figures in a combined test run.
+        charts = patch('charts.render_charts')
+        charts.start(); self.addCleanup(charts.stop)
 
     def test_diagnostic_window_uses_energy_and_absolute_project_time(self):
         profile = {'envelope_1s': [
@@ -407,6 +411,39 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(session.completion_reason,'cost_limit')
         _,_,requests,_=self.run_scripted_responses([done],measured,ref,rounds=1)
         self.assertEqual(len(requests),1)
+
+    def test_long_passes_continue_past_twenty_and_keep_cost_stop(self):
+        tool={'choices':[{'message':{'role':'assistant','tool_calls':[
+            {'id':'move','function':{'name':'set_track_mix','arguments':json.dumps({'track':'g','volume_db':1,'pan':0})}}]}}]}
+        done={'choices':[{'message':{'role':'assistant','content':'Measured summary.'}}]}
+        profile={'loudness':{'integrated_lufs':-14,'true_peak_dbtp':-2}}
+        session,state,requests,moves=self.run_scripted_responses([tool]*25+[done],profile,rounds=60)
+        self.assertEqual((len(requests),len(moves),state),(26,25,'review'))
+        self.assertEqual(session.completion_reason,'measured_completion')
+        session,_,requests,_=self.run_scripted_responses([tool],profile,rounds=1000)
+        self.assertEqual(len(requests),100)
+        self.assertEqual(session.completion_reason,'round_limit')
+        expensive={**tool,'usage':{'cost':1.1}}
+        session,_,requests,_=self.run_scripted_responses([expensive],profile,rounds=60,stop_after_usd=2)
+        self.assertEqual(len(requests),2)
+        self.assertEqual(session.completion_reason,'cost_limit')
+
+    def test_repeated_tool_errors_pause_with_visible_reasons_and_final_measurement(self):
+        bad={'choices':[{'message':{'role':'assistant','tool_calls':[
+            {'id':'bad','function':{'name':'measure_mix','arguments':'{"start_seconds":0}'}}]}}]}
+        good={'choices':[{'message':{'role':'assistant','tool_calls':[
+            {'id':'good','function':{'name':'inspect_project','arguments':'{}'}}]}}]}
+        done={'choices':[{'message':{'role':'assistant','content':'Summary'}}]}
+        profile={'loudness':{'integrated_lufs':-14,'true_peak_dbtp':-2}}
+        session,state,requests,_=self.run_scripted_responses([bad],profile,rounds=60)
+        self.assertEqual(len(requests),3)
+        self.assertEqual(session.completion_reason,'repeated_tool_errors')
+        self.assertEqual(state,'review')
+        self.assertEqual(len(session.measurements),2)  # Original + final still measured.
+        self.assertTrue(any('failed: Supply both' in e['text'] for e in session.events))
+        session,_,requests,_=self.run_scripted_responses([bad,bad,good,bad,bad,done],profile,rounds=60)
+        self.assertEqual(len(requests),6)
+        self.assertEqual(session.completion_reason,'measured_completion')
 
     def test_model_catalog_filters_routes_and_pins_default(self):
         now=1_790_000_000

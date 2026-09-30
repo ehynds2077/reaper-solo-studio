@@ -144,7 +144,7 @@ local function render(s,bounds,scope)
   if size==cached.size then return {path=cached.path,bounds=bounds,cached=true,render_seconds=0}end
   s.render_cache[key]=nil
  end
- s.renders=s.renders+1;assert(s.renders<=40,'Render limit reached')
+ s.renders=s.renders+1;assert(s.renders<=160,'Render limit reached')
  local started=R.time_precise()
  local numbers={RENDER_SETTINGS=0,RENDER_BOUNDSFLAG=0,RENDER_STARTPOS=bounds[1],RENDER_ENDPOS=bounds[2],
   RENDER_CHANNELS=2,RENDER_TAILFLAG=0,RENDER_ADDTOPROJ=0,RENDER_DITHER=0,RENDER_NORMALIZE=0,RENDER_SRATE=48000}
