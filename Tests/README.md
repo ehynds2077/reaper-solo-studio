@@ -78,9 +78,16 @@ Multiple-selection checks cover Cmd toggles, Shift ranges across offscreen rows,
 
 The visual runner also runs `Native comp edges.lua` and `Native section handles.lua`. The latter records silent track outputs in its disposable project and takes about 30 seconds with a working output device; it never records hardware inputs. It verifies real media offsets and lengths, single-pass and repeated loop capture, default visible trimming, per-pass handle metadata, and restoration of pre-roll/link preferences. The panel opens only after those checks finish.
 
-`Track management.lua` exercises the real core, manager, and Tracks view with a synthetic project: native-name-derived set labels, folder descendants and closing depths, surviving microphone membership, restored GUIDs, stale confirmations, project changes, recording locks, and cancelled deletion. Panel checks cover the new tab, scrolling, and project reset. The boundary zoom interaction checks cover musical bar ranges, tempo/meter changes, double-clicks, pointer-centered zoom, returning to the previous view, and precise drags after zooming.
+`Track management.lua` exercises the real core, manager, and grouped Tracks view with a synthetic project: group expansion, linked volume ratios, mute restoration (including overlapping groups), group names stored in native track metadata, failed-write rollback, automation protection, AI/recording locks, stale edits, folder descendants and closing depths, surviving microphone membership, restored GUIDs, and cancelled deletion. Panel checks cover the tab, scrolling, sliders, and project reset. The boundary zoom interaction checks cover musical bar ranges, tempo/meter changes, double-clicks, pointer-centered zoom, returning to the previous view, and precise drags after zooming.
 
 `Run boundary history checks.lua` verifies native boundary Undo/Redo across nine microphones during playback, plus track rename/deletion Undo and restored set membership. It opens a disposable panel; closing it restores the original project and checks every original track state chunk for exact preservation. Panel tests cover history buttons, keyboard shortcuts, empty history, recording locks, and drag cancellation; timeline tests verify that history refresh keeps the zoom and clears stale item hits.
+
+`Run track group checks.lua` verifies native linked faders, group names, preserved
+member mute states, Undo/Redo, and saved group metadata in a silent disposable
+project. Close Solo Studio and stop transport first. The runner restores the user
+project, checks all original track chunks for exact preservation, writes
+`Tests/track-group-checks.txt`, and reopens Solo Studio's Tracks view. It never
+records input or changes the original song's mix.
 
 `Bounce library controls.lua` checks saved-version selection, instrumental
 playback, Space/Pause/Resume behavior, and transport/AI/archiving locks.

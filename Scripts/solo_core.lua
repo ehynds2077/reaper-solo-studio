@@ -46,11 +46,16 @@ local function get(key)
   end
   local id=key:match('^set%.(.+)%.name$')
   if id then
+    local resolved=resolve_tracks(id)
     -- Single-track instruments follow native names, including native Undo/Redo.
     local guids=raw_get('set.'..id..'.tracks')
     if guids~=''and not guids:find('\n',1,true)then
-      local tr=resolve_tracks(id)[1]
+      local tr=resolved[1]
       if tr then local _,name=R.GetSetMediaTrackInfo_String(tr,'P_NAME','',false);if name~=''then return name end end
+    elseif resolved[1]then
+      -- Track extension data participates in native Undo; project extstate does not.
+      local _,name=R.GetSetMediaTrackInfo_String(resolved[1],'P_EXT:SoloStudio.set_name.'..id,'',false)
+      if name and name~=''then return name end
     end
   end
   return raw_get(key)
@@ -159,6 +164,9 @@ function M.capture(name)
       end
     end
     put('set.'..id..'.name',name); put('set.'..id..'.tracks',joined); put('active',id)
+    if #tracks>1 then for _,tr in ipairs(tracks)do
+      R.GetSetMediaTrackInfo_String(tr,'P_EXT:SoloStudio.set_name.'..id,name,true)
+    end end
     if R.GetToggleCommandStateEx(0,1156)==0 then R.Main_OnCommand(1156,0) end
   end)
   return id

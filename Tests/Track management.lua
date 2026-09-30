@@ -3,9 +3,9 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local total=0
 local function check(ok,label)assert(ok,label);total=total+1;print('PASS: '..label)end
 local function fixture()
- local f={tracks={},state={},revision=0,project='song',recording=false,edits=0,buttons={},labels={},confirm=7}
+ local f={tracks={},state={},revision=0,project='song',recording=false,edits=0,buttons={},labels={},confirm=7,sliders={}}
  local function add(key,name,depth,items)
-  local tr={key=key,name=name,delta=depth,items=items or 0,fx=2,input=0};f.tracks[#f.tracks+1]=tr;return tr
+  local tr={key=key,name=name,delta=depth,items=items or 0,fx=2,input=0,volume=1,mute=0,props={}};f.tracks[#f.tracks+1]=tr;return tr
  end
  f.folder=add('folder','Drums',1);f.kick=add('kick','Kick',0,6);f.inner=add('oh','Overheads',1)
  f.left=add('left','OH L',0,6);f.right=add('right','OH R',-2,6);f.guitar=add('guitar','Guitar',0,2)
@@ -15,30 +15,49 @@ local function fixture()
   CountTracks=function()return #f.tracks end,GetTrack=function(_,i)return f.tracks[i+1]end,
   GetTrackGUID=function(tr)return tr.key end,CountTrackMediaItems=function(tr)return tr.items end,
   TrackFX_GetCount=function(tr)return tr.fx end,IsTrackSelected=function(tr)return tr.selected or false end,
-  GetMediaTrackInfo_Value=function(tr,key)return key=='I_FOLDERDEPTH'and tr.delta or key=='I_RECINPUT'and tr.input or 0 end,
-  SetMediaTrackInfo_Value=function(tr,key,value)assert(key=='I_FOLDERDEPTH');tr.delta=value;f.revision=f.revision+1;return true end,
-  GetSetMediaTrackInfo_String=function(tr,key,value,set)assert(key=='P_NAME');if set then tr.name=value;f.revision=f.revision+1 end;return true,tr.name end,
+  GetMediaTrackInfo_Value=function(tr,key)return key=='I_FOLDERDEPTH'and tr.delta or key=='I_RECINPUT'and tr.input or key=='D_VOL'and tr.volume or key=='B_MUTE'and tr.mute or 0 end,
+  SetMediaTrackInfo_Value=function(tr,key,value)
+   if f.fail and f.fail.track==tr and f.fail.key==key then f.fail=nil;return false end
+   local field=assert(({I_FOLDERDEPTH='delta',D_VOL='volume',B_MUTE='mute'})[key]);tr[field]=value;f.revision=f.revision+1;return true
+  end,
+  GetSetMediaTrackInfo_String=function(tr,key,value,set)
+   if key=='P_NAME'then if set then tr.name=value;f.revision=f.revision+1 end;return true,tr.name end
+   if set then tr.props[key]=value;f.revision=f.revision+1 end;return (tr.props[key]or '')~='',tr.props[key]or ''
+  end,
+  GetTrackEnvelopeByChunkName=function(tr,key)return tr.envelopes and tr.envelopes[key]end,
+  GetEnvelopeStateChunk=function(env)return true,'\nACT '..env.active..'\n'end,
   GetProjExtState=function(_,_,key)return 1,f.state[key]or ''end,SetProjExtState=function(_,_,key,value)f.state[key]=value end,
   EnumProjects=function()return f.project end,GetPlayState=function()return f.recording and 4 or 0 end,
   GetProjectStateChangeCount=function()return f.revision end,
   ValidatePtr2=function(_,tr)for _,candidate in ipairs(f.tracks)do if tr==candidate then return true end end;return false end,
   DeleteTrack=function(tr)for i,candidate in ipairs(f.tracks)do if candidate==tr then table.remove(f.tracks,i);f.revision=f.revision+1;return end end;error('Missing track')end,
-  Undo_BeginBlock2=function()f.edits=f.edits+1 end,Undo_EndBlock2=function()end,PreventUIRefresh=function()end,
+  Undo_BeginBlock2=function()
+   f.edits=f.edits+1;f.undo_state={}
+   for _,tr in ipairs(f.tracks)do
+    local props={};for k,v in pairs(tr.props)do props[k]=v end
+    f.undo_state[#f.undo_state+1]={track=tr,name=tr.name,volume=tr.volume,mute=tr.mute,props=props}
+   end
+  end,Undo_EndBlock2=function()end,PreventUIRefresh=function()end,
   UpdateTimeline=function()end,TrackList_AdjustWindows=function()end,MarkProjectDirty=function()end,
   SetTrackSelected=function(tr,value)tr.selected=value end,
   GetUserInputs=function()return f.answer~=nil,f.answer end,
   ShowMessageBox=function(message)f.dialog=message;return f.confirm end,
  }
- local M=dofile(root..'/Scripts/solo_core.lua');local T=dofile(root..'/Scripts/solo_tracks.lua')(M)
+ local M=dofile(root..'/Scripts/solo_core.lua');local T=dofile(root..'/Scripts/solo_tracks.lua')(M,{busy=function()return f.busy end})
  f.M,f.T=M,T
  gfx={mouse_x=0,mouse_y=0,rect=function()end}
- local V=dofile(root..'/Scripts/solo_tracks_view.lua')(M,{colors={muted={},text={},surface={},record={}},
+ local V=dofile(root..'/Scripts/solo_tracks_view.lua')(M,{colors={muted={},text={},surface={},record={},blue={},gold={}},busy=function()return f.busy end,
   text=function(label)f.labels[#f.labels+1]=label end,color=function()end,
   button=function(label,x,y,w,h,fn,_,enabled)if enabled~=false then f.buttons[#f.buttons+1]={label=label,y=y,fn=fn}end end,
+  slider=function(id,x,y,w,value,fn,enabled)if enabled then f.sliders[#f.sliders+1]={id=id,value=value,fn=fn}end end,
   hit=function(_,_,_,_,fn,enabled)if enabled then f.select=fn end end,
   changed=function(message)f.message=message end})
- function f.draw()f.buttons={};f.labels={};V.draw(24,215,1152,476,f.recording)end
+ function f.draw()f.buttons={};f.labels={};f.sliders={};V.draw(24,215,1152,680,f.recording)end
  function f.click(label,index)local n=0;for _,b in ipairs(f.buttons)do if b.label==label then n=n+1;if n==(index or 1)then b.fn();return true end end end;return false end
+ function f.undo()
+  for _,saved in ipairs(f.undo_state)do for _,key in ipairs({'name','volume','mute','props'})do saved.track[key]=saved[key]end end
+  f.revision=f.revision+1
+ end
  f.V=V;return f
 end
 local f=fixture();local rows=f.T.list()
@@ -70,12 +89,73 @@ check(not pcall(f.T.delete,plan)and #f.tracks==6,'Changes during confirmation re
 f=fixture();plan=f.T.plan_delete('guitar');f.recording=true
 check(not pcall(f.T.delete,plan)and not pcall(f.T.rename,'guitar','New')and #f.tracks==6,'Recording locks rename and deletion even through the backend')
 f=fixture();f.draw();f.click('Delete...',1)
-check(f.dialog:find('4 child tracks',1,true)and f.dialog:find('18 audio/MIDI items',1,true),'Delete confirmation states exactly how much of the folder will be removed')
+check(f.dialog:find('3 tracks',1,true)and f.dialog:find('18 audio/MIDI items',1,true),'Group delete confirmation lists its tracks and recordings')
 check(#f.tracks==6 and f.edits==0,'Cancelling the confirmation leaves every track intact')
 f.confirm=6;f.click('Delete...',1)
-check(#f.tracks==1 and f.message:find('Deleted 5 tracks',1,true),'Confirming deletes only the reviewed folder in one operation')
-f=fixture();f.draw();f.answer='Kick close';f.click('Rename...',2)
+check(#f.tracks==3 and f.tracks[3]==f.guitar and f.message:find('Deleted 3 tracks',1,true),'Confirming group deletion removes only its reviewed members')
+f=fixture();f.draw();f.click('+',1);f.draw();f.answer='Kick close';f.click('Rename...',2)
 check(f.kick.name=='Kick close'and f.message:find('Track renamed',1,true),'The row Rename button changes the selected native track')
 f=fixture();f.recording=true;f.draw()
 check(not f.click('Rename...')and not f.click('Delete...'),'Tracks view disables destructive row actions during recording')
+local function group(f,id)for _,row in ipairs(f.T.groups())do if row.id==id then return row end end end
+local function near(a,b)return math.abs(a-b)<1e-9 end
+local function labeled(f,name)for _,label in ipairs(f.labels)do if label==name then return true end end;return false end
+f=fixture();f.draw()
+check(labeled(f,'Track groups')and labeled(f,'Drums')and labeled(f,'Guitar')and not labeled(f,'Kick'),'Tracks initially shows collapsed instrument groups instead of microphone rows')
+check(labeled(f,'Other tracks')and #f.T.groups()[3].members==2,'Folder buses and unassigned tracks remain reachable outside recording groups')
+check(f.edits==0 and #f.sliders==2,'Drawing the grouped view only reads the existing mix')
+f.click('+',1);f.draw();check(labeled(f,'Kick')and labeled(f,'OH L')and #f.sliders==5,'Expanding a group exposes each member and its own volume control')
+f=fixture();f.draw();f.answer='Live drums';f.click('Rename...',1)
+check(f.M.sets()[1].name=='Live drums'and f.kick.name=='Kick'and f.left.name=='OH L','Group rename updates the instrument label without renaming its microphones')
+f.undo();check(f.M.sets()[1].name=='Drums','Restoring native track metadata restores the original group label')
+f.T.rename_group(group(f,'drums'),'Kit',f.project);table.remove(f.tracks,2)
+check(f.M.sets()[1].name=='Kit','The group name survives deletion of its first microphone')
+f=fixture();f.kick.volume=1;f.left.volume=.5;f.right.volume=.25
+local drums=group(f,'drums');f.T.set_volume(drums,-6,f.project);local gain=10^(-6/20)
+check(near(f.kick.volume,gain)and near(f.left.volume,gain*.5)and near(f.right.volume,gain*.25)and f.guitar.volume==1,'Group volume preserves microphone ratios and leaves other instruments unchanged')
+check(f.edits==1,'A group level change uses a single native Undo block')
+f.undo();check(f.kick.volume==1 and f.left.volume==.5 and f.right.volume==.25,'Undo restores every member level together')
+drums=group(f,'drums');f.left.volume=.4
+check(not pcall(f.T.set_volume,drums,-3,f.project)and f.kick.volume==1,'An external fader change cancels a stale group-volume adjustment')
+drums=group(f,'drums');f.project='other'
+check(not pcall(f.T.set_volume,drums,-3,'song')and not pcall(f.T.rename_group,drums,'Wrong','song'),'A project switch invalidates pending group edits')
+f=fixture();drums=group(f,'drums');f.state['set.drums.tracks']='kick\nleft'
+check(not pcall(f.T.set_volume,drums,-3,f.project),'Changing group membership invalidates its pending volume change')
+f=fixture();f.left.volume=0;f.T.set_volume(group(f,'drums'),-6,f.project)
+check(f.left.volume==0 and near(f.kick.volume,gain),'A silent member stays silent when the rest of its group is adjusted')
+f=fixture();f.guitar.volume=0;f.T.set_volume(group(f,'guitar'),-12,f.project)
+check(near(f.guitar.volume,10^(-12/20)),'A completely silent single-track instrument can be raised again')
+f=fixture();f.fail={track=f.left,key='D_VOL'}
+check(not pcall(f.T.set_volume,group(f,'drums'),-9,f.project)and f.kick.volume==1 and f.left.volume==1 and f.right.volume==1,'A failed member-volume write rolls back the entire group')
+f=fixture();f.right.mute=1;f.T.toggle_mute(group(f,'drums'),f.project)
+check(f.kick.mute==1 and f.left.mute==1 and f.right.mute==1 and f.guitar.mute==0,'Group mute includes all microphones without affecting other instruments')
+f.T.toggle_mute(group(f,'drums'),f.project)
+check(f.kick.mute==0 and f.left.mute==0 and f.right.mute==1,'Unmuting a group restores microphones that were intentionally muted beforehand')
+f.undo();check(f.kick.mute==1 and f.left.mute==1 and f.right.mute==1,'Undo restores the group mute and its saved member states')
+f.T.toggle_mute(group(f,'drums'),f.project)
+check(f.kick.mute==0 and f.right.mute==1,'Group mute restoration still works after Undo')
+f=fixture();f.state.sets=f.state.sets..'\noverlap';f.state['set.overlap.name']='Shared';f.state['set.overlap.tracks']='left\nguitar'
+f.T.toggle_mute(group(f,'drums'),f.project);f.T.toggle_mute(group(f,'overlap'),f.project);f.T.toggle_mute(group(f,'drums'),f.project)
+check(f.kick.mute==0 and f.left.mute==1 and f.guitar.mute==1,'Unmuting one group does not undo another overlapping group mute')
+f.T.toggle_mute(group(f,'overlap'),f.project)
+check(f.left.mute==0 and f.guitar.mute==0,'The final overlapping group unmute restores the original track states')
+f=fixture();f.fail={track=f.left,key='B_MUTE'}
+check(not pcall(f.T.toggle_mute,group(f,'drums'),f.project)and f.kick.mute==0 and f.left.mute==0 and f.kick.props['P_EXT:SoloStudio.group_mutes']=='','A failed group mute restores both audio state and mute metadata')
+for _,lock in ipairs({'recording','busy'})do
+ f=fixture();drums=group(f,'drums');f[lock]=true;f.draw()
+ check(#f.sliders==0 and not f.click('Mute')and not f.click('Rename...')and not f.click('Delete...'),'Group controls are disabled during '..lock)
+ check(not pcall(f.T.set_volume,drums,-3,f.project)and not pcall(f.T.toggle_mute,drums,f.project)and not pcall(f.T.rename_group,drums,'New',f.project),'Backend group edits are locked during '..lock)
+end
+f=fixture();f.left.envelopes={['<VOLENV2']={active=1},['<MUTEENV']={active=1}};f.draw()
+check(#f.sliders==1 and group(f,'drums').volume_automated and not pcall(f.T.set_volume,group(f,'drums'),-3,f.project)and not pcall(f.T.toggle_mute,group(f,'drums'),f.project),'Existing member volume and mute automation remain protected')
+f.left.envelopes['<VOLENV2'].active=0;f.left.envelopes['<MUTEENV'].active=0;f.revision=f.revision+1;f.draw()
+check(#f.sliders==2,'Disabling native automation makes the group controls available again')
+f=fixture();f.draw();f.sliders[1].fn(.5)
+check(near(f.kick.volume,10^(-18/20))and f.edits==1,'The group volume slider commits the requested linked level')
+f=fixture();f.draw();f.click('-1',1)
+check(near(f.kick.volume,10^(-1/20))and f.guitar.volume==1,'Fine volume buttons adjust only the chosen group by one dB')
+f=fixture();f.kick.volume=10^(18/20);f.draw();f.click('-1',1)
+check(near(f.kick.volume,10^(17/20))and near(f.left.volume,10^(-1/20)),'An existing +18 dB fader steps down by one dB without jumping to a lower limit')
+f=fixture();f.draw();f.click('+',2);f.draw()
+check(labeled(f,'Overheads')and f.click('Rename...',3),'Expanding Other tracks keeps native buses editable')
 print(total..' track management checks passed.')

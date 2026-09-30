@@ -12,6 +12,7 @@ local lastproject,rows,tracks,lastrefresh=nil,{},{},0
 local all_rows,lastset,was_recording={},nil,false
 local buttons={}
 local sliders,drag={},nil
+local slider
 local header_hint
 local title_source,song_identity
 local track_settings
@@ -115,7 +116,7 @@ local function mix()
  return X
 end
 local function track_view()
- if not K then K=dofile(dir..'/solo_tracks_view.lua')(M,{colors=C,text=text,button=button,color=color,
+ if not K then K=dofile(dir..'/solo_tracks_view.lua')(M,{colors=C,text=text,button=button,color=color,slider=slider,busy=function()return X and X.busy()end,
   hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
   changed=function(message)status=message;lastrefresh=0;selection.reset();clip_target=nil end})end
  return K
@@ -138,7 +139,7 @@ local function history(redo)
   status=(redo and 'Redid: 'or'Undid: ')..label:gsub('^Solo Studio: ','')
  end
 end
-local function slider(id,x,y,w,value,fn,enabled)
+slider=function(id,x,y,w,value,fn,enabled)
  enabled=enabled~=false
  value=drag and drag.id==id and drag.value or value
  value=math.max(0,math.min(1,value))

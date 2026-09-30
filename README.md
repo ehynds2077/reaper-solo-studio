@@ -211,6 +211,27 @@ and Projects. These controls always apply to the current open song.
 - **Click sound...** opens REAPER's metronome settings. Choose the **Waveform shape**, change the A/B frequencies, or select **Sample** and browse to your own click audio. **Sample presets** saves combinations you want to reuse. **Count-in...** opens the same window at its count-in controls.
 - Tempo, click volume, sound, and count-in are saved with the project. Opening Solo Studio does not reset them.
 
+### Track groups
+
+The **Tracks** tab shows the same instrument groups as the header tabs. Click a
+group name to select it, or **+** to expand its individual microphones/tracks.
+**Other tracks** keeps buses and tracks outside recording groups accessible.
+
+- Drag a volume slider, click its dB value, or use **-1 / +1** for fine changes.
+  Group dB shows the loudest member fader; all members move by the same dB amount,
+  preserving their relative levels. Sliders commit on release as one Undo step.
+- **Mute** silences the group; clicking **Muted** restores its previous member
+  mute states. **Mixed** means only some members are muted.
+- **Rename…** on a group updates its instrument tab without renaming its mics.
+  Expand it to rename individual tracks. Single-track group names follow their track.
+- **Delete…** confirms exactly which tracks, recordings, and effects will be
+  removed. Source audio stays on disk, and native Undo restores deleted tracks.
+
+These controls stay available during playback, and lock during recording or an
+active AI mix. Existing volume or mute automation is marked **Auto** and remains
+under REAPER's envelope controls. Group volume links existing faders; it does not
+create a bus, change routing, or change input gain or X32 direct monitoring.
+
 ### Recorded tempo on takes
 
 New recordings started through Solo Studio capture the song tempo before recording and attach it to every kept microphone clip. Full-song, section, Another take, and loop passes are covered, even if the panel closes before Stop. The label remains with the clip when you split it or copy it into a comp; changing the song tempo does not relabel old takes. These are project/item labels, not edits to the original WAV files. Capturing the label adds a **Solo Studio: store recorded tempo** entry to REAPER's Undo history; undoing that entry removes the label, while the recording remains.
