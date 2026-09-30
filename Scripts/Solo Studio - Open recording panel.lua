@@ -139,12 +139,14 @@ local function history(redo)
   status=(redo and 'Redid: 'or'Undid: ')..label:gsub('^Solo Studio: ','')
  end
 end
-slider=function(id,x,y,w,value,fn,enabled)
+slider=function(id,x,y,w,value,fn,enabled,centered)
  enabled=enabled~=false
  value=drag and drag.id==id and drag.value or value
  value=math.max(0,math.min(1,value))
  color(C.line);gfx.rect(x,y+9,w,4,1)
- color(enabled and C.blue or C.muted);gfx.rect(x,y+9,w*value,4,1)
+ local origin=centered and .5 or 0
+ if centered then color(C.muted);gfx.line(x+w*.5,y+4,x+w*.5,y+18)end
+ color(enabled and C.blue or C.muted);gfx.rect(x+w*math.min(origin,value),y+9,w*math.abs(value-origin),4,1)
  gfx.circle(x+w*value,y+11,6,1)
  if enabled then sliders[#sliders+1]={id=id,x=x,y=y,w=w,h=23,fn=fn} end
 end

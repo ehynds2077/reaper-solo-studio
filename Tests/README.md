@@ -82,8 +82,9 @@ The visual runner also runs `Native comp edges.lua` and `Native section handles.
 
 `Run boundary history checks.lua` verifies native boundary Undo/Redo across nine microphones during playback, plus track rename/deletion Undo and restored set membership. It opens a disposable panel; closing it restores the original project and checks every original track state chunk for exact preservation. Panel tests cover history buttons, keyboard shortcuts, empty history, recording locks, and drag cancellation; timeline tests verify that history refresh keeps the zoom and clears stale item hits.
 
-`Run track group checks.lua` verifies native linked faders, group names, preserved
-member mute states, Undo/Redo, and saved group metadata in a silent disposable
+`Run track group checks.lua` verifies native linked faders, linked pan (including
+dual-pan endpoints and edge limits), group names, preserved member mute states,
+Undo/Redo, and saved group metadata in a silent disposable
 project. Close Solo Studio and stop transport first. The runner restores the user
 project, checks all original track chunks for exact preservation, writes
 `Tests/track-group-checks.txt`, and reopens Solo Studio's Tracks view. It never

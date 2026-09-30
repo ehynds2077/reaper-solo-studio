@@ -220,6 +220,11 @@ group name to select it, or **+** to expand its individual microphones/tracks.
 - Drag a volume slider, click its dB value, or use **-1 / +1** for fine changes.
   Group dB shows the loudest member fader; all members move by the same dB amount,
   preserving their relative levels. Sliders commit on release as one Undo step.
+- Drag **Pan**, click its value to enter -100 (left) through +100 (right), or
+  click **C** to center. Group pan moves all members together and stops at the
+  first hard-left/right limit to preserve their spacing. **Wide** means the group
+  already spans both extremes; expand it to pan individual tracks. Dual-pan
+  tracks move both endpoints together while retaining their width and mode.
 - **Mute** silences the group; clicking **Muted** restores its previous member
   mute states. **Mixed** means only some members are muted.
 - **Rename…** on a group updates its instrument tab without renaming its mics.
@@ -228,7 +233,7 @@ group name to select it, or **+** to expand its individual microphones/tracks.
   removed. Source audio stays on disk, and native Undo restores deleted tracks.
 
 These controls stay available during playback, and lock during recording or an
-active AI mix. Existing volume or mute automation is marked **Auto** and remains
+active AI mix. Existing volume, pan, or mute automation is marked **Auto** and remains
 under REAPER's envelope controls. Group volume links existing faders; it does not
 create a bus, change routing, or change input gain or X32 direct monitoring.
 

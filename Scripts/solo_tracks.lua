@@ -40,13 +40,17 @@ return function(M,options)
  end
  function T.db(gain)return gain>0 and 20*math.log(gain,10)or -math.huge end
  local function mix_state(row)
-  local peak,muted=0,0
+  local peak,muted,pan_low,pan_high=0,0,math.huge,-math.huge
   for _,member in ipairs(row.members)do
    peak=math.max(peak,member.volume);if member.muted then muted=muted+1 end
    row.volume_automated=row.volume_automated or member.volume_automated
    row.mute_automated=row.mute_automated or member.mute_automated
+   row.pan_automated=row.pan_automated or member.pan_automated
+   for _,point in ipairs(member.pan_points)do pan_low=math.min(pan_low,point.value);pan_high=math.max(pan_high,point.value)end
   end
   row.volume=peak;row.db=T.db(peak);row.muted=muted==#row.members;row.mixed_mute=muted>0 and muted<#row.members
+  row.pan=(pan_low+pan_high)/2
+  row.pan_min=row.pan-1-pan_low;row.pan_max=row.pan+1-pan_high
   return row
  end
  local function name(tr,index)local value=M.track_name(tr);return value~=''and value or 'Track '..index end
@@ -62,10 +66,17 @@ return function(M,options)
   local rows={};local depth=0
   for i=0,R.CountTracks(0)-1 do
    local tr=R.GetTrack(0,i);local key=R.GetTrackGUID(tr);local delta=R.GetMediaTrackInfo_Value(tr,'I_FOLDERDEPTH')
+   local pan_mode=R.GetMediaTrackInfo_Value(tr,'I_PANMODE');local pan_points={}
+   local pan_fields=pan_mode==6 and {'D_DUALPANL','D_DUALPANR'}or {'D_PAN'}
+   for _,field in ipairs(pan_fields)do pan_points[#pan_points+1]={key=field,value=R.GetMediaTrackInfo_Value(tr,field)}end
+   local pan_automated
+   if pan_mode==6 then pan_automated=envelope(tr,'<DUALPANENVL')or envelope(tr,'<DUALPANENVR')
+   else pan_automated=envelope(tr,'<PANENV2')end
    rows[#rows+1]={track=tr,key=key,index=i+1,name=name(tr,i+1),depth=depth,folder=delta>0,delta=delta,
     items=R.CountTrackMediaItems(tr),fx=R.TrackFX_GetCount(tr),sets=memberships[key]or {},input=R.GetMediaTrackInfo_Value(tr,'I_RECINPUT'),
     selected=R.IsTrackSelected(tr),volume=R.GetMediaTrackInfo_Value(tr,'D_VOL'),muted=R.GetMediaTrackInfo_Value(tr,'B_MUTE')~=0,
-    volume_automated=envelope(tr,'<VOLENV2'),mute_automated=envelope(tr,'<MUTEENV')}
+    volume_automated=envelope(tr,'<VOLENV2'),mute_automated=envelope(tr,'<MUTEENV'),
+    pan_mode=pan_mode,pan_points=pan_points,pan_automated=pan_automated}
    depth=math.max(0,depth+delta)
   end
   return rows
@@ -123,6 +134,23 @@ return function(M,options)
    changes[#changes+1]={track=member.track,key='D_VOL',value=gain}
   end
   edit_values('set '..current.name..' volume',changes)
+ end
+ function T.set_pan(row,pan,project)
+  assert(type(pan)=='number'and pan==pan and pan>=-1 and pan<=1,'Enter pan from -100 (left) to +100 (right), or 0 for center.')
+  local current=resolve(row,project)
+  assert(not current.pan_automated,'This pan is automated. Adjust its envelope in REAPER.')
+  local target=math.max(current.pan_min,math.min(current.pan_max,pan));local delta=target-current.pan
+  local changes={}
+  for i,member in ipairs(current.members)do
+   local previous=row.members[i]
+   assert(member.pan_mode==previous.pan_mode,'A track pan mode changed during the adjustment. Try again.')
+   for p,point in ipairs(member.pan_points)do
+    assert(previous.pan_points[p]and math.abs(point.value-previous.pan_points[p].value)<1e-9,'A track pan changed during the adjustment. Try again.')
+    changes[#changes+1]={track=member.track,key=point.key,value=math.max(-1,math.min(1,point.value+delta))}
+   end
+  end
+  if math.abs(delta)>1e-9 then edit_values('pan '..current.name,changes)end
+  return target
  end
  local mute_field='P_EXT:SoloStudio.group_mutes'
  function T.toggle_mute(row,project)
