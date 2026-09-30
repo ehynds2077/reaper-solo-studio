@@ -15,6 +15,8 @@ local sliders,drag={},nil
 local header_hint
 local track_settings
 local template_settings
+local set_tab_first,set_tab_active,set_tab_layout=1,nil,nil
+local set_tab_strip
 local section_scroll,sections=0,{}
 local saved_view=R.GetExtState(M.ns,'panel_view')
 local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks' or saved_view=='projects') and saved_view or 'timeline'
@@ -224,6 +226,60 @@ local function add_instrument(x,y)
  end
  M.add_instrument(kind,names);selection.reset();status=kind..' added. Choose Track settings > Assign inputs before recording.'
 end
+local function recording_set_tabs(w,active,recording)
+ local sets=M.sets();local widths,total,active_index={},0,nil
+ local signature={tostring(w)}
+ gfx.setfont(1)
+ for i,set in ipairs(sets)do
+  widths[i]=math.min(210,math.max(85,gfx.measurestr(set.name)+24))
+  total=total+widths[i]+(i>1 and 7 or 0)
+  signature[#signature+1]=set.id..':'..set.name
+  if set.id==active then active_index=i end
+ end
+ local layout=table.concat(signature,'\n')
+ local overflow=total>w-202
+ local left,right=overflow and 58 or 24,overflow and w-212 or w-178
+ local available=right-left
+ local function last_visible(first)
+  local used,last=0,first-1
+  for i=first,#sets do
+   local next_width=widths[i]+(i>first and 7 or 0)
+   if used+next_width>available then break end
+   used=used+next_width;last=i
+  end
+  return last
+ end
+ local last_start,used=#sets,0
+ for i=#sets,1,-1 do
+  local next_width=widths[i]+(i<#sets and 7 or 0)
+  if used+next_width>available then break end
+  used=used+next_width;last_start=i
+ end
+ last_start=math.max(1,last_start)
+ set_tab_first=overflow and math.max(1,math.min(set_tab_first,last_start))or 1
+ if active_index and (active~=set_tab_active or layout~=set_tab_layout)then
+  if active_index<set_tab_first then set_tab_first=active_index end
+  while active_index>last_visible(set_tab_first)and set_tab_first<last_start do set_tab_first=set_tab_first+1 end
+ end
+ set_tab_active=active;set_tab_layout=layout
+ local function move(delta)set_tab_first=math.max(1,math.min(last_start,set_tab_first+delta))end
+ set_tab_strip={x=24,y=152,w=w-202,h=33,move=move}
+ if overflow then
+  button('<',24,152,27,33,function()move(-1)end,nil,set_tab_first>1)
+  button('>',w-205,152,27,33,function()move(1)end,nil,set_tab_first<last_start)
+ end
+ local x=left
+ for i=set_tab_first,last_visible(set_tab_first)do
+  local set=sets[i];local sw=widths[i]
+  button(set.name,x,152,sw,33,function()
+   M.choose_set(set.id);selection.reset();scroll=0
+  end,set.id==active and C.blue or nil,not recording)
+  if gfx.mouse_x>=x and gfx.mouse_x<x+sw and gfx.mouse_y>=152 and gfx.mouse_y<185 then
+   header_hint=set.name..(overflow and ' — scroll this row or use its arrows for more recording sets.'or ' — click to select this recording set.')
+  end
+  x=x+sw+7
+ end
+end
 local function settings_guard(expected_tracks)
  assert(track_settings and track_settings.project==R.EnumProjects(-1,'')and track_settings.set==M.get('active'),'The recording set changed. Reopen Track settings.')
  assert(not (X and X.busy()),'Finish the current AI mix operation before changing track settings.')
@@ -410,7 +466,7 @@ local function refresh()
  local proj=R.EnumProjects(-1,'')
  if track_settings and (track_settings.project~=proj or track_settings.set~=M.get('active'))then track_settings=nil end
  if template_settings and template_settings.project~=proj then template_settings=nil end
- if proj~=lastproject then if X then X.close();X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
+ if proj~=lastproject then if X then X.close();X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;set_tab_first=1;set_tab_active=nil;set_tab_layout=nil;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
   local set=M.get('active');local previous={}
@@ -445,7 +501,7 @@ local function frame()
   -- selection, and any active mix worker stay alive without running cleanup.
   gfx.quit();open_window(w or 1200,h or 730,dock,x,y)
  end
- refresh();if X then X.poll() end;buttons={};sliders={};header_hint=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
+ refresh();if X then X.poll() end;buttons={};sliders={};header_hint=nil;set_tab_strip=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
  if gfx.w<1180 or gfx.h<(view=='timeline' and 710 or 650) then
   V.reset()
   text('Make this panel at least 1180 x 710 to show the song timeline.',20,25,1)
@@ -473,17 +529,7 @@ local function frame()
   button(R.GetPlayState()~=0 and 'Stop' or 'Play',195,88,115,49,play)
   button('Another take',321,88,160,49,function()M.another() end)
   button('Track settings...',w-184,96,160,33,show_track_settings,nil,#tracks>0)
-  local setlist=M.sets();local x=24
-  if #setlist>4 then
-   button('Recording set: '..M.get('set.'..active..'.name'),24,152,w-202,33,function()
-    local labels={};for _,set in ipairs(setlist) do labels[#labels+1]=set.name:gsub('[|#!<>]',' ') end
-    local index=gfx.showmenu(table.concat(labels,'|'));if setlist[index] then M.choose_set(setlist[index].id);selection.reset();scroll=0 end
-   end,C.blue)
-  else for _,set in ipairs(setlist) do
-   local sw=math.min(148,math.max(85,(w-202)/math.max(1,#setlist)-7))
-   button(set.name,x,152,sw,33,function()M.choose_set(set.id);selection.reset();scroll=0 end,set.id==active and C.blue or nil);x=x+sw+7
-   if x>w-180 then break end
-  end end
+  recording_set_tabs(w,active,recording)
   button('+ Instrument',w-164,152,140,33,function()add_instrument(w-164,185)end)
   color(C.line);gfx.line(24,201,w-24,201)
   local sx=w+12
@@ -590,6 +636,11 @@ local function frame()
   end
  end
  mouse_down=down
+ local over_tabs=set_tab_strip and gfx.mouse_x>=set_tab_strip.x and gfx.mouse_x<set_tab_strip.x+set_tab_strip.w and gfx.mouse_y>=set_tab_strip.y and gfx.mouse_y<set_tab_strip.y+set_tab_strip.h
+ if not modal and over_tabs and (gfx.mouse_wheel~=0 or (gfx.mouse_hwheel or 0)~=0)then
+  local wheel=(gfx.mouse_hwheel or 0)~=0 and gfx.mouse_hwheel or gfx.mouse_wheel
+  set_tab_strip.move(wheel>0 and -1 or 1);gfx.mouse_wheel=0;gfx.mouse_hwheel=0
+ end
  if gfx.mouse_wheel~=0 and not modal then
   local delta=gfx.mouse_wheel>0 and 1 or -1
   if view=='timeline' then V.wheel(delta)
@@ -599,6 +650,7 @@ local function frame()
   elseif gfx.mouse_x>gfx.w-300 then section_scroll=section_scroll-delta else scroll=scroll-delta end
   gfx.mouse_wheel=0
  end
+ gfx.mouse_hwheel=0
  if modal then gfx.mouse_wheel=0 end
  local ch=gfx.getchar()
  if modal and ch>=0 then

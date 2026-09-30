@@ -125,7 +125,7 @@ desktop exports do not upload anything.
 ## A recording session
 
 1. Start from **File → Project templates → Solo Studio - One person band**, **One instrument**, or **Drums**. Save the project into its own folder before recording. New audio goes into `Media` within that folder.
-2. Open Solo Studio. Choose the instrument's recording set. For an existing project, open **+ Instrument → Create new template...**, select the instrument track or all microphone tracks in REAPER, then click **Use selected tracks** in the new window and name the recording set. The window shows the current selection. Select the microphone tracks themselves, leaving their folder unselected. This uses existing tracks in the current song.
+2. Open Solo Studio. Choose the instrument's recording-set tab. Every set has a tab; when the row fills up, scroll over it or use its arrows to reach the others. The active set is highlighted and brought into view when you switch songs or add an instrument. For an existing project, open **+ Instrument → Create new template...**, select the instrument track or all microphone tracks in REAPER, then click **Use selected tracks** in the new window and name the recording set. The window shows the current selection. Select the microphone tracks themselves, leaving their folder unselected. This uses existing tracks in the current song.
 3. Connect your interface and select it under **REAPER → Settings → Audio → Device**. Open **Track settings → Assign inputs...** in Solo Studio to map one mono input per track. Use ordinary REAPER input controls for stereo sources. The generic templates have inputs unassigned until you do this; the X32 template includes its documented assignments.
 4. Set the song tempo. Your setup uses a **two-bar musical lead-in before recording**; open **Count-in...** to adjust the native pre-roll settings. The click is enabled. **Record** automatically arms only that instrument's tracks. **Track settings** also contains manual **Arm set** and **Input monitoring** controls. Monitoring starts off for interface monitoring; turn it on with headphones if you need to hear through REAPER.
 5. Click **Record**. Click **Stop & keep** to finish without deleting the pass. **Another take** stops and retains the current pass, returns to the selected passage's beginning, and records again. It uses the chosen song section, Full song, or a manual time selection.
@@ -166,9 +166,9 @@ Switching keeps a running song at its current position. When stopped, it prepare
 
 Open **Tracks** beside Timeline, Takes, and Mix to see every project track, its folder indentation, recording set, input, item count, and effect count. Click a row to select that track in REAPER. Use **+ Instrument** to add another guitar, vocal, or other recording part; each addition can have its own name and recording set.
 
-- **Rename...** changes the native track name. A single-track recording set follows that name, so doubled guitars or backing vocals are easy to distinguish in the recording-set menu. Multitrack set names stay separate from microphone names.
+- **Rename...** changes the native track name. A single-track recording set follows that name, so doubled guitars or backing vocals are easy to distinguish in the recording-set tabs. Multitrack set names stay separate from microphone names.
 - **Delete...** shows a confirmation with the number of items and effects being removed. Deleting a folder includes its child tracks and states that explicitly. Source audio files remain on disk. **Cmd+Z in REAPER** restores the operation, including recordings, effects, and folder structure.
-- Deleting one microphone leaves the surviving tracks available in their recording set. Empty sets disappear from the menu; native Undo restores their membership. Renaming and deleting are disabled while recording.
+- Deleting one microphone leaves the surviving tracks available in their recording set. Empty sets disappear from the tab row; native Undo restores their membership. Renaming and deleting are disabled while recording.
 
 ### Build a song from your scratch take
 
@@ -243,7 +243,7 @@ The **Drums** recording set includes all nine microphones in one media-edit grou
 
 Monitor live inputs through the X32. REAPER's track input monitoring is **off**, which still allows recording and input metering. These are computer USB input numbers; the X32's card routing must supply the corresponding microphones. Playback return routing is unchanged.
 
-The final **Vocals** set uses USB **9**, and **Electric guitar** uses USB **15**. **Acoustic guitar** and **Bass** still need their input channels assigned. Choose a set from the blue **Recording set** menu, use **Track settings → Assign inputs...** to assign or change its X32 USB input, then **Record** to switch the armed tracks and start recording. If recording a guitar DI and an amp mic simultaneously, add both tracks to the same recording set.
+The final **Vocals** set uses USB **9**, and **Electric guitar** uses USB **15**. **Acoustic guitar** and **Bass** still need their input channels assigned. Choose a recording-set tab, use **Track settings → Assign inputs...** to assign or change its X32 USB input, then **Record** to switch the armed tracks and start recording. If recording a guitar DI and an amp mic simultaneously, add both tracks to the same recording set.
 
 The setup was checked inside REAPER: all nine drum input assignments, monitoring off, media-edit grouping, fixed lanes, and drum-only arming. No performance was recorded during setup; confirm microphone signals on the input meters before your first take. A copy of the starter before these changes is in `Backups/before-x32-recording`.
 
