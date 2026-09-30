@@ -14,6 +14,7 @@ local buttons={}
 local sliders,drag={},nil
 local header_hint
 local track_settings
+local template_settings
 local section_scroll,sections=0,{}
 local saved_view=R.GetExtState(M.ns,'panel_view')
 local view=(saved_view=='review' or saved_view=='mix' or saved_view=='tracks' or saved_view=='projects') and saved_view or 'timeline'
@@ -188,13 +189,31 @@ local function song_header(recording)
   end
  end
 end
+local function template_guard(expected_tracks)
+ assert(template_settings and template_settings.project==R.EnumProjects(-1,''),'The project changed. Reopen Create new template.')
+ assert(not (X and X.busy()),'Finish the current AI mix operation before creating a template.')
+ M.stopped()
+ if expected_tracks then
+  local current=M.selected();assert(#current==#expected_tracks,'The selected tracks changed. Select them again before creating the template.')
+  for i,tr in ipairs(current)do assert(tr==expected_tracks[i],'The selected tracks changed. Select them again before creating the template.')end
+ end
+end
 local function name_set()
+ template_guard()
  local t=M.selected();if #t==0 then error('Select a track or the microphone tracks for one instrument in REAPER first.',0) end
  local ok,name=R.GetUserInputs('Name this recording set',1,'Instrument or performance:,extrawidth=180',#t==1 and M.track_name(t[1]) or 'Drums')
- if ok and name~='' then M.capture(name);selection.reset();status='Recording set saved. Its microphone lanes must represent matching passes.' end
+ if ok and name~='' then
+  template_guard(t);M.capture(name);selection.reset();template_settings=nil
+  status='Recording set saved. Its microphone lanes must represent matching passes.'
+ end
 end
-local function add_instrument()
- local n=gfx.showmenu('Vocals|Guitar|Bass|Drums (several microphones)')
+local function add_instrument(x,y)
+ gfx.x=x;gfx.y=y
+ local n=gfx.showmenu('Vocals|Guitar|Bass|Drums (several microphones)||Create new template...')
+ if n==5 then
+  drag=nil;V.cancel();track_settings=nil
+  template_settings={project=R.EnumProjects(-1,'')};return
+ end
  local kinds={'Vocals','Guitar','Bass','Drums'};local kind=kinds[n];if not kind then return end
  local names
  if kind=='Drums' then
@@ -299,7 +318,7 @@ local function monitoring()
  track_settings.message=status
 end
 local function show_track_settings()
- drag=nil;V.cancel()
+ drag=nil;V.cancel();template_settings=nil
  track_settings={project=R.EnumProjects(-1,''),set=M.get('active')}
 end
 local function draw_track_settings()
@@ -330,6 +349,28 @@ local function draw_track_settings()
  row('Input monitoring',description,268,monitored>0 and 'Turn off'or 'Turn on',monitoring)
  local message=recording and 'Finish recording to change these settings.'or busy and 'Finish the AI mix operation to change these settings.'or track_settings.message or 'Changes apply immediately. Press Esc to close.'
  text(message,x+24,y+h-35,3,C.muted,w-48)
+end
+local function draw_template_settings()
+ local w,h=650,460;local x,y=(gfx.w-w)/2,math.max(16,(gfx.h-h)/2)
+ gfx.set(0,0,0,.58);gfx.rect(0,0,gfx.w,gfx.h,1)
+ color(C.line);gfx.rect(x-1,y-1,w+2,h+2,1);color(C.bg);gfx.rect(x,y,w,h,1)
+ text('Create new template',x+24,y+20,2)
+ button('Cancel',x+w-114,y+22,90,32,function()template_settings=nil end)
+ text('Use existing tracks as one recording set in this song.',x+24,y+66,3,C.muted)
+ text('Select the tracks in REAPER, then return here.',x+24,y+107,4)
+ text('For drums, select all microphone tracks, leaving the folder unselected.',x+24,y+137,3,C.muted)
+ local selected=M.selected();local count=#selected
+ color(C.line);gfx.line(x+24,y+174,x+w-24,y+174)
+ text(count..(count==1 and ' selected track'or ' selected tracks'),x+24,y+188,4)
+ if count==0 then text('No tracks selected yet.',x+24,y+224,1,C.muted)
+ else
+  for i=1,math.min(count,6)do text(M.track_name(selected[i]),x+24,y+222+(i-1)*22,1,C.text,w-48)end
+  if count>6 then text('and '..(count-6)..' more',x+24,y+355,3,C.muted)end
+ end
+ local recording=R.GetPlayState()&4~=0;local busy=X and X.busy()
+ local hint=recording and 'Finish recording to create a template.'or busy and 'Finish the AI mix operation to create a template.'or 'Next, give this recording set a name.'
+ text(hint,x+24,y+h-66,3,C.muted,w-48)
+ button('Use selected tracks',x+w-218,y+h-48,194,32,name_set,C.blue,count>0 and not recording and not busy)
 end
 local function mark_transition()
  local row=S.split();status='Transition marked. Rename '..row.name..' when you are ready.'
@@ -368,6 +409,7 @@ V=dofile(dir..'/solo_timeline.lua')(M,S,{colors=C,text=text,button=button,color=
 local function refresh()
  local proj=R.EnumProjects(-1,'')
  if track_settings and (track_settings.project~=proj or track_settings.set~=M.get('active'))then track_settings=nil end
+ if template_settings and template_settings.project~=proj then template_settings=nil end
  if proj~=lastproject then if X then X.close();X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
@@ -433,17 +475,16 @@ local function frame()
   button('Track settings...',w-184,96,160,33,show_track_settings,nil,#tracks>0)
   local setlist=M.sets();local x=24
   if #setlist>4 then
-   button('Recording set: '..M.get('set.'..active..'.name'),24,152,w-356,33,function()
+   button('Recording set: '..M.get('set.'..active..'.name'),24,152,w-202,33,function()
     local labels={};for _,set in ipairs(setlist) do labels[#labels+1]=set.name:gsub('[|#!<>]',' ') end
     local index=gfx.showmenu(table.concat(labels,'|'));if setlist[index] then M.choose_set(setlist[index].id);selection.reset();scroll=0 end
    end,C.blue)
   else for _,set in ipairs(setlist) do
-   local sw=math.min(148,math.max(85,(w-356)/math.max(1,#setlist)-7))
+   local sw=math.min(148,math.max(85,(w-202)/math.max(1,#setlist)-7))
    button(set.name,x,152,sw,33,function()M.choose_set(set.id);selection.reset();scroll=0 end,set.id==active and C.blue or nil);x=x+sw+7
-   if x>w-320 then break end
+   if x>w-180 then break end
   end end
-  button('Use selected tracks',w-308,152,169,33,name_set)
-  button('+ Instrument',w-130,152,106,33,add_instrument)
+  button('+ Instrument',w-164,152,140,33,function()add_instrument(w-164,185)end)
   color(C.line);gfx.line(24,201,w-24,201)
   local sx=w+12
   button('Timeline',sx,24,84,33,function()change_view('timeline')end,view=='timeline' and C.blue or nil)
@@ -525,8 +566,11 @@ local function frame()
   text(header_hint or status,25,gfx.h-64,3,C.text,gfx.w-50)
   text(view=='projects'and 'P: back to song   N: new song   Up/Down: choose song   Enter: open song   Space: play/stop' or 'P: projects   S: track settings   Space: play/stop   R: record   N: another take   Left/Right: takes   Cmd/Ctrl+Z: undo',25,gfx.h-36,3,C.muted,gfx.w-50)
  end
- local modal=track_settings~=nil
- if modal then buttons={};sliders={};draw_track_settings()end
+ local modal=track_settings~=nil or template_settings~=nil
+ if modal then
+  buttons={};sliders={}
+  if template_settings then draw_template_settings()else draw_track_settings()end
+ end
  local down=gfx.mouse_cap&1==1
  local consumed=not modal and view=='timeline' and V.mouse(down,down and not mouse_down,R.GetPlayState()&4~=0)
  if down and not mouse_down and not consumed then
@@ -558,8 +602,8 @@ local function frame()
  if modal then gfx.mouse_wheel=0 end
  local ch=gfx.getchar()
  if modal and ch>=0 then
-  if ch==27 or ch==13 then track_settings=nil end
-  ch=0 -- Settings never trigger recording, playback, Undo, or take shortcuts.
+  if ch==27 or ch==13 then track_settings=nil;template_settings=nil end
+  ch=0 -- Dialogs never trigger recording, playback, Undo, or take shortcuts.
  end
  if ch==26 or ch==25 then
   run(function()history(ch==25 or gfx.mouse_cap&8~=0)end);ch=0

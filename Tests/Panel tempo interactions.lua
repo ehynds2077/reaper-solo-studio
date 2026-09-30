@@ -4,7 +4,7 @@ local passed=0
 local function fixture(initial_view)
   local f={project='song',recording=false,tempo_map=false,bpm=120,volume=0.5,calls={},clock=0,rows={},set='scratch',errors={},labels={},sections={},extstate={},view=initial_view or 'review'}
   local function call(kind,value) f.calls[#f.calls+1]={kind,value} end
-  f.track_list={'track'};f.track_values={track={}}
+  f.track_list={'track'};f.track_values={track={}};f.selected_tracks={'track'}
   f.saved_comp={is_comp=true,key='saved-comp',lane=99,playing=true,name='Comp',note='',items={{s=0,e=24}}}
   local function activate(lane)
     if f.saved_comp then f.saved_comp.playing=lane==f.saved_comp.lane end
@@ -23,6 +23,9 @@ local function fixture(initial_view)
     listen_comp=function()assert(f.saved_comp);activate(99);call('back',true)end,
     require_tracks=function()return f.track_list end,tracks=function()return f.track_list end,
     track_name=function(tr)return tr end,
+    selected=function()return f.selected_tracks end,
+    capture=function(name)call('capture',name)end,
+    add_instrument=function(kind,names)call('add_instrument',{kind=kind,names=names})end,
     arm=function()call('arm',f.set);for _,tr in ipairs(f.track_list)do f.track_values[tr].I_RECARM=1 end end,
     inputs=function(values)call('inputs',values)end,
     edit=function(_,fn)assert(not f.recording);fn()end,
@@ -69,7 +72,7 @@ local function fixture(initial_view)
   g.dock=function()return 0 end
   g.quit=function()f.window_closed=true end
   g.getchar=function()return f.key or 0 end
-  g.showmenu=function()return f.menu_choice or 0 end
+  g.showmenu=function(menu)f.menu={text=menu,x=g.x,y=g.y};return f.menu_choice or 0 end
   g.drawstr=function(s)f.labels[#f.labels+1]=s end
   local env=setmetatable({reaper=R,gfx=g,dofile=function(path)
     if path:match('solo_core.lua$') then return M end
@@ -98,6 +101,41 @@ local function fixture(initial_view)
 end
 local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..name)end
 local function labeled(f,label)for _,v in ipairs(f.labels)do if v==label then return true end end;return false end
+local function open_template(f)f.menu_choice=5;f.click(f.gfx.w-390,168)end
+local template=fixture('timeline')
+check(not labeled(template,'Use selected tracks'),'Existing-track capture is absent from the main toolbar')
+open_template(template)
+check(template.menu.x==736 and template.menu.y==185 and labeled(template,'Create new template')and labeled(template,'Use selected tracks'),'Instrument menu anchors below its button and opens the template window')
+local template_gestures=template.timeline_mouse
+template.click(40,115);template.key=114;template.frame();template.key=32;template.frame();template.key=26;template.frame();template.key=nil
+template.gfx.mouse_wheel=-120;template.frame()
+check(#template.calls==0 and #template.errors==0 and template.timeline_mouse==template_gestures and not template.timeline_wheel,'Template window blocks background recording, transport, history, and timeline gestures')
+template.selected_tracks={'Kick','Snare'};template.labels={};template.frame()
+check(labeled(template,'2 selected tracks')and labeled(template,'Kick')and labeled(template,'Snare'),'Template preview follows the current REAPER track selection')
+template.input_ok=false;template.click(805,563);template.labels={};template.frame()
+check(#template.calls==0 and labeled(template,'Create new template'),'Cancelling the name prompt keeps the template window available')
+template.input_ok=true;template.input_reply='Drums';template.click(805,563);template.labels={};template.frame()
+check(template.calls[1][1]=='capture'and template.calls[1][2]=='Drums'and not labeled(template,'Create new template'),'Naming the selected tracks captures their set and closes the template window')
+template=fixture('timeline');template.gfx.w=1400;template.frame();open_template(template)
+check(template.menu.x==936 and template.menu.y==185,'Instrument menu follows the button when the panel is resized')
+template.key=27;template.frame();template.key=nil;template.labels={};template.frame()
+check(not labeled(template,'Create new template')and not template.window_closed,'Escape dismisses the template without closing Solo Studio')
+for _,lock in ipairs({'empty','recording','mix_busy'})do
+ template=fixture(lock=='mix_busy'and 'mix'or 'timeline');open_template(template)
+ if lock=='empty'then template.selected_tracks={}else template[lock]=true end
+ template.click(805,563)
+ check(#template.calls==0 and #template.errors==0,'Template capture is disabled for '..lock)
+end
+for _,change in ipairs({'project','selection'})do
+ template=fixture('timeline');open_template(template)
+ template.on_input=function()if change=='project'then template.project='another song'else template.selected_tracks={'another track'}end end
+ template.click(805,563)
+ check(#template.calls==0 and #template.errors==1,'Name prompt cannot capture changed '..change)
+end
+template=fixture('timeline');open_template(template);template.project='another song';template.labels={};template.frame()
+check(not labeled(template,'Create new template'),'Changing projects dismisses the previous template window')
+template=fixture('timeline');template.menu_choice=2;template.click(805,168)
+check(template.calls[1][1]=='add_instrument'and template.calls[1][2].kind=='Guitar','Built-in instrument choices still create their usual tracks')
 local settings=fixture('timeline')
 check(labeled(settings,'Track settings...')and not labeled(settings,'Arm set')and not labeled(settings,'Inputs...')and not labeled(settings,'Monitor off'),'Toolbar replaces the three seldom-used controls with Track settings')
 settings.click(790,112)

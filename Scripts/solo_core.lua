@@ -103,7 +103,7 @@ end
 function M.tracks()
   -- Retain registered GUIDs: native track Undo restores membership automatically.
   local t=resolve_tracks(get('active'))
-  return t,#t==0 and 'Select tracks in REAPER, then choose Use selected tracks.' or nil
+  return t,#t==0 and 'Select tracks in REAPER, then choose + Instrument > Create new template > Use selected tracks.' or nil
 end
 function M.require_tracks()
   local t,err=M.tracks(); if err then error(err,0) end; return t
