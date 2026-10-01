@@ -171,6 +171,8 @@ def schema(name, description, properties, required):
 
 TRACK = {'type': 'string', 'description': 'Exact track GUID returned by inspect_project, or MASTER for session-owned master effects'}
 FX = {'type': 'string', 'description': 'Exact effect GUID returned by add_effect'}
+MAX_BATCH_EDITS = 64
+MAX_BATCH_READS = 16
 WINDOW = {
     'start_seconds': dict(number(0, 86400), description='Absolute project start; supply duration_seconds too.'),
     'duration_seconds': number(3, 600),
@@ -208,8 +210,48 @@ TOOLS = [
     schema('measure_mix', 'Measure the mix through actual master FX: LUFS, peaks, crest, spectrum, stereo and time envelopes. Defaults to the shared 30-second diagnostic window. Supply start/duration for another section, or full_passage=true. Final review always verifies the entire selected passage.', WINDOW, []),
 ]
 
+# Batch members retain the same typed schemas and native ownership/range checks
+# as individual calls. No nested batches, measurements, or generated code in edits.
+EDIT_TOOLS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS
+              if tool['function']['name'] in (
+                  'set_track_mix', 'add_effect', 'configure_eq', 'configure_compressor',
+                  'configure_limiter', 'set_effect_parameter', 'set_trim_automation')}
+BATCH_VARIANTS = []
+for name, parameters in EDIT_TOOLS.items():
+    parameters = copy.deepcopy(parameters)
+    if 'effect' in parameters['properties']:
+        parameters['properties']['effect']['description'] = 'Owned effect GUID, or $alias from an earlier add_effect in this batch.'
+    properties = {'tool': {'type': 'string', 'enum': [name]}, 'arguments': parameters}
+    if name == 'add_effect':
+        properties['save_as'] = {'type': 'string', 'description': 'Optional batch-local alias, e.g. guitar_eq. Later effect fields may use $guitar_eq.'}
+    BATCH_VARIANTS.append({'type': 'object', 'properties': properties,
+                           'required': ['tool', 'arguments'], 'additionalProperties': False})
+TOOLS.extend([
+    schema('apply_mix_batch', 'Apply a planned pass of up to 64 edits across tracks, without rendering between edits. Add and configure effects in one request using save_as aliases. All argument/alias validation happens first. Executes sequentially; stops at the first runtime error and reports completed edits (NOT atomic rollback). Reuse returned GUIDs on later calls. Measure once after a meaningful pass.',
+           {'operations': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_EDITS,
+                           'items': {'oneOf': BATCH_VARIANTS}}}, ['operations']),
+    schema('inspect_effects', 'Read parameter pages for up to 16 session-owned effects together. No rendering. Useful for establishing actual third-party parameter mappings across tracks before a batch edit.',
+           {'effects': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_READS,
+                        'items': next(t['function']['parameters'] for t in TOOLS if t['function']['name'] == 'inspect_effect')}}, ['effects']),
+    schema('measure_tracks', 'Compare up to 16 track contributions over the SAME project-time window in one request. Returns a side-by-side summary plus numeric profiles. Each contribution still requires a sequential solo-in-place render unless cached; includes shared returns/master, NOT isolated dry stems. Choose informative tracks; do not routinely render every track. Errors are reported per track.',
+           {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_READS, 'items': TRACK},
+            **WINDOW}, ['tracks']),
+])
+TOOL_SPECS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS}
+
 
 def validate(value, spec):
+    if 'oneOf' in spec:
+        matches = 0
+        for variant in spec['oneOf']:
+            try:
+                validate(value, variant)
+                matches += 1
+            except ValueError:
+                pass
+        if matches != 1:
+            raise ValueError('Batch operation must match exactly one supported tool and its typed arguments')
+        return
     kind = spec['type']
     if 'enum' in spec and value not in spec['enum']:
         raise ValueError('Unknown enum value')
@@ -443,6 +485,31 @@ selected passage after the last edit; short diagnostics cannot approve a final m
 Without a reference, build a clear, balanced mix from the raw tracks; do not assume
 the starting balance is finished or invent reference measurements.
 
+Work in coordinated passes across the arrangement, not a long sequence of tiny
+single-track adjustments. inspect_project already shows ALL tracks, routing and
+owned effects. First plan the largest balance/tonal problems across the band.
+Use measure_tracks to compare several informative sources over the same window
+when processed source measurements are needed; do not render an entire inventory
+without a specific reason. Its summary compares contributions through shared
+returns/master, so their loudness values are not additive or isolated dry levels.
+Use inspect_effects to establish multiple third-party parameter mappings together.
+Prefer apply_mix_batch for independent known changes across multiple tracks, or
+for adding AND configuring processors in one response. An add_effect operation
+can save_as "guitar_eq", followed by configure_eq with effect "$guitar_eq" in
+the SAME batch. Aliases are local to that call; keep the returned real effect GUIDs
+for later passes. Existing session_effects should be reused instead of duplicated.
+The calibrated ReaEQ/ReaComp/Pro-L 2 adapters validate their own parameter layouts;
+they do not need a separate inspect_effect round before configuration.
+Make a coherent balance pass, then a targeted EQ/dynamics/level-riding pass, and
+measure the combined result after each meaningful pass. When the measurements
+justify it, set the intended dB/Hz/ratio targets directly with calibrated adapters
+instead of spending rounds creeping toward them. Reserve small refinements for
+when the remaining measured gaps are small. Do not change unaffected tracks just
+to fill a batch. For a failed batch, completed edits remain applied; inspect its
+results and repair the failed/remainder only, never blindly replay all additions.
+Up to 64 edits fit one batch; the session still has a 24-added-effect limit,
+including trim processors. Each measurement and edit counts toward normal limits.
+
 Preserve timing and phase relationships. No edits of items, takes, inputs, routing
 or existing plugins. Do not hard-pan individual close drum microphones; keep related
 mics coherent. Avoid boost cascades through folders. Stop on silent/empty projects.
@@ -463,7 +530,9 @@ Keep the -1 dBTP output ceiling. Do not stack limiters or boost every routing st
 The master fader stays fixed; compensate for its value and verify rendered output.
 Use the configure_eq/configure_compressor physical-unit adapters for new ReaEQ/ReaComp instances where useful. Optional installed FabFilter/UADx plugins require
 inspection of actual parameter names and formatted values; do not guess units.
-Do not change a parameter if you cannot establish its mapping. Work incrementally.
+Do not change a parameter if you cannot establish its mapping. Generic normalized
+parameter moves remain limited to 0.20 per call; this is not a small-step restriction
+on calibrated dB/Hz/ratio adapters or faders. Verify the completed pass by measuring.
 Automation points must begin/end at zero trim to avoid changing other sections.
 Communicate short plans, actions and measured results in plain language. Do not
 emit private chain-of-thought. Never declare success before measuring a candidate.
@@ -615,6 +684,109 @@ class Session:
         if start < lo or start + duration > hi + 1e-7:
             raise ValueError('Measurement must stay within the selected passage')
         return [start, min(start + duration, hi)]
+
+    def batch_budget(self, count):
+        if self.cancelled():
+            raise RuntimeError('Session cancelled')
+        if self.calls + count > MAX_BRIDGE_CALLS:
+            raise ValueError('Batch exceeds remaining bridge-call budget; use a smaller batch')
+
+    def apply_mix_batch(self, operations):
+        # Validate dependencies across the ENTIRE plan before the first mutation.
+        # Native failures can still leave a partial pass, reported with exact IDs.
+        aliases = {}
+        for operation in operations:
+            args = operation['arguments']
+            effect = args.get('effect', '')
+            if effect.startswith('$'):
+                alias = effect[1:]
+                if alias not in aliases or aliases[alias] != args['track']:
+                    raise ValueError('Effect alias must reference an earlier add_effect on the same track')
+            alias = operation.get('save_as')
+            if alias is not None:
+                if not alias.isascii() or not alias.replace('_', '').isalnum() or alias in aliases:
+                    raise ValueError('Effect aliases must be unique ASCII letters/digits/underscores')
+                aliases[alias] = args['track']
+        self.batch_budget(len(operations))
+        effects = {}; results = []
+        for index, operation in enumerate(operations, 1):
+            name = operation['tool']; args = dict(operation['arguments'])
+            if args.get('effect', '').startswith('$'):
+                args['effect'] = effects[args['effect'][1:]]['effect']
+            self.publish('Mix batch %d/%d · %s…' % (index, len(operations), name.replace('_', ' ')), 'tool')
+            result = self.bridge(name, args)
+            results.append({'index': index, 'tool': name, 'track': args['track'], 'result': result})
+            if result.get('error'):
+                return {'error': 'Operation %d failed: %s. %d earlier edits remain applied. Repair the failed/remainder only.' % (index, result['error'], index - 1),
+                        'failed_index': index, 'completed': index - 1, 'skipped': len(operations) - index,
+                        'results': results, 'effects': effects}
+            if operation.get('save_as'):
+                effects[operation['save_as']] = {'track': args['track'], 'effect': result['effect']}
+        return {'completed': len(results), 'results': results, 'effects': effects,
+                'next_step': 'Measure the combined result; reuse these effect GUIDs for later refinements.'}
+
+    def inspect_effects(self, effects):
+        self.batch_budget(len(effects))
+        results = []
+        for index, args in enumerate(effects, 1):
+            self.publish('Inspecting effect %d/%d…' % (index, len(effects)), 'tool')
+            results.append({**args, 'result': self.bridge('inspect_effect', args)})
+        result = {'effects': results}
+        if all(row['result'].get('error') for row in results):
+            result['error'] = 'Every effect inspection failed; see individual results'
+        return result
+
+    def measure_tracks(self, args):
+        bounds = self.measurement_window(args)
+        tracks = args['tracks']
+        if len(set(tracks)) != len(tracks) or 'MASTER' in tracks:
+            raise ValueError('Choose unique track GUIDs; use measure_mix for MASTER')
+        self.batch_budget(len(tracks) + 1)
+        project = self.bridge('inspect_project', {})
+        if project.get('error'):
+            return project
+        by_id = {row['id']: row for row in project['tracks']}
+        if any(track not in by_id for track in tracks):
+            raise ValueError('Unknown track in measurement batch; inspect_project for current GUIDs')
+        self.project = project
+        summary = []; profiles = []; errors = []
+        for index, track in enumerate(tracks, 1):
+            row = by_id[track]
+            self.publish('Track comparison %d/%d · %s…' % (index, len(tracks), row['name']), 'tool')
+            try:
+                profile = self.measure('Track contribution', track, window=bounds)
+            except ValueError as error:
+                errors.append({'track': track, 'name': row['name'], 'error': str(error)})
+                continue
+            profiles.append(profile)
+            summary.append({'track': track, 'name': row['name'],
+                            'volume_db': row['volume_db'], 'pan': row['pan'],
+                            'loudness': profile.get('loudness', {}),
+                            **{key: profile.get(key) for key in ('rms_dbfs', 'crest_db', 'side_energy_fraction', 'bands')}})
+        result = {'measurement_bounds': bounds, 'summary': summary, 'profiles': profiles, 'errors': errors,
+                  'scope': 'Solo-in-place contributions including routing, shared returns and master FX; not additive dry stems.'}
+        if not profiles:
+            result['error'] = 'No tracks could be measured; see individual errors'
+        return result
+
+    def execute_tool(self, name, args):
+        spec = TOOL_SPECS.get(name)
+        if spec is None:
+            raise ValueError('Unknown tool')
+        validate(args, spec)
+        if name == 'apply_mix_batch':
+            return self.apply_mix_batch(args['operations'])
+        if name == 'inspect_effects':
+            return self.inspect_effects(args['effects'])
+        if name == 'measure_tracks':
+            return self.measure_tracks(args)
+        if name == 'measure_mix':
+            return self.measure('Candidate %d' % len(self.measurements), window=self.measurement_window(args))
+        if name == 'measure_track':
+            return self.measure('Track contribution', args['track'], window=self.measurement_window(args))
+        if name == 'view_arrangement':
+            return self.arrangement(args)
+        return self.bridge(name, args)
 
     def measure(self, label, track_id=None, window=None):
         bounds = list(window if window is not None else self.config['bounds'])
@@ -800,22 +972,9 @@ class Session:
                 for call in calls:
                     fn = call['function']; name = fn['name']
                     try:
-                        spec = next((t['function']['parameters'] for t in TOOLS if t['function']['name'] == name), None)
-                        if spec is None:
-                            raise ValueError('Unknown tool')
                         args = json.loads(fn['arguments'], parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Non-finite JSON')))
-                        validate(args, spec)
                         self.publish(name.replace('_', ' ') + '…', 'tool')
-                        if name == 'measure_mix':
-                            window = self.measurement_window(args)
-                            result = self.measure('Candidate %d' % len(self.measurements), window=window)
-                        elif name == 'measure_track':
-                            window = self.measurement_window(args)
-                            result = self.measure('Track contribution', args['track'], window=window)
-                        elif name == 'view_arrangement':
-                            result = self.arrangement(args)
-                        else:
-                            result = self.bridge(name, args)
+                        result = self.execute_tool(name, args)
                     except (ValueError, KeyError, TypeError) as error:
                         result = {'error': str(error)}
                     if isinstance(result, dict) and result.get('error'):

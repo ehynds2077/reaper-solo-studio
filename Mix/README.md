@@ -121,6 +121,29 @@ configured round and reported-cost limits still apply. Unreached reference targe
 remain visible in review; you can still audition and keep a result you prefer.
 Up to 32 tool calls execute sequentially per model response. An oversized batch
 gets a request to split it instead of terminating the session.
+The agent can also use **apply_mix_batch** for up to 64 edits in one tool call,
+including adding and configuring ten EQs without waiting for another model round.
+An added effect can have a batch-local `save_as` name, which later operations use
+as `$name`; returned effect GUIDs are used on subsequent passes. Argument and alias
+validation covers the entire batch before any edits. Native operations still run
+sequentially with the existing checks and Undo entries. If an operation fails,
+execution stops and reports exactly which edits completed, the created effect IDs,
+the failed operation, and the skipped remainder. Completed edits remain applied
+and are included in normal Original/Candidate/Revert behavior.
+
+**inspect_project** already returns all track settings together. **inspect_effects**
+reads up to 16 effect parameter pages in one request. **measure_tracks** compares
+up to 16 track contributions over the same diagnostic window, custom range, or full
+passage; it returns a comparison table and individual numeric profiles. Each track
+still needs a sequential processed render unless its result is cached. Shared
+returns/master processing are included, so these contributions are not additive
+dry stems. Individual measurement failures are reported alongside successful results.
+
+The agent is directed to plan coordinated balance and EQ/dynamics/automation passes,
+apply meaningful measured targets across tracks, then measure the combined result.
+Small corrections are reserved for small remaining gaps. The batch tools reduce
+model round trips; they do not remove rendering cost or the 24-added-effect limit
+(including trim processors), per-operation bounds, or normal bridge-call budget.
 Rejected track-measurement requests return an error for the model to correct;
 they do not terminate the whole pass. Silent or unmeasurable audio is explicitly
 reported as a failure, never as meeting the reference targets.
@@ -229,7 +252,16 @@ spectrum match.
 
 `python3 -m unittest discover -s Mix -p 'test_*.py' -v` tests protocol, typed
 arguments, cancellation, local credentials, profile minimization, final metering
-and failure paths. `Tests/Run mix checks.lua` uses an isolated REAPER tab and a
+and failure paths. Batch checks include creating ten configured EQs in one model
+response, whole-plan validation, effect-alias scope/ownership, partial failure,
+budget/cancellation, bulk effect inspection and same-window track comparisons.
+`Tests/Run mix batch checks.lua` exercises ten stock EQs in one real batch,
+bulk parameter inspection, two processed track measurements and their cache,
+plus Original/Candidate/Revert in a silent disposable project. It requires
+`Tests/mix-tone.wav`, stopped transport, and the Solo Studio panel closed; it
+restores the original song, checks its track contents, and reopens the panel.
+The scripted worker makes no network/model calls.
+`Tests/Run mix checks.lua` uses an isolated REAPER tab and a
 synthetic sine, with all hardware outputs removed. It checks real native effects,
 automation, fader/pan edits, render setting restoration, A/B, rollback, manual-edit
 preservation and recovery. A 274-second synthetic passage checks exact diagnostic
