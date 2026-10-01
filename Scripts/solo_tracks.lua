@@ -22,21 +22,22 @@ return function(M,options)
   assert(type(value)=='string','Enter a name.');value=value:match('^%s*(.-)%s*$')
   assert(value~=''and not value:find('%c'),'Enter a nonempty name on one line.');return value
  end
- local function edit_values(label,changes)
+ local function write_value(c,value)
+  if type(value)=='string'then
+   -- Removing an empty P_EXT field can report false even though it succeeded.
+   R.GetSetMediaTrackInfo_String(c.track,c.key,value,true);return str(c.track,c.key)==value
+  end
+  R.SetMediaTrackInfo_Value(c.track,c.key,value)
+  return math.abs(R.GetMediaTrackInfo_Value(c.track,c.key)-value)<1e-9
+ end
+ local function write_values(changes)
   -- A failed write restores the entire operation, including mute/name metadata.
   for _,c in ipairs(changes)do c.before=type(c.value)=='string'and str(c.track,c.key)or R.GetMediaTrackInfo_Value(c.track,c.key)end
-  local function write(c,value)
-   if type(value)=='string'then
-    -- Removing an empty P_EXT field can report false even though it succeeded.
-    R.GetSetMediaTrackInfo_String(c.track,c.key,value,true);return str(c.track,c.key)==value
-   end
-   R.SetMediaTrackInfo_Value(c.track,c.key,value)
-   return math.abs(R.GetMediaTrackInfo_Value(c.track,c.key)-value)<1e-9
-  end
-  M.edit(label,function()
-   local ok,err=pcall(function()for _,c in ipairs(changes)do assert(write(c,c.value),'REAPER could not update the track.')end end)
-   if not ok then for _,c in ipairs(changes)do write(c,c.before)end;error(err,0)end
-  end)
+  local ok,err=pcall(function()for _,c in ipairs(changes)do assert(write_value(c,c.value),'REAPER could not update the track.')end end)
+  if not ok then for _,c in ipairs(changes)do write_value(c,c.before)end;error(err,0)end
+ end
+ local function edit_values(label,changes)
+  M.edit(label,function()write_values(changes)end)
  end
  function T.db(gain)return gain>0 and 20*math.log(gain,10)or -math.huge end
  local function mix_state(row)
@@ -122,7 +123,7 @@ return function(M,options)
   local changes={};for _,member in ipairs(current.members)do changes[#changes+1]={track=member.track,key='P_EXT:SoloStudio.set_name.'..row.id,value=value}end
   edit_values('rename '..current.name..' group',changes)
  end
- function T.set_volume(row,db,project)
+ local function volume_changes(row,db,project)
   assert(type(db)=='number'and db==db and db>=-60 and db<=24,'Enter a volume between -60 and +24 dB.')
   local current=resolve(row,project)
   assert(not current.volume_automated,'This volume is automated. Adjust its envelope in REAPER.')
@@ -133,9 +134,13 @@ return function(M,options)
    local gain=current.volume>0 and member.volume/current.volume*target or target
    changes[#changes+1]={track=member.track,key='D_VOL',value=gain}
   end
+  return changes,current,db
+ end
+ function T.set_volume(row,db,project)
+  local changes,current=volume_changes(row,db,project)
   edit_values('set '..current.name..' volume',changes)
  end
- function T.set_pan(row,pan,project)
+ local function pan_changes(row,pan,project)
   assert(type(pan)=='number'and pan==pan and pan>=-1 and pan<=1,'Enter pan from -100 (left) to +100 (right), or 0 for center.')
   local current=resolve(row,project)
   assert(not current.pan_automated,'This pan is automated. Adjust its envelope in REAPER.')
@@ -149,8 +154,71 @@ return function(M,options)
     changes[#changes+1]={track=member.track,key=point.key,value=math.max(-1,math.min(1,point.value+delta))}
    end
   end
-  if math.abs(delta)>1e-9 then edit_values('pan '..current.name,changes)end
+  return changes,current,target
+ end
+ function T.set_pan(row,pan,project)
+  local changes,current,target=pan_changes(row,pan,project)
+  if math.abs(target-current.pan)>1e-9 then edit_values('pan '..current.name,changes)end
   return target
+ end
+ function T.begin_adjustment(row,kind,project)
+  assert(kind=='volume'or kind=='pan','Unknown track control')
+  project=project or R.EnumProjects(-1,'')
+  local current=resolve(row,project)
+  assert(not current[kind..'_automated'],'This control is automated. Adjust its envelope in REAPER.')
+  M.cancel_preview();M.finish_recorded_tempo()
+  local original,latest=current,current
+  local fields={};local value;local closed=false
+  for _,member in ipairs(original.members)do
+   local points=kind=='volume'and {{key='D_VOL',value=member.volume}}or member.pan_points
+   for _,point in ipairs(points)do
+    fields[#fields+1]={track=member.track,guid=member.key,key=point.key,before=point.value,last=point.value,pan_mode=member.pan_mode}
+   end
+  end
+  local plan=kind=='volume'and volume_changes or pan_changes
+  local gesture={}
+  function gesture.cancel()
+   if closed then return end;closed=true
+   -- Restore only values still owned by this drag, including in its original tab.
+   -- A deleted track, external fader edit or changed pan mode is left alone.
+   if R.ValidatePtr and not R.ValidatePtr(project,'ReaProject*')then return end
+   for _,field in ipairs(fields)do
+    if R.ValidatePtr2(project,field.track,'MediaTrack*')and R.GetTrackGUID(field.track)==field.guid
+     and (kind=='volume'or R.GetMediaTrackInfo_Value(field.track,'I_PANMODE')==field.pan_mode)
+     and math.abs(R.GetMediaTrackInfo_Value(field.track,field.key)-field.last)<1e-9 then
+     if math.abs(field.last-field.before)>1e-9 then write_value(field,field.before)end
+    end
+   end
+   R.TrackList_AdjustWindows(false)
+  end
+  function gesture.update(next_value)
+   assert(not closed,'This adjustment has ended.')
+   local changes,_,actual=plan(latest,next_value,project)
+   local changed=false
+   for i,c in ipairs(changes)do if math.abs(c.value-fields[i].last)>1e-9 then changed=true;break end end
+   if changed then
+    write_values(changes)
+    for i,c in ipairs(changes)do fields[i].last=c.value end
+    latest=resolve(latest,project)
+    R.TrackList_AdjustWindows(false)
+   end
+   value=actual;return actual
+  end
+  function gesture.finish()
+   assert(not closed,'This adjustment has ended.')
+   if value==nil then gesture.cancel();return end
+   plan(latest,value,project) -- Recheck ownership and edit locks before committing.
+   local changed=false
+   for _,field in ipairs(fields)do if math.abs(field.last-field.before)>1e-9 then changed=true;break end end
+   -- Live writes are previews. Restore first, then make exactly one normal Undo
+   -- edit; no open Undo block or UI-refresh suppression spans deferred frames.
+   gesture.cancel()
+   if changed then
+    if kind=='volume'then T.set_volume(original,value,project)else T.set_pan(original,value,project)end
+   end
+   return value
+  end
+  return gesture
  end
  local mute_field='P_EXT:SoloStudio.group_mutes'
  function T.toggle_mute(row,project)

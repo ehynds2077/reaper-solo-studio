@@ -4,6 +4,7 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 if R.GetExtState('SoloStudio_v1','panel_open')=='1'or R.GetAllProjectPlayStates()~=0 then
  R.ShowMessageBox('Close Solo Studio and stop transport before running these isolated checks.','Track group checks',0);return
 end
+local function run_checks()
 local filename=root..'/Tests/Track group checks.RPP'
 local log=assert(io.open(root..'/Tests/track-group-checks.txt','w'))
 local count=0
@@ -41,6 +42,23 @@ local ok,err=xpcall(function()
  check(math.abs(R.GetMediaTrackInfo_Value(tracks[1],'D_VOL')-gain)<1e-8 and math.abs(R.GetMediaTrackInfo_Value(tracks[2],'D_VOL')-gain*.5)<1e-8,'Native linked faders preserve relative gain')
  history(false)
  check(R.GetMediaTrackInfo_Value(tracks[1],'D_VOL')==1 and R.GetMediaTrackInfo_Value(tracks[2],'D_VOL')==.5,'Native Undo restores both faders')
+ local live=T.begin_adjustment(drums(),'volume',project)
+ live.update(-3);coroutine.yield()
+ check(math.abs(R.GetMediaTrackInfo_Value(tracks[1],'D_VOL')-10^(-3/20))<1e-8,'Live fader value is applied between deferred UI frames')
+ live.update(-9);coroutine.yield();live.finish()
+ history(false)
+ check(R.GetMediaTrackInfo_Value(tracks[1],'D_VOL')==1 and R.GetMediaTrackInfo_Value(tracks[2],'D_VOL')==.5,'One native Undo restores the complete multi-frame volume drag')
+ history(true)
+ check(math.abs(R.GetMediaTrackInfo_Value(tracks[1],'D_VOL')-10^(-9/20))<1e-8 and math.abs(R.GetMediaTrackInfo_Value(tracks[2],'D_VOL')-10^(-9/20)*.5)<1e-8,'One native Redo reapplies the final live volume')
+ history(false)
+ live=T.begin_adjustment(drums(),'pan',project)
+ live.update(.2);coroutine.yield();live.update(-.3);coroutine.yield();live.finish()
+ check(math.abs(R.GetMediaTrackInfo_Value(tracks[1],'D_PAN')+.8)<1e-8 and math.abs(R.GetMediaTrackInfo_Value(tracks[2],'D_PAN')-.2)<1e-8,'Multi-frame live pan preserves the stereo spread')
+ history(false)
+ check(math.abs(R.GetMediaTrackInfo_Value(tracks[1],'D_PAN')+.5)<1e-8 and math.abs(R.GetMediaTrackInfo_Value(tracks[2],'D_PAN')-.5)<1e-8,'One native Undo restores the entire pan drag')
+ local undo_label=R.Undo_CanUndo2(project)
+ live=T.begin_adjustment(drums(),'volume',project);live.update(-15);coroutine.yield();live.cancel()
+ check(R.GetMediaTrackInfo_Value(tracks[1],'D_VOL')==1 and R.GetMediaTrackInfo_Value(tracks[2],'D_VOL')==.5 and R.Undo_CanUndo2(project)==undo_label,'Cancelling a live native drag restores levels without adding an Undo step')
  T.set_pan(drums(),.25,project)
  check(math.abs(R.GetMediaTrackInfo_Value(tracks[1],'D_PAN')+.25)<1e-8 and math.abs(R.GetMediaTrackInfo_Value(tracks[2],'D_PAN')-.75)<1e-8,'Native linked pan preserves microphone spacing')
  history(false)
@@ -87,3 +105,10 @@ log:close()
 -- Show the requested view through REAPER's public ReaScript launch API.
 R.SetExtState('SoloStudio_v1','panel_view','tracks',true)
 dofile(root..'/Launcher/launch.lua')
+end
+local checks=coroutine.create(run_checks)
+local function step()
+ local ok,err=coroutine.resume(checks);assert(ok,err)
+ if coroutine.status(checks)~='dead'then R.defer(step)end
+end
+step()

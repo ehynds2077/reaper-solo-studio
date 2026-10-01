@@ -81,7 +81,16 @@ local function fixture(initial_view)
     if path:match('solo_timeline.lua$') then return function(_,_,ui)f.timeline=ui;return {reset=function()end,cancel=function()return false end,
       cancel_drag=function()local had=f.pending_drag;f.pending_drag=false;return had end,history_changed=function()f.history_refreshed=true end,
       draw=function()end,mouse=function()f.timeline_mouse=(f.timeline_mouse or 0)+1 end,wheel=function()f.timeline_wheel=true end}end end
-    if path:match('solo_tracks_view.lua$')then return function()return {reset=function()f.track_reset=true end,draw=function()f.track_drawn=true end,wheel=function(delta)f.track_wheel=delta end}end end
+    if path:match('solo_tracks_view.lua$')then return function(_,ui)return {reset=function()f.track_reset=true end,draw=function()
+     f.track_drawn=true
+     if f.live_tracks then ui.slider('test-live-track',100,300,100,f.live_value or .5,function()error('Live slider used its release-only callback')end,
+      not f.recording and not f.mix_busy,false,function()
+       local before=f.live_value or .5
+       return {update=function(value)assert(not f.live_failure,'Simulated live update failure');f.live_value=math.min(.8,value);return f.live_value end,
+        finish=function()f.live_commits=(f.live_commits or 0)+1 end,
+        cancel=function()f.live_cancels=(f.live_cancels or 0)+1;f.live_value=before end}
+      end)end
+     end,wheel=function(delta)f.track_wheel=delta end}end end
     if path:match('solo_projects_view.lua$')then return function(_,ui,options)
       f.projects_ui=ui;f.projects_options=options
       return {reset=function()f.projects_reset=true end,draw=function()f.projects_drawn=true end,
@@ -333,4 +342,29 @@ f.menu_choice=2;f.timeline.tempo_menu()
 check(f.timeline.selection_count()==1 and f.timeline.selected('Unknown'),'Unknown-tempo selection excludes mixed takes with some known clips')
 f.menu_choice=1;f.timeline.tempo_menu();f.frame()
 check(f.timeline.selection_count()==0,'No tempo matches leaves an empty selection instead of selecting the first take')
+local function live_fixture()
+ local live=fixture('tracks');live.live_tracks=true;live.frame();return live
+end
+local live=live_fixture();live.mouse(120,310,true)
+check(live.live_value==.2 and not live.live_commits,'Mouse-down previews native track controls immediately')
+live.mouse(175,310,true)
+check(live.live_value==.75 and not live.live_commits,'Held drags update continuously before mouse release')
+live.mouse(200,310,true);live.mouse(200,310,false)
+check(live.live_value==.8 and live.live_commits==1 and not live.live_cancels,'Release finishes exactly once with the live control clamping retained')
+live=live_fixture();live.mouse(120,310,true);live.key=27;live.frame();live.key=nil
+check(live.live_value==.5 and live.live_cancels==1 and not live.live_commits and not live.window_closed,'Escape rolls back the live drag without closing Solo Studio')
+live=live_fixture();live.mouse(120,310,true);live.key=26;live.frame();live.key=nil
+check(live.live_value==.5 and live.live_cancels==1 and not live.live_commits,'Undo while dragging cancels the preview before touching history')
+for _,reason in ipairs({'project','recording','mix_busy','view','settings','resize','close','failure'})do
+ live=live_fixture();live.mouse(120,310,true)
+ if reason=='project'then live.project='another song'
+ elseif reason=='recording'or reason=='mix_busy'then live[reason]=true
+ elseif reason=='view'then live.key=112
+ elseif reason=='settings'then live.key=115
+ elseif reason=='resize'then live.gfx.w=900
+ elseif reason=='close'then live.cleanup()
+ elseif reason=='failure'then live.live_failure=true end
+ if reason~='close'then live.frame()end
+ check(live.live_value==.5 and live.live_cancels==1 and not live.live_commits,'Live drag rolls back on '..reason)
+end
 print(passed..' panel interaction checks passed.')

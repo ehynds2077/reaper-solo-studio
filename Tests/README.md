@@ -84,7 +84,8 @@ The visual runner also runs `Native comp edges.lua` and `Native section handles.
 
 `Run track group checks.lua` verifies native linked faders, linked pan (including
 dual-pan endpoints and edge limits), group names, preserved member mute states,
-Undo/Redo, and saved group metadata in a silent disposable
+Undo/Redo (including live volume/pan drags across deferred frames and cancellation),
+and saved group metadata in a silent disposable
 project. Close Solo Studio and stop transport first. The runner restores the user
 project, checks all original track chunks for exact preservation, writes
 `Tests/track-group-checks.txt`, and reopens Solo Studio's Tracks view. It never

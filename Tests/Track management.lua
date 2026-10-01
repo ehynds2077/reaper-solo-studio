@@ -52,7 +52,7 @@ local function fixture()
  local V=dofile(root..'/Scripts/solo_tracks_view.lua')(M,{colors={muted={},text={},surface={},record={},blue={},gold={}},busy=function()return f.busy end,
   text=function(label)f.labels[#f.labels+1]=label end,color=function()end,
   button=function(label,x,y,w,h,fn,_,enabled)f.labels[#f.labels+1]=label;if enabled~=false then f.buttons[#f.buttons+1]={label=label,y=y,fn=fn}end end,
-  slider=function(id,x,y,w,value,fn,enabled)if enabled then f.sliders[#f.sliders+1]={id=id,value=value,fn=fn}end end,
+  slider=function(id,x,y,w,value,fn,enabled,centered,begin)if enabled then f.sliders[#f.sliders+1]={id=id,value=value,fn=fn,begin=begin}end end,
   hit=function(_,_,_,_,fn,enabled)if enabled then f.select=fn end end,
   changed=function(message)f.message=message end})
  function f.draw()f.buttons={};f.labels={};f.sliders={};V.draw(24,215,1152,680,f.recording)end
@@ -200,4 +200,40 @@ f=fixture();f.draw();f.answer='-25';f.click('Center',2)
 check(near(f.guitar.pan,-.25)and f.kick.pan==0,'Clicking the pan value accepts an exact left/right percentage')
 f=fixture()
 check(not pcall(f.T.set_pan,group(f,'guitar'),2,f.project)and not pcall(f.T.set_pan,group(f,'guitar'),0/0,f.project),'Invalid pan values are rejected before making changes')
+f=fixture();f.left.volume=.5;f.right.volume=.25;f.draw()
+local drag=f.sliders[1].begin();drag.update((60-6)/84)
+check(near(f.kick.volume,gain)and near(f.left.volume,gain*.5)and f.edits==0,'Dragging changes live native group levels before release without creating Undo entries')
+f.draw();check(labeled(f,'-6.0 dB'),'The displayed level follows the live drag')
+drag.update((60-12)/84);drag.update((60-3)/84);drag.finish()
+check(near(f.kick.volume,10^(-3/20))and near(f.right.volume,10^(-3/20)*.25)and f.edits==1,'A multi-frame volume drag commits once and keeps original microphone ratios')
+f.undo();check(f.kick.volume==1 and f.left.volume==.5 and f.right.volume==.25,'Undo after a live drag restores the pre-drag levels, not the last preview')
+f=fixture();f.left.pan=-.5;f.right.pan=.5;f.draw();drag=f.sliders[2].begin()
+local actual=drag.update(1)
+check(near(actual,.75)and near(f.left.pan,0)and near(f.right.pan,1)and f.edits==0,'Live pan returns the clamped knob position and preserves spacing at the edge')
+drag.update(.375);f.draw();check(labeled(f,'L 25%'),'Live pan values update in the grouped Tracks view')
+drag.finish();check(near(f.kick.pan,-.25)and f.edits==1,'Reversing direction during a pan drag commits one edit')
+f.undo();check(f.kick.pan==0 and f.left.pan==-.5 and f.right.pan==.5,'Undo restores the complete pan spread from before the drag')
+f=fixture();f.guitar.pan_mode=6;f.guitar.pan_left=-.4;f.guitar.pan_right=.4
+drag=f.T.begin_adjustment(group(f,'guitar'),'pan',f.project);drag.update(.3)
+check(near(f.guitar.pan_left,-.1)and near(f.guitar.pan_right,.7),'Live dual-pan moves both endpoints')
+drag.cancel();drag.cancel()
+check(near(f.guitar.pan_left,-.4)and near(f.guitar.pan_right,.4)and f.edits==0,'Cancelling is idempotent and restores both dual-pan endpoints without Undo')
+f=fixture();drag=f.T.begin_adjustment(group(f,'drums'),'volume',f.project);drag.update(-9);drag.update(0);drag.finish()
+check(f.edits==0 and near(f.kick.volume,1),'Returning a drag to its starting value creates no empty Undo entry')
+f=fixture();drag=f.T.begin_adjustment(group(f,'drums'),'volume',f.project);drag.update(-3)
+f.fail={track=f.left,key='D_VOL'}
+check(not pcall(drag.update,-12)and near(f.kick.volume,10^(-3/20))and near(f.left.volume,10^(-3/20)),'A failed live write restores the last complete preview across the group')
+drag.cancel();check(f.kick.volume==1 and f.left.volume==1 and f.edits==0,'Cancelling a failed drag restores its original levels')
+f=fixture();drag=f.T.begin_adjustment(group(f,'drums'),'volume',f.project);drag.update(-6);f.left.volume=.3
+check(not pcall(drag.update,-9),'External fader edits interrupt the live drag')
+drag.cancel();check(f.kick.volume==1 and f.left.volume==.3 and f.right.volume==1,'Cancellation preserves external edits while restoring the other dragged faders')
+for _,reason in ipairs({'project','membership','recording','busy','automation'})do
+ f=fixture();drag=f.T.begin_adjustment(group(f,'drums'),'volume',f.project);drag.update(-6)
+ if reason=='project'then f.project='other'
+ elseif reason=='membership'then f.state['set.drums.tracks']='kick\nleft'
+ elseif reason=='automation'then f.left.envelopes={['<VOLENV2']={active=1}};f.revision=f.revision+1
+ else f[reason]=true end
+ check(not pcall(drag.finish),'Live drag cannot commit after changing '..reason)
+ drag.cancel();check(f.kick.volume==1 and f.left.volume==1 and f.right.volume==1 and f.edits==0,'Interrupted '..reason..' drag restores its original tracks without Undo')
+end
 print(total..' track management checks passed.')

@@ -37,6 +37,11 @@ local function run(fn,msg)
  if ok then if msg then status=msg end else status=tostring(err):match('^[^\n]+') or tostring(err);M.message(status) end
  lastrefresh=0
 end
+local function cancel_slider()
+ local pending=drag;drag=nil
+ if pending and pending.adjustment then run(pending.adjustment.cancel)end
+ return pending~=nil
+end
 local function candidates()return view=='timeline' and all_rows or rows end
 local function selected_rows()return selection.rows(candidates())end
 local function chosen()return selection.chosen(candidates())end
@@ -116,7 +121,7 @@ local function mix()
  return X
 end
 local mcp=dofile(dir..'/solo_mcp.lua')({status=function()return mix().control_status()end,
- execute=function(command,args)local result=mix().control(command,args);change_view('mix');return result end})
+ execute=function(command,args)cancel_slider();local result=mix().control(command,args);change_view('mix');return result end})
 local function track_view()
  if not K then K=dofile(dir..'/solo_tracks_view.lua')(M,{colors=C,text=text,button=button,color=color,slider=slider,busy=function()return X and X.busy()end,
   hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
@@ -133,7 +138,8 @@ end
 local function history(redo)
  M.stopped()
  assert(not X or not X.busy(),'Wait for the current mix operation before using Undo or Redo.')
- if V.cancel_drag()or drag then drag=nil;status='Pending edit cancelled.';return end
+ local slider_cancelled=cancel_slider()
+ if V.cancel_drag()or slider_cancelled then status='Pending edit cancelled.';return end
  local label=M.history(redo)
  if label then
   clip_target=nil;tracks=M.tracks();refresh_takes();sections=S.list();selection.sync(candidates())
@@ -141,7 +147,7 @@ local function history(redo)
   status=(redo and 'Redid: 'or'Undid: ')..label:gsub('^Solo Studio: ','')
  end
 end
-slider=function(id,x,y,w,value,fn,enabled,centered)
+slider=function(id,x,y,w,value,fn,enabled,centered,begin)
  enabled=enabled~=false
  value=drag and drag.id==id and drag.value or value
  value=math.max(0,math.min(1,value))
@@ -150,7 +156,7 @@ slider=function(id,x,y,w,value,fn,enabled,centered)
  if centered then color(C.muted);gfx.line(x+w*.5,y+4,x+w*.5,y+18)end
  color(enabled and C.blue or C.muted);gfx.rect(x+w*math.min(origin,value),y+9,w*math.abs(value-origin),4,1)
  gfx.circle(x+w*value,y+11,6,1)
- if enabled then sliders[#sliders+1]={id=id,x=x,y=y,w=w,h=23,fn=fn} end
+ if enabled then sliders[#sliders+1]={id=id,x=x,y=y,w=w,h=23,fn=fn,begin=begin} end
 end
 local function set_tempo(value)
  assert(not X or not X.busy(),'Wait for the current AI mix operation before changing tempo.')
@@ -247,7 +253,7 @@ local function add_instrument(x,y)
  gfx.x=x;gfx.y=y
  local n=gfx.showmenu('Vocals|Guitar|Bass|Drums (several microphones)||Create new template...')
  if n==5 then
-  drag=nil;V.cancel();track_settings=nil
+  cancel_slider();V.cancel();track_settings=nil
   template_settings={project=R.EnumProjects(-1,'')};return
  end
  local kinds={'Vocals','Guitar','Bass','Drums'};local kind=kinds[n];if not kind then return end
@@ -422,7 +428,7 @@ local function monitoring()
  track_settings.message=status
 end
 local function show_track_settings()
- drag=nil;V.cancel();template_settings=nil
+ cancel_slider();V.cancel();template_settings=nil
  track_settings={project=R.EnumProjects(-1,''),set=M.get('active')}
 end
 local function draw_track_settings()
@@ -481,7 +487,7 @@ local function mark_transition()
 end
 change_view=function(value)
  if value~=view then clip_target=nil end
- view=value;if value=='projects'then if P then P.reset()end;status='Choose a song, or start a full-band song in Desktop/Solo Studio Songs.'end;selection.sync(candidates());drag=nil;V.cancel();R.SetExtState(M.ns,'panel_view',value,true)
+ cancel_slider();view=value;if value=='projects'then if P then P.reset()end;status='Choose a song, or start a full-band song in Desktop/Solo Studio Songs.'end;selection.sync(candidates());V.cancel();R.SetExtState(M.ns,'panel_view',value,true)
 end
 local function section_sidebar(x,w,recording)
  button('Edit song timeline',x,223,w,36,function()change_view('timeline')end,C.blue)
@@ -514,7 +520,7 @@ local function refresh()
  local proj=R.EnumProjects(-1,'')
  if track_settings and (track_settings.project~=proj or track_settings.set~=M.get('active'))then track_settings=nil end
  if template_settings and template_settings.project~=proj then template_settings=nil end
- if proj~=lastproject then if X then X.close('project_switched');X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;set_tab_first=1;set_tab_active=nil;set_tab_layout=nil;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
+ if proj~=lastproject then cancel_slider();if X then X.close('project_switched');X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;set_tab_first=1;set_tab_active=nil;set_tab_layout=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
   local set=M.get('active');local previous={}
@@ -540,7 +546,7 @@ local function open_window(w,h,dock,x,y)
 end
 open_window(1200,754,tonumber(R.GetExtState(M.ns,'dock')) or 0)
 R.SetExtState(M.ns,'panel_open','1',false);R.SetExtState(M.ns,'panel_raise','',false)
-R.atexit(function()R.SetExtState(M.ns,'panel_open','',false);if X then X.close() end;mcp.close();R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
+R.atexit(function()cancel_slider();R.SetExtState(M.ns,'panel_open','',false);if X then X.close() end;mcp.close();R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
 local function frame()
  if R.GetExtState(M.ns,'panel_raise')=='1'then
   R.SetExtState(M.ns,'panel_raise','',false)
@@ -684,10 +690,18 @@ local function frame()
  end
  if drag then
   local available=false;for _,s in ipairs(sliders) do if s.id==drag.id then available=true end end
-  if drag.project~=R.EnumProjects(-1,'') or not available then drag=nil
+  if drag.project~=R.EnumProjects(-1,'') or not available then cancel_slider()
   else
-   drag.value=math.max(0,math.min(1,(gfx.mouse_x-drag.x)/drag.w))
-   if not down then local finished=drag;drag=nil;run(function()finished.fn(finished.value) end) end
+   local ok,err=pcall(function()
+    local value=math.max(0,math.min(1,(gfx.mouse_x-drag.x)/drag.w))
+    if drag.begin and not drag.adjustment then drag.adjustment=drag.begin()end
+    drag.value=drag.adjustment and drag.adjustment.update(value)or value
+    if not down then
+     if drag.adjustment then drag.adjustment.finish()else drag.fn(drag.value)end
+     drag=nil;lastrefresh=0
+    end
+   end)
+   if not ok then cancel_slider();run(function()error(err,0)end)end
   end
  end
  mouse_down=down
@@ -715,14 +729,14 @@ local function frame()
  if ch==26 or ch==25 then
   run(function()history(ch==25 or gfx.mouse_cap&8~=0)end);ch=0
  end
- if ch==27 and V.cancel()then ch=0 end
+ if ch==27 and (cancel_slider()or V.cancel())then ch=0 end
  if view=='mix' and X and X.key(ch)then ch=0 end
  if view=='projects'and P and P.key(ch)then ch=0 end
  if ch==112 or ch==80 then run(function()change_view(view=='projects'and 'timeline'or 'projects')end)
  elseif ch==109 or ch==77 then run(function()change_view('mix')end)
  elseif (ch==115 or ch==83)and view~='projects'and #tracks>0 then run(show_track_settings)
- elseif ch==32 then run(play) elseif ch==114 or ch==82 then run(M.record)
- elseif ch==110 or ch==78 then run(M.another)
+ elseif ch==32 then run(play) elseif ch==114 or ch==82 then cancel_slider();run(M.record)
+ elseif ch==110 or ch==78 then cancel_slider();run(M.another)
  elseif ch==1818584692 and view~='tracks' then run(function()select_step(-1) end)
  elseif ch==1919379572 and view~='tracks' then run(function()select_step(1) end)
  elseif (ch==102 or ch==70)and view~='tracks' then run(function()with_row(function(row)M.favorite(row.lane) end) end)

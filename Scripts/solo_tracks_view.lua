@@ -46,6 +46,20 @@ return function(M,ui)
   local ok,value=R.GetUserInputs(row.name..' pan',1,'Pan: -100 left / 0 center / +100 right:,extrawidth=240',string.format('%.1f',row.pan*100))
   if ok then local number=tonumber(value);pan(row,number and number/100,project)end
  end
+ local function live_adjustment(row,kind,project)
+  return function()
+   local gesture=T.begin_adjustment(row,kind,project)
+   return {cancel=gesture.cancel,
+    update=function(position)
+     local actual=gesture.update(kind=='volume'and position*84-60 or position*2-1)
+     return kind=='volume'and (actual+60)/84 or (actual+1)/2
+    end,
+    finish=function()
+     local actual=gesture.finish()
+     if actual then ui.changed(row.name..': '..(kind=='volume'and db_label(actual)or pan_label(actual))..'.')end
+    end}
+  end
+ end
  function V.reset()scroll=0;box=nil;expanded={}end
  function V.wheel(delta)
   if box and gfx.mouse_x>=box.x and gfx.mouse_x<box.x+box.w and gfx.mouse_y>=box.y and gfx.mouse_y<box.y+box.h then scroll=math.max(0,scroll-delta);return true end
@@ -91,13 +105,13 @@ return function(M,ui)
    if not row.other then
     local project=R.EnumProjects(-1,'');local volume_enabled=enabled and not row.volume_automated
     automated=automated or row.volume_automated or row.mute_automated or row.pan_automated
-    ui.slider('track-volume:'..row.key,x+w-868,ry+16,110,(row.db+60)/84,function(value)volume(row,value*84-60,project)end,volume_enabled)
+    ui.slider('track-volume:'..row.key,x+w-868,ry+16,110,(row.db+60)/84,function(value)volume(row,value*84-60,project)end,volume_enabled,false,live_adjustment(row,'volume',project))
     ui.button(row.volume_automated and 'Auto'or db_label(row.db),x+w-746,ry+11,86,32,function()volume_input(row)end,nil,volume_enabled)
     ui.button('-1',x+w-654,ry+11,30,32,function()volume(row,math.max(-60,math.min(24,row.db-1)),project)end,nil,volume_enabled and row.db>-60)
     ui.button('+1',x+w-618,ry+11,30,32,function()volume(row,math.min(24,math.max(-60,row.db+1)),project)end,nil,volume_enabled and row.db<24)
     local pan_wide=row.pan_max-row.pan_min<1e-9
     local pan_enabled=enabled and not row.pan_automated and not pan_wide
-    ui.slider('track-pan:'..row.key,x+w-564,ry+16,108,(row.pan+1)/2,function(value)pan(row,value*2-1,project)end,pan_enabled,true)
+    ui.slider('track-pan:'..row.key,x+w-564,ry+16,108,(row.pan+1)/2,function(value)pan(row,value*2-1,project)end,pan_enabled,true,live_adjustment(row,'pan',project))
     ui.button(row.pan_automated and 'Auto'or pan_wide and 'Wide'or pan_label(row.pan),x+w-446,ry+11,66,32,function()pan_input(row)end,nil,pan_enabled)
     ui.button('C',x+w-372,ry+11,30,32,function()pan(row,0,project)end,nil,pan_enabled and math.abs(row.pan)>1e-9)
     if gfx.mouse_x>=x+w-570 and gfx.mouse_x<x+w-342 and gfx.mouse_y>=ry and gfx.mouse_y<ry+55 then
@@ -122,7 +136,7 @@ return function(M,ui)
   if #rows==0 then ui.text('Add an instrument above to create your first recording group.',x+12,box.y+12,1,C.muted,w-24)end
   local hint=recording and 'Finish recording to adjust groups.'or busy and 'Finish the AI mix operation to adjust groups.'or pan_hint
    or automated and 'Automated volume/pan/mute controls stay under REAPER automation. Other controls remain available.'
-   or 'Group dB shows its loudest fader; all member levels move together. Changes apply on release and support Undo.'
+   or 'Volume and pan update as you drag. Each drag is one Undo step; Esc cancels. Group levels stay linked.'
   ui.text(hint,x,y+h-27,3,C.muted,w-145)
   ui.text(count..(count==1 and ' track group'or ' track groups'),x+w-140,y+h-27,3,C.muted,140)
  end

@@ -224,7 +224,9 @@ group name to select it, or **+** to expand its individual microphones/tracks.
 
 - Drag a volume slider, click its dB value, or use **-1 / +1** for fine changes.
   Group dB shows the loudest member fader; all members move by the same dB amount,
-  preserving their relative levels. Sliders commit on release as one Undo step.
+  preserving their relative levels. Volume and pan respond while you drag,
+  including during playback. Release commits one Undo step; **Escape** restores
+  the starting values.
 - Drag **Pan**, click its value to enter -100 (left) through +100 (right), or
   click **C** to center. Group pan moves all members together and stops at the
   first hard-left/right limit to preserve their spacing. **Wide** means the group
