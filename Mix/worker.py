@@ -571,6 +571,24 @@ class Session:
         self.pending_images = []
         self.visual_status = {'enabled': False, 'attached': 0}
         self.measurement_error = None
+        self.activity = None
+        self.failure = None
+
+    def trace(self, kind, **details):
+        # Append-only per worker pass. No provider headers or opaque reasoning.
+        row = {'time': time.time(), 'pass_id': self.nonce, 'kind': kind, **details}
+        line = json.dumps(row, allow_nan=False)
+        if len(line) > 131072:
+            row = {'time': row['time'], 'pass_id': self.nonce, 'kind': kind,
+                   'truncated': True, 'preview': line[:120000]}
+        with (self.dir / 'events.jsonl').open('a') as log:
+            os.chmod(self.dir / 'events.jsonl', 0o600)
+            log.write(json.dumps(row, allow_nan=False) + '\n')
+
+    def phase(self, name, **details):
+        self.activity = {'name': name, 'started': time.time(), **details}
+        self.trace('phase', **self.activity)
+        self.publish()
 
     def cancelled(self):
         return (self.dir / 'cancel').exists()
@@ -578,12 +596,14 @@ class Session:
     def publish(self, text=None, role='status'):
         if text:
             self.events.append({'role': role, 'text': str(text)[:6000], 'time': time.time()})
+            self.trace('message', role=role, text=str(text)[:6000])
         write(self.dir / 'status.json', {'state': self.state, 'updated': time.time(),
             'events': self.events[-120:], 'calls': self.calls, 'cost_usd': self.cost,
             'measurements': self.measurements, 'reference_issues': self.reference_issues,
             'responses': self.responses, 'completion_reason': self.completion_reason,
             'measurement_timings': self.timings, 'visual_analysis': self.visual_status,
-            'measurement_error': self.measurement_error})
+            'measurement_error': self.measurement_error, 'activity': self.activity,
+            'failure': self.failure, 'pass_id': self.nonce})
 
     def queue_image(self, path, caption):
         # Only our own locally generated, bounded PNGs are eligible for upload.
@@ -660,6 +680,8 @@ class Session:
         if self.calls > MAX_BRIDGE_CALLS:
             raise RuntimeError('Tool-call limit reached')
         ident = self.nonce + '-' + str(self.calls)
+        self.phase('waiting_for_reaper', tool=name, request_id=ident)
+        self.trace('bridge_request', request_id=ident, tool=name, arguments=args)
         write(self.dir / 'request.json', {'id': ident, 'name': name, 'arguments': args})
         deadline = time.monotonic() + 360
         while time.monotonic() < deadline:
@@ -667,6 +689,7 @@ class Session:
                 raise RuntimeError('Session cancelled')
             result = read(self.dir / ('response-' + ident + '.json'))
             if result is not None:
+                self.trace('bridge_response', request_id=ident, tool=name, response=result)
                 if result.get('fatal'):
                     raise RuntimeError(result['error'])
                 if 'error' in result:
@@ -823,6 +846,7 @@ class Session:
         if cached:
             profile = copy.deepcopy(self.analysis_cache[str(path)])
         else:
+            self.phase('audio_analysis', label=label, bounds=bounds, render=path.name)
             self.publish('Analyzing %s · %.0f seconds of audio…' % (label, bounds[1] - bounds[0]))
             profile = analyze_audio(path, self.dir, label)
         expected = bounds[1] - bounds[0]
@@ -844,8 +868,10 @@ class Session:
                                  'reused': bool(cached), 'valid': False})
             failure = {'label': label, 'bounds': bounds, 'track': track_id,
                        'reason': 'silent_or_unmeasurable', 'render': path.name,
-                       'loudness': loudness, 'retried': _retry}
+                       'loudness': loudness, 'retried': _retry,
+                       'time': time.time(), 'pass_id': self.nonce}
             write(self.dir / 'failed-measurement.json', failure)
+            self.trace('measurement_failed', **failure)
             if track_id:
                 self.publish('Track contribution has no measurable audio in this passage; it was not cached.')
                 raise ValueError('Track contribution is silent or too quiet to measure in this passage. Check its activity/routing or choose another window; do not boost silence.')
@@ -888,6 +914,8 @@ class Session:
         self.publish('%s %s: %s LUFS, %s dBTP · render %.1fs, analysis %.1fs.' % (
             'Reused' if cached else 'Measured', label, profile['loudness']['integrated_lufs'],
             profile['loudness']['true_peak_dbtp'], render_time, elapsed))
+        self.trace('measurement', label=label, bounds=bounds, track=track_id,
+                   loudness=profile['loudness'], render=path.name, cached=bool(cached), recovered=_retry)
         if self.visuals_enabled:
             try:
                 from visuals import processed_chart
@@ -904,6 +932,8 @@ class Session:
 
     def run(self):
         try:
+            self.trace('pass_started', resume=bool(self.config.get('resume')), model=self.config.get('model', DEFAULT_MODEL),
+                       bounds=self.config['bounds'], rounds=self.config.get('rounds', DEFAULT_ROUNDS))
             self.publish('Inspecting the project and measuring the original mix…')
             project = self.bridge('inspect_project', {})
             if 'error' in project:
@@ -949,6 +979,7 @@ class Session:
                     raise RuntimeError('Session cancelled')
                 self.publish('Waiting for OpenRouter · round %d / %d…' % (turn + 1, rounds))
                 self.attach_images(messages)
+                self.phase('openrouter_request', round=turn + 1)
                 response = self.api('/chat/completions', {'model': self.config.get('model', DEFAULT_MODEL),
                     'messages': messages, 'tools': TOOLS, 'tool_choice': 'auto',
                     'max_tokens': 8000,
@@ -964,6 +995,7 @@ class Session:
                     'reasoning_tokens': (usage.get('completion_tokens_details') or {}).get('reasoning_tokens'),
                     'tool_calls': len(msg.get('tool_calls') or []),
                     'has_text': has_text})
+                self.trace('model_response', **self.responses[-1], cost_usd=self.cost)
                 # Preserve opaque provider reasoning metadata for tool continuity,
                 # but never display it as chat or persist the full API conversation.
                 if has_text or msg.get('tool_calls'):
@@ -1056,11 +1088,32 @@ class Session:
                 else:
                     self.publish('Candidate ready. Compare Original / Candidate, then Keep or Revert.')
         except Exception as error:
+            self.failure = {'type': type(error).__name__, 'message': str(error), 'activity': self.activity}
+            self.trace('pass_failed', **self.failure)
             self.state = 'cancelled' if self.cancelled() else 'error'
             self.completion_reason = self.state
             # Errors from network are sanitized above; never log headers or request bodies.
             self.publish(str(error))
+        self.trace('pass_finished', state=self.state, reason=self.completion_reason, cost_usd=self.cost, calls=self.calls)
         return self.state
+
+
+def run_session(directory, api=request):
+    import fcntl
+    directory = Path(directory)
+    with (directory / 'worker.lock').open('a') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise RuntimeError('A worker already owns this mix session')
+        session = Session(directory, api=api)
+        lease = {'pid': os.getpid(), 'pass_id': session.nonce, 'active': True, 'started': time.time()}
+        write(directory / 'worker.json', lease)
+        try:
+            return session.run()
+        finally:
+            lease.update(active=False, finished=time.time())
+            write(directory / 'worker.json', lease)
 
 
 def connect():
@@ -1096,7 +1149,7 @@ def main():
     if args.models:
         refresh_models(args.models)
     elif args.session:
-        Session(args.session).run()
+        run_session(args.session)
     elif args.connect:
         try:
             connect()

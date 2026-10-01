@@ -82,6 +82,10 @@ disables Keep, and leaves Original/Revert available. Local failure details are
 saved to `failed-measurement.json`. This handles intermittent processing failures;
 successful real-time playback alone does not validate an offline render.
 
+The [local MCP server](../MCP/README.md) exposes start/resume/cancel and diagnostic
+tools to Codex. New passes retain append-only worker and REAPER logs, with the
+actual guard/timeout/close reason saved separately from generic worker cancellation.
+
 **Visual analysis** is on by default and can be disabled in mix setup. With an
 image-capable model, the worker attaches small PNG evidence charts to its model
 requests alongside the numeric measurements:

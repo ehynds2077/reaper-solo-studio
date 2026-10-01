@@ -2,9 +2,9 @@
 local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 local B=dofile(dir..'/solo_mix_bridge.lua');local J=B.json;local R=reaper
 local Models=dofile(dir..'/solo_models.lua')
-return function(M,ui)
+return function(M,ui,options)
  local X={};local text,button,color,C=ui.text,ui.button,ui.color,ui.colors
- local data=(os.getenv('HOME')or '')..'/Library/Application Support/Solo Studio/Mix'
+ local data=options and options.data or (os.getenv('HOME')or '')..'/Library/Application Support/Solo Studio/Mix'
  R.RecursiveCreateDirectory(data..'/sessions',0)
  local worker_dir=dir..'/Mix'
  local worker_file=io.open(worker_dir..'/worker.py','r')
@@ -62,6 +62,19 @@ return function(M,ui)
  local function cancelled()
   if session then local f=assert(io.open(session.path..'/cancel','w'));f:close()end
  end
+ local function worker_active()
+  local worker=session and read(session.path..'/worker.json')
+  if not worker or not worker.active or type(worker.pid)~='number'or worker.pid<1 or worker.pid%1~=0 then return false end
+  local result=R.ExecProcess('/bin/kill -0 '..string.format('%d',worker.pid),1000)
+  return result and result:match('^0[\r\n]')~=nil
+ end
+ local function stopped(reason,message)
+  cancelled()
+  local details={reason=reason,message=message,time=os.time(),context=B.diagnostics(session)}
+  J.write(session.path..'/panel-stop.json',details);B.trace(session,'panel_stopped',details)
+  state.state='error';state.events=state.events or J.array();state.events[#state.events+1]={role='status',text=message,time=os.time()}
+  state.panel_stop=details;J.write(session.path..'/status.json',state);status=message
+ end
  function X.busy()return session and not session.finished and state and state.state=='running'end
  function X.pending()return session and not session.finished end
  local function finish(revert)
@@ -95,28 +108,34 @@ return function(M,ui)
   end
   if X.busy()then
    local ok,err=pcall(B.guard,session,true)
-   if not ok then cancelled();state.state='error';state.events=state.events or J.array();state.events[#state.events+1]={role='status',text=tostring(err)};status='Session paused by a project or transport change. Stop transport and Revert when ready.';return end
-   if state.updated and os.time()-state.updated>420 then cancelled();state.state='error';status='Worker timed out. Revert the candidate before starting again.';return end
+   if not ok then stopped('guard_rejected',tostring(err));return end
+   if state.updated and os.time()-state.updated>420 then stopped('worker_timeout','Worker timed out. Review the candidate before continuing.');return end
   end
   local req=read(session.path..'/request.json')
   if req and req.id~=handled and X.busy()then
    handled=req.id
+   B.trace(session,'request_received',{id=req.id,tool=req.name})
    local ok,result=pcall(B.execute,session,req.name,req.arguments)
    local response=ok and {result=result}or {error=tostring(result):match('^[^\n]+'),fatal=false}
    J.write(session.path..'/response-'..req.id..'.json',response)
+   B.trace(session,'request_finished',{id=req.id,tool=req.name,error=response.error,context=not ok and B.diagnostics(session)or nil})
   end
  end
- local function start()
+ local function start(options)
+  options=options or {}
   assert(not X.pending(),'Keep or revert the current session first.')
   assert(connection().connected,'Connect and refresh OpenRouter first.')
-  local range=bounds();assert(range[2]-range[1]>=3,'Choose at least three seconds of recorded audio.')
+  local range=options.bounds or bounds();assert(range[1]>=0 and range[2]<=R.GetProjectLength(0)+.001,'Mix bounds must be within the song.')
+  assert(range[2]-range[1]>=3,'Choose at least three seconds of recorded audio.')
   assert(range[2]-range[1]<=600,'Choose an excerpt up to ten minutes long.')
   local id=R.genGuid():gsub('[^%w]','');local path=data..'/sessions/'..id
   R.RecursiveCreateDirectory(path,0);session=B.begin(path,range);handled='';chat_scroll=0
   save_config();local job={model=config.model,direction=config.direction,rounds=config.rounds,
    stop_after_usd=config.stop_after_usd,references=selected,bounds=range,visual_analysis=config.visual_analysis}
+  for _,key in ipairs({'model','direction','rounds','stop_after_usd','references','visual_analysis'})do if options[key]~=nil then job[key]=options[key]end end
   J.write(path..'/config.json',job)
   state={state='running',events=J.array(),measurements=J.array(),updated=os.time()};phase='session'
+  J.write(path..'/status.json',state);B.trace(session,'start_requested',{source=options.source or 'panel',config=job})
   local ok,err=pcall(launch,{'--session',path});if not ok then state.state='error';error(err)end
   status='Mixing the selected passage. Leave transport stopped until the candidate is ready.'
  end
@@ -168,14 +187,18 @@ return function(M,ui)
   return lines
  end
  local function metric(value)return type(value)=='number'and string.format('%.1f',value)or '—'end
- local function resume(value)
+ local function resume(value,options)
   assert(not X.busy()and state,'Wait for the current pass before giving feedback.')
+  assert(not worker_active(),'The previous worker is still stopping. Wait before continuing.')
   B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
   local job=read(session.path..'/config.json');job.resume=true
   job.direction=job.direction..'\nUser feedback: '..value
   job.rounds=config.rounds;job.stop_after_usd=config.stop_after_usd
+  for _,key in ipairs({'rounds','stop_after_usd','model','visual_analysis'})do if options and options[key]~=nil then job[key]=options[key]end end
   J.write(session.path..'/config.json',job)
   os.remove(session.path..'/cancel')
+  os.remove(session.path..'/panel-stop.json')
+  B.trace(session,'resume_requested',{feedback=value,source=options and options.source or 'panel'})
   state.events[#state.events+1]={role='user',text=value};state.state='running';state.updated=os.time();J.write(session.path..'/status.json',state)
   local ok,err=pcall(launch,{'--session',session.path});if not ok then state.state='error';error(err)end
   status='Continuing the candidate with a fresh pass budget.'
@@ -188,6 +211,26 @@ return function(M,ui)
  end
  local function continue_mix()
   resume('Continue from this candidate. Inspect and reuse session-owned effects, measure the current result, and address the remaining reference, balance and output-peak gaps. Finish when the measured result is ready for audition.')
+ end
+ function X.control_status()
+  return {session_id=session and session.path:match('([^/]+)$'),state=state and state.state,
+   busy=X.busy()or false,pending=X.pending()or false,mode=session and session.mode,
+   recovery_changed=session and session.recovery_changed or false,
+   connected=connection().connected,defaults={model=config.model,direction=config.direction,rounds=config.rounds,
+    stop_after_usd=config.stop_after_usd,visual_analysis=config.visual_analysis,references=selected},bounds=bounds()}
+ end
+ function X.control(command,args)
+  args=args or {}
+  if command=='start_mix'then start(args)
+  else
+   assert(session and args.session_id==session.path:match('([^/]+)$'),'This is not the active mix session.')
+   if command=='resume_mix'then resume(args.feedback or 'Continue from this candidate; inspect the logs and address remaining measured mix issues.',args)
+   elseif command=='cancel_mix'then
+    assert(X.busy(),'No mixing pass is running.');cancelled()
+    B.trace(session,'cancel_requested',{source='mcp'});status='Cancellation requested; waiting for the worker to stop. Candidate preserved.'
+   else error('Unknown mix control')end
+  end
+  mix_view='ai';return X.control_status()
  end
  function X.draw(x,y,w,h)
   X.poll();text('Mix',x,y,2)
@@ -328,9 +371,10 @@ return function(M,ui)
   return false
  end
  function X.wheel(delta)if mix_view=='bounces'then bounces().wheel(delta)else chat_scroll=math.max(0,chat_scroll+delta*3)end end
- function X.close()
+ function X.close(reason)
   if library then library.close()end
   if session and not session.finished then
+   if X.busy()then stopped(reason or 'panel_closed','Mix stopped because '..(reason=='project_switched'and 'the active project changed.'or 'the Solo Studio panel closed.'))end
    cancelled()
    -- Closing/reloading the panel must not silently undo the user's mix.
    -- The journal reopens review (or offers a fresh pass if the project changed).

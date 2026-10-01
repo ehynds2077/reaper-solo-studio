@@ -13,6 +13,7 @@ function J.read(path)
  if path:match('/connection.json$')then return {connected=true}end
 end
 local B={json=J,find_session=function()return not foreign and session or nil end,
+ trace=function()end,diagnostics=function()return {transport=transport}end,
  guard=function()assert(transport==0,'Stop transport')end,
  compare=function(_,mode)compared=mode;session.mode=mode end,
  keep=function()kept=true;session.finished=true end,

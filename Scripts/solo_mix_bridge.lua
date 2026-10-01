@@ -49,6 +49,30 @@ function B.plugins()
  end
  return result
 end
+function B.diagnostics(s)
+ local project,path=R.EnumProjects(-1,'')
+ local out={time=os.time(),project_path=path,transport=R.GetPlayState(),
+  engine_running=R.Audio_IsRunning and R.Audio_IsRunning()~=0,
+  all_project_transport=R.GetAllProjectPlayStates and R.GetAllProjectPlayStates()or nil,
+  project_version=R.GetProjectStateChangeCount(project),expected_version=s and s.version,
+  session_project_path=s and s.project_path,mode=s and s.mode,render_count=s and s.renders}
+ if R.GetMasterTrack and R.TrackFX_GetCount then
+  local master=R.GetMasterTrack(project);local effects=J.array()
+  for i=0,R.TrackFX_GetCount(master)-1 do
+   local _,name=R.TrackFX_GetFXName(master,i,'')
+   effects[#effects+1]={name=name,enabled=R.TrackFX_GetEnabled(master,i),offline=R.TrackFX_GetOffline and R.TrackFX_GetOffline(master,i)}
+  end
+  out.master={muted=R.GetMediaTrackInfo_Value(master,'B_MUTE')~=0,volume=R.GetMediaTrackInfo_Value(master,'D_VOL'),effects=effects}
+ end
+ return out
+end
+function B.trace(s,kind,details)
+ local ok,err=pcall(function()
+  local f=assert(io.open(s.path..'/bridge-events.jsonl','a'))
+  f:write(J.encode({time=os.time(),kind=kind,details=details}), '\n');f:close()
+ end)
+ return ok,err
+end
 local function journal(s)
  J.write(s.path..'/snapshot.json',{original=s.original,owned=s.owned,bounds=s.bounds,expected=s.expected,
   candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path,resolution=s.resolution})
@@ -184,7 +208,9 @@ local function render(s,bounds,scope)
  local ok,err=xpcall(function()
   for k,v in pairs(numbers)do R.GetSetProjectInfo(s.project,k,v,true)end
   for k,v in pairs(strings)do R.GetSetProjectInfo_String(s.project,k,v,true)end
+  B.trace(s,'render_started',{render=pattern,bounds=bounds,scope=scope,context=B.diagnostics(s)})
   R.Main_OnCommand(42230,0)
+  B.trace(s,'render_returned',{render=pattern,elapsed=R.time_precise()-started,context=B.diagnostics(s)})
  end,debug.traceback)
  for k,v in pairs(oldn)do R.GetSetProjectInfo(s.project,k,v,true)end
  for k,v in pairs(olds)do R.GetSetProjectInfo_String(s.project,k,v,true)end
@@ -206,7 +232,9 @@ function B.execute(s,name,a)
   s.render_cache={}
   -- Reinitialize the engine without changing devices, plugins, faders or media.
   -- Audio_Init returns no value; Audio_IsRunning is the actual readiness check.
+  B.trace(s,'engine_restart_started',B.diagnostics(s))
   R.Audio_Quit();R.Audio_Init()
+  B.trace(s,'engine_restart_finished',B.diagnostics(s))
   remember(s)
   assert(R.Audio_IsRunning()~=0,'Audio device could not restart. Check REAPER Audio Device settings before continuing')
   return {restarted=true}

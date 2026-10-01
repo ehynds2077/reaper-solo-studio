@@ -115,6 +115,8 @@ local function mix()
  if not X then X=dofile(dir..'/solo_mix.lua')(M,{colors=C,text=text,button=button,color=color,run=run}) end
  return X
 end
+local mcp=dofile(dir..'/solo_mcp.lua')({status=function()return mix().control_status()end,
+ execute=function(command,args)local result=mix().control(command,args);change_view('mix');return result end})
 local function track_view()
  if not K then K=dofile(dir..'/solo_tracks_view.lua')(M,{colors=C,text=text,button=button,color=color,slider=slider,busy=function()return X and X.busy()end,
   hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
@@ -125,7 +127,7 @@ local function project_view()
  if not P then P=dofile(dir..'/solo_projects_view.lua')(M,{colors=C,text=text,button=button,color=color,run=run,
   hit=function(x,y,w,h,fn,enabled)if enabled then buttons[#buttons+1]={x=x,y=y,w=w,h=h,fn=fn}end end,
   opened=function(message)status=message;lastrefresh=0;change_view('timeline')end},
-  {busy=function()return X and X.busy()end,before_switch=function()if X then X.close();X=nil end end})end
+  {busy=function()return X and X.busy()end,before_switch=function()if X then X.close('project_switched');X=nil end end})end
  return P
 end
 local function history(redo)
@@ -512,7 +514,7 @@ local function refresh()
  local proj=R.EnumProjects(-1,'')
  if track_settings and (track_settings.project~=proj or track_settings.set~=M.get('active'))then track_settings=nil end
  if template_settings and template_settings.project~=proj then template_settings=nil end
- if proj~=lastproject then if X then X.close();X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;set_tab_first=1;set_tab_active=nil;set_tab_layout=nil;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
+ if proj~=lastproject then if X then X.close('project_switched');X=nil end;if P then P.reset()end;M.cancel_preview(proj);listen_mode='comp';clip_target=nil;S.recover_leadin();selection.reset();scroll=0;section_scroll=0;set_tab_first=1;set_tab_active=nil;set_tab_layout=nil;drag=nil;V.reset();if K then K.reset()end;review_focus=nil;lastset=nil;was_recording=false;lastproject=proj;lastrefresh=0 end
  local recording=R.GetPlayState()&4~=0
  if R.time_precise()-lastrefresh>0.25 or recording~=was_recording then
   local set=M.get('active');local previous={}
@@ -538,7 +540,7 @@ local function open_window(w,h,dock,x,y)
 end
 open_window(1200,754,tonumber(R.GetExtState(M.ns,'dock')) or 0)
 R.SetExtState(M.ns,'panel_open','1',false);R.SetExtState(M.ns,'panel_raise','',false)
-R.atexit(function()R.SetExtState(M.ns,'panel_open','',false);if X then X.close() end;R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
+R.atexit(function()R.SetExtState(M.ns,'panel_open','',false);if X then X.close() end;mcp.close();R.SetExtState(M.ns,'dock',tostring(gfx.dock(-1)),true) end)
 local function frame()
  if R.GetExtState(M.ns,'panel_raise')=='1'then
   R.SetExtState(M.ns,'panel_raise','',false)
@@ -547,7 +549,7 @@ local function frame()
   -- selection, and any active mix worker stay alive without running cleanup.
   gfx.quit();open_window(w or 1200,h or 754,dock,x,y)
  end
- refresh();if X then X.poll() end;buttons={};sliders={};header_hint=nil;set_tab_strip=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
+ refresh();if X then X.poll() end;mcp.poll();buttons={};sliders={};header_hint=nil;set_tab_strip=nil;color(C.bg);gfx.rect(0,0,gfx.w,gfx.h,1)
  local min_height=view=='timeline'and 688 or view=='mix'and 708 or view=='projects'and 674 or 661
  if gfx.w<1180 or gfx.h<min_height then
   V.reset()

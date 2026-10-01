@@ -30,6 +30,9 @@ project, not required installation steps. Use the supplied templates for new son
 
 ## Open the workspace
 
+For Codex controls that can start/resume mixes and inspect live status and
+diagnostic logs, see the [local MCP server setup](MCP/README.md).
+
 On the original Mac, double-click **Solo Studio.app** on the Desktop. It starts
 REAPER if needed and opens the panel; opening it again brings back the existing
 panel. You can drag the app into the Dock or move it into Applications.

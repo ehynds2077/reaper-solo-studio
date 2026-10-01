@@ -18,6 +18,13 @@
 !/Bounces/
 !/Ableton/
 !/Launcher/
+!/MCP/
+
+/MCP/*
+!/MCP/*.mjs
+!/MCP/package.json
+!/MCP/package-lock.json
+!/MCP/README.md
 
 /Launcher/*
 !/Launcher/*.swift
