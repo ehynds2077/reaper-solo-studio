@@ -9,7 +9,7 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/charts.py`, `Mix/visuals.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/charts.py`, `Mix/visuals.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
@@ -172,6 +172,37 @@ Rejected track-measurement requests return an error for the model to correct;
 they do not terminate the whole pass. Silent or unmeasurable audio is explicitly
 reported as a failure, never as meeting the reference targets.
 
+**Vocal and guitar leveling is an explicit part of mixing.** Populated, unmuted
+vocal/guitar tracks are identified from their names and routing as required review
+targets; the agent can include other sources after inspecting their roles.
+`analyze_track_levels` checks up to eight sources over the **entire selected
+passage**, reusing valid renders. It reports active phrase windows, named song
+sections, sustained level differences and same-time track-to-mix balance proxies.
+The roughly 3 dB review flags identify candidates for attention, not automatic gain
+instructions. Silence and very low noise are excluded from active-level medians;
+this is not a vocal/bleed detector. Solo-in-place processing means the balance
+proxy is affected by shared returns and nonlinear master FX, not a dry-stem ratio.
+
+The agent is directed to correct disappearing/overpowering phrases with smooth
+`set_trim_automation` rides, use faders for overall balance and compression for
+short-term dynamics, and retain intentional verse/chorus lifts and solos. The goal
+is consistent musical prominence, not equal RMS across instruments. Source clips
+and pre-existing volume automation are unchanged: rides use a separate post-FX
+trim processor, with up to 256 linear points and -12…+6 dB range, including zero-dB
+endpoints at the selected passage boundaries. `inspect_project.trim_envelopes`
+exposes existing session rides so refinements can preserve and merge them.
+
+After the final edits, each required source needs fresh full-passage evidence and
+a `review_level_balance` decision explaining the correction or intentional dynamics.
+Attempted mix edits invalidate earlier reviews, including edits in batches.
+Completion checks challenge missing/stale leveling reviews even when master LUFS
+already matches. Budget limits still apply; missing or unmeasurable evidence is
+reported as unverified instead of claiming leveling is complete. No automation is
+forced onto an already consistent performance. Per-track reports are saved locally
+in `level-balance.json`; decisions and remaining work appear in status and logs.
+The new workflow applies to the next mix/continuation; it does not modify an idle
+candidate merely by installing the update.
+
 Once ready, press Play and switch **Original** / **Candidate** while listening.
 The song keeps playing from the same position; keys **1** and **2** select Original
 and Candidate in the Mix tab. Keep and Revert also work during playback. Recording
@@ -292,6 +323,12 @@ output, and reaches measured review without changing candidate settings. Python
 tests separately cover persistent silence, unavailable audio, diagnostic edit
 locks, silent tracks, and genuine numeric 0 LUFS. Lua review checks cover the
 unverified label and Keep/Original/Revert availability after failure.
+`Tests/Run level balance checks.lua` renders a quiet/loud/quiet synthetic guitar,
+runs the real worker with a scripted model (no API call), writes a phrase ride,
+and checks the resulting level spread. It also checks recovered envelope readback,
+long envelopes, the +6 dB limit, Original/Candidate, Revert, unchanged clip gain,
+and exact preservation of the user's track/master state. Close the panel and stop
+transport first; the test restores the song and reopens the panel.
 `Tests/Run mix checks.lua` uses an isolated REAPER tab and a
 synthetic sine, with all hardware outputs removed. It checks real native effects,
 automation, fader/pan edits, render setting restoration, A/B, rollback, manual-edit

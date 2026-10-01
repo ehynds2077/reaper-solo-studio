@@ -88,6 +88,9 @@ Open **Mix → Mix with AI** to connect OpenRouter, choose saved reference analy
 and create a reversible candidate mix. The local worker can adjust track levels
 and pan, add EQ/compression, write separate trim automation, render through
 REAPER, and compare measured loudness, spectrum, dynamics and stereo balance.
+It also checks vocal and guitar levels across the selected passage, corrects uneven
+phrases/sections with smooth volume rides, and requires a measured leveling review.
+Intentional dynamics, source clips and existing volume envelopes are preserved.
 Chat and progress appear after starting; **Give feedback…** refines the candidate.
 Switch **Original / Candidate** while the song plays (keys **1 / 2** in Mix),
 then **Keep mix** or **Revert**. Closing the panel preserves the unfinished pass.

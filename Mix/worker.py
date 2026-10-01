@@ -19,6 +19,7 @@ import urllib.error
 import urllib.request
 import urllib.parse
 import uuid
+import leveling
 
 os.environ['PATH'] = '/opt/homebrew/bin:/usr/local/bin:' + os.environ.get('PATH', '')
 ROOT = Path(__file__).resolve().parent
@@ -202,9 +203,9 @@ TOOLS = [
            ['track', 'effect', 'band', 'band_index', 'frequency_hz', 'gain_db']),
     schema('set_effect_parameter', 'Set a parameter on a newly added effect. Use inspection/readback, never assume normalized units. Change <=0.20 per call; render after processing changes.',
            {'track': TRACK, 'effect': FX, 'parameter': {'type': 'integer', 'minimum': 0}, 'normalized': number(0, 1)}, ['track', 'effect', 'parameter', 'normalized']),
-    schema('set_trim_automation', 'Replace the dedicated trim envelope with linear points in project seconds, bounded to the chosen excerpt. Existing automation stays intact. Include zero dB endpoints.',
-           {'track': TRACK, 'points': {'type': 'array', 'minItems': 2, 'maxItems': 64,
-            'items': {'type': 'object', 'properties': {'seconds': number(0, 86400), 'db': number(-12, 3)},
+    schema('set_trim_automation', 'Replace the WHOLE session-owned trim envelope: inspect_project trim_envelopes shows existing rides to retain/merge on resume. Linear points in absolute project seconds, within the selected passage, -12 to +6 dB, up to 256 points. Smooth phrase/section rides; zero dB at passage endpoints. Existing user automation and source clips stay intact.',
+           {'track': TRACK, 'points': {'type': 'array', 'minItems': 2, 'maxItems': 256,
+            'items': {'type': 'object', 'properties': {'seconds': number(0, 86400), 'db': number(-12, 6)},
                       'required': ['seconds', 'db'], 'additionalProperties': False}}}, ['track', 'points']),
     schema('measure_track', 'Measure one track solo-in-place, including routing, shared returns and master FX; not a dry stem. Defaults to the shared 30-second diagnostic window. Supply start/duration to inspect another section, or full_passage=true. Compare with the mix over the SAME window.', {'track': TRACK, **WINDOW}, ['track']),
     schema('measure_mix', 'Measure the mix through actual master FX: LUFS, peaks, crest, spectrum, stereo and time envelopes. Defaults to the shared 30-second diagnostic window. Supply start/duration for another section, or full_passage=true. Final review always verifies the entire selected passage.', WINDOW, []),
@@ -236,6 +237,11 @@ TOOLS.extend([
     schema('measure_tracks', 'Compare up to 16 track contributions over the SAME project-time window in one request. Returns a side-by-side summary plus numeric profiles. Each contribution still requires a sequential solo-in-place render unless cached; includes shared returns/master, NOT isolated dry stems. Choose informative tracks; do not routinely render every track. Errors are reported per track.',
            {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_READS, 'items': TRACK},
             **WINDOW}, ['tracks']),
+    schema('analyze_track_levels', 'Full selected-passage vocal/guitar level check, NOT the 30-second window. Measures the processed mix and up to 8 selected contributions, reusing valid renders. Returns activity-gated phrase windows, section levels and track-to-mix balance proxies to find disappearing/jumping-out parts. No edits. Repeat after the final edits to verify rides before review_level_balance.',
+           {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': 8, 'items': TRACK}}, ['tracks']),
+    schema('review_level_balance', 'Record the measured leveling outcome for a track after analyze_track_levels at the CURRENT mix settings. Explain corrected times/gains, or why the measured dynamics should stay. automated requires session trim rides; unmeasurable requires a failed level analysis and remains visibly unverified. This does not edit audio.',
+           {'track': TRACK, 'decision': {'type': 'string', 'enum': ['automated', 'already_consistent', 'intentional_dynamics', 'unmeasurable']},
+            'reason': {'type': 'string'}}, ['track', 'decision', 'reason']),
 ])
 TOOL_SPECS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS}
 
@@ -515,6 +521,42 @@ results and repair the failed/remainder only, never blindly replay all additions
 Up to 64 edits fit one batch; the session still has a 24-added-effect limit,
 including trim processors. Each measurement and edit counts toward normal limits.
 
+REQUIRED LEVEL-BALANCE PASS, especially vocals and guitars:
+Overall LUFS or one good chorus does not prove a balanced song. The initial context
+lists level_balance_targets inferred from contributing vocal/guitar names. Inspect
+routing/roles and include other relevant sources as needed. Analyze their FULL
+selected passage with analyze_track_levels (up to eight sources together). This is
+a purposeful full-song check, not a routine render of every drum microphone. Use
+its active phrase/section summaries and same-time mix comparison to find parts
+that jump out or disappear. Track-to-mix ratios are imperfect proxies because of
+shared/master processing; use finer targeted measurements for ambiguous passages.
+
+Aim for consistent musical prominence: lead vocals remain present, guitars support
+them, and no accidental section dominates or vanishes. This does NOT mean equal
+RMS/LUFS for every instrument or flattening verses, chorus lifts, fills and solos.
+Fix sustained local level problems explicitly with set_trim_automation; one static
+fader, compressor, or master limiter is not a substitute for section/phrase rides.
+Use the fader for the overall balance, compression for short-term dynamics, and
+smooth trim rides for phrases/sections. Start with measured 1-4 dB rides when useful;
+larger supported corrections are allowed within -12/+6 dB. Never boost gaps,
+breaths, bleed, reverb tails, missing media or near-silence to match active playing.
+Use ramps rather than abrupt jumps or frantic syllable-by-syllable normalization.
+Respect intentional song dynamics and the user's requested direction.
+
+Trim is a dedicated post-FX gain effect, not source clip gain. Do not edit audio
+items or existing user envelopes. set_trim_automation REPLACES the complete owned
+envelope: read inspect_project trim_envelopes and preserve/merge earlier useful
+rides, including on resume. Use absolute project seconds, strict point ordering,
+and zero-dB points at both SELECTED PASSAGE boundaries, not at every diagnostic
+window. Budget trim processors within the 24-effect limit before adding optional FX.
+
+After the final source/master edits, rerun analyze_track_levels for the required
+sources and call review_level_balance for each. State what rides changed and where,
+or give a measured musical reason for leaving dynamics intact. When the full-song
+check exposes a remaining level problem, fix and recheck it rather than merely
+checking a box. Do not claim leveling is finished if evidence is missing, stale,
+or unmeasurable. Report any budget/tool limit and the affected tracks explicitly.
+
 Preserve timing and phase relationships. No edits of items, takes, inputs, routing
 or existing plugins. Do not hard-pan individual close drum microphones; keep related
 mics coherent. Avoid boost cascades through folders. Stop on silent/empty projects.
@@ -573,6 +615,11 @@ class Session:
         self.measurement_error = None
         self.activity = None
         self.failure = None
+        self.mix_revision = 0
+        self.level_targets = []
+        self.level_reports = {}
+        self.level_reviews = {}
+        self.trim_edits = set()
 
     def trace(self, kind, **details):
         # Append-only per worker pass. No provider headers or opaque reasoning.
@@ -603,7 +650,9 @@ class Session:
             'responses': self.responses, 'completion_reason': self.completion_reason,
             'measurement_timings': self.timings, 'visual_analysis': self.visual_status,
             'measurement_error': self.measurement_error, 'activity': self.activity,
-            'failure': self.failure, 'pass_id': self.nonce})
+            'failure': self.failure, 'pass_id': self.nonce,
+            'level_balance': {'targets': self.level_targets, 'reviews': self.level_reviews,
+                              'remaining': self.leveling_issues()}})
 
     def queue_image(self, path, caption):
         # Only our own locally generated, bounded PNGs are eligible for upload.
@@ -744,7 +793,7 @@ class Session:
             if args.get('effect', '').startswith('$'):
                 args['effect'] = effects[args['effect'][1:]]['effect']
             self.publish('Mix batch %d/%d · %s…' % (index, len(operations), name.replace('_', ' ')), 'tool')
-            result = self.bridge(name, args)
+            result = self.mix_edit(name, args)
             results.append({'index': index, 'tool': name, 'track': args['track'], 'result': result})
             if result.get('error'):
                 return {'error': 'Operation %d failed: %s. %d earlier edits remain applied. Repair the failed/remainder only.' % (index, result['error'], index - 1),
@@ -812,13 +861,94 @@ class Session:
             return self.inspect_effects(args['effects'])
         if name == 'measure_tracks':
             return self.measure_tracks(args)
+        if name == 'analyze_track_levels':
+            return self.analyze_track_levels(args['tracks'])
+        if name == 'review_level_balance':
+            return self.review_level_balance(args)
         if name == 'measure_mix':
             return self.measure('Candidate %d' % len(self.measurements), window=self.measurement_window(args))
         if name == 'measure_track':
             return self.measure('Track contribution', args['track'], window=self.measurement_window(args))
         if name == 'view_arrangement':
             return self.arrangement(args)
+        if name in EDIT_TOOLS:
+            return self.mix_edit(name, args)
         return self.bridge(name, args)
+
+    def mix_edit(self, name, args):
+        # Even a failed plugin operation can partially change audio. Old level
+        # evidence cannot approve the candidate after any attempted mix edit.
+        self.mix_revision += 1
+        result = self.bridge(name, args)
+        if name == 'set_trim_automation' and not result.get('error'):
+            if any(abs(point['db']) > .01 for point in args['points']):
+                self.trim_edits.add(args['track'])
+            else:
+                self.trim_edits.discard(args['track'])
+        return result
+
+    def leveling_issues(self):
+        issues = []
+        for target in self.level_targets:
+            review = self.level_reviews.get(target['track'])
+            if not review or review['revision'] != self.mix_revision:
+                issues.append(target['name'] + ': full-passage level balance needs analysis/review at the current settings.')
+            elif review['decision'] == 'unmeasurable':
+                issues.append(target['name'] + ': level balance could not be verified (' + review['reason'] + ').')
+        return issues
+
+    def analyze_track_levels(self, tracks):
+        if len(set(tracks)) != len(tracks) or 'MASTER' in tracks:
+            raise ValueError('Choose unique contributing track GUIDs, not MASTER.')
+        self.batch_budget(len(tracks) + 2)
+        project = self.bridge('inspect_project', {})
+        if project.get('error'):
+            return project
+        by_id = {row['id']: row for row in project['tracks']}
+        if any(track not in by_id for track in tracks):
+            raise ValueError('Unknown track; inspect_project for current GUIDs.')
+        self.project = project
+        bounds = list(self.config['bounds'])
+        self.publish('Checking vocal/guitar levels across the full selected passage…')
+        mix = self.measure('Level-balance mix', window=bounds)
+        reports = []; errors = []
+        for index, track in enumerate(tracks, 1):
+            self.publish('Level balance %d/%d · %s…' % (index, len(tracks), by_id[track]['name']), 'tool')
+            try:
+                profile = self.measure('Level-balance contribution', track, window=bounds)
+                report = leveling.level_report(profile, mix, bounds, project.get('regions', []))
+                report.update(track=track, name=by_id[track]['name'])
+                self.level_reports[track] = {'revision': self.mix_revision, 'report': report}
+                reports.append(report)
+            except ValueError as error:
+                failure = {'track': track, 'name': by_id[track]['name'], 'error': str(error)}
+                self.level_reports[track] = {'revision': self.mix_revision, **failure}
+                errors.append(failure)
+        write(self.dir / 'level-balance.json', self.level_reports)
+        result = {'measurement_bounds': bounds, 'reports': reports, 'errors': errors,
+                  'next_step': 'Correct accidental phrase/section jumps with smooth trim rides, then reanalyze after the final edits and review_level_balance for each source. Preserve intentional dynamics.'}
+        if not reports:
+            result['error'] = 'No tracks supplied usable level evidence; see individual errors.'
+        return result
+
+    def review_level_balance(self, args):
+        track = args['track']; decision = args['decision']; reason = args['reason'].strip()
+        report = self.level_reports.get(track)
+        if not report or report['revision'] != self.mix_revision:
+            raise ValueError('Run analyze_track_levels for this track after the latest edits before reviewing it.')
+        if not reason:
+            raise ValueError('Explain the measured outcome or musical reason.')
+        if bool(report.get('error')) != (decision == 'unmeasurable'):
+            raise ValueError('A failed measurement must be reported as unmeasurable; successful evidence needs a measured decision.')
+        owned_trim = any(row.get('track') == track and any(abs(point['db']) > .01 for point in row.get('points', []))
+                         for row in self.project.get('trim_envelopes', []))
+        if decision == 'automated' and track not in self.trim_edits and not owned_trim:
+            raise ValueError('No session trim automation exists for this track; apply rides or choose an accurate decision.')
+        review = {'revision': self.mix_revision, 'decision': decision, 'reason': reason}
+        self.level_reviews[track] = review
+        name = report.get('report', report).get('name', track)
+        self.publish('Level balance · ' + name + ' · ' + decision.replace('_', ' ') + ': ' + reason, 'tool')
+        return {'track': track, **review, 'remaining': self.leveling_issues()}
 
     def measure(self, label, track_id=None, window=None, _retry=False):
         bounds = list(window if window is not None else self.config['bounds'])
@@ -941,6 +1071,7 @@ class Session:
             if project.get('capabilities', {}).get('mix_tools_version', 0) < 3:
                 raise RuntimeError('Reopen Solo Studio to load the updated mixing controls, then start a new pass.')
             self.project = project
+            self.level_targets = leveling.targets(project)
             if self.config.get('visual_analysis', True):
                 self.publish('Checking whether the selected model supports evidence images…')
                 support = image_support(self.config.get('model', DEFAULT_MODEL))
@@ -967,7 +1098,8 @@ class Session:
             messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps({
                 'direction': self.config.get('direction', 'Natural indie rock; clear vocals, punchy drums, preserve dynamics.'),
                 'excerpt_seconds': self.config['bounds'], 'diagnostic_seconds': self.diagnostic_bounds, 'project': project,
-                'original': original, 'references': refs}, allow_nan=False)}]
+                'original': original, 'references': refs,
+                'level_balance_targets': self.level_targets}, allow_nan=False)}]
             self.attach_images(messages)
             rounds = min(MAX_ROUNDS, max(1, int(self.config.get('rounds', DEFAULT_ROUNDS))))
             empty_retries = 0
@@ -1023,17 +1155,19 @@ class Session:
                         break
                     checked = self.measure('Completion check')
                     issues = reference_issues(checked, refs)
+                    level_issues = self.leveling_issues()
+                    issues.extend(level_issues)
                     peak = checked.get('loudness', {}).get('true_peak_dbtp')
                     if peak is None or peak > -1:
                         issues.append('Output true peak must be measurable and at or below -1 dBTP.')
                     if issues and completion_checks < 3 and turn + 1 < rounds and not cost_reached:
                         completion_checks += 1
-                        self.publish('Reference targets remain off: ' + ' '.join(issues) + ' Continuing the pass.')
+                        self.publish('Mix checks still need work: ' + ' '.join(issues) + ' Continuing the pass.')
                         messages.append({'role': 'user', 'content': json.dumps({
-                            'completion_check': 'The measured result is still off-target. Continue mixing with the available tools. Use MASTER processing/limiting for output density; address source balance/EQ for tonal gaps. Do not stop at a token fader change.',
+                            'completion_check': 'The candidate still has unfinished checks. For level-balance gaps, use analyze_track_levels across the full passage, correct accidental phrase/section differences with trim automation, reanalyze after edits, and review_level_balance for each required source. Do not use master loudness as a substitute for leveling. For reference gaps use source balance/EQ and appropriate MASTER processing.',
                             'remaining_gaps': issues, 'latest_measurement': checked}, allow_nan=False)})
                         continue
-                    self.completion_reason = 'cost_limit' if cost_reached else ('reference_gap' if issues else 'measured_completion')
+                    self.completion_reason = 'cost_limit' if cost_reached else ('level_balance_incomplete' if level_issues else 'reference_gap' if issues else 'measured_completion')
                     break
                 if len(calls) > 32:
                     # Reject the entire oversized batch without killing a recoverable pass.
@@ -1081,11 +1215,13 @@ class Session:
                 self.publish('Candidate needs attention: true peak exceeds -1 dBTP or audio is unmeasurable. Revert or adjust before keeping.')
             else:
                 self.state = 'review'
+                if self.leveling_issues():
+                    self.publish('Level balance remains unverified: ' + ' '.join(self.leveling_issues()) + ' Audition or continue the pass; a full-song loudness match alone does not finish leveling.')
                 if self.reference_issues:
                     self.publish('Pass ended with reference targets still off: ' + ' '.join(self.reference_issues) + ' Audition, give feedback, or revert; this is not a completed reference match.')
-                elif self.completion_reason in ('incomplete_model_response', 'round_limit', 'cost_limit', 'repeated_tool_errors'):
+                elif self.completion_reason in ('incomplete_model_response', 'round_limit', 'cost_limit', 'repeated_tool_errors', 'level_balance_incomplete'):
                     self.publish('Pass stopped (' + self.completion_reason.replace('_', ' ') + '). Measured candidate available for review; further work may be needed.')
-                else:
+                elif not self.leveling_issues():
                     self.publish('Candidate ready. Compare Original / Candidate, then Keep or Revert.')
         except Exception as error:
             self.failure = {'type': type(error).__name__, 'message': str(error), 'activity': self.activity}

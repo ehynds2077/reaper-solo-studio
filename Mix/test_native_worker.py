@@ -27,6 +27,10 @@ def main():
                          'ratio':2,'attack_ms':5,'release_ms':100,'makeup_db':6}),
                         ('configure_limiter',{'track':'MASTER','effect':limiter,'gain_db':9,'ceiling_db':-1.2}),
                         ('measure_mix',{})]
+        elif len(calls)==3:
+            operations=[('analyze_track_levels',{'tracks':[track]}),
+                        ('review_level_balance',{'track':track,'decision':'already_consistent',
+                         'reason':'Full-passage synthetic sustained tone has stable active levels.'})]
         else:
             return {'choices':[{'message':{'role':'assistant','content':'Synthetic test complete; measured candidate ready.'}}]}
         if operations:
@@ -37,7 +41,7 @@ def main():
     worker.image_support=lambda model: True
     state=worker.Session(directory,scripted_model).run()
     assert state=='review',worker.read(directory/'status.json')
-    assert len(calls)==3
+    assert len(calls)==4
     data=worker.read(directory/'measurements.json')
     timings=worker.read(directory/'status.json')['measurement_timings']
     assert timings[-1]['reused'] and timings[-2]['reused'], 'Unchanged completion/final checks must reuse rendering and analysis'

@@ -20,7 +20,7 @@ local function active_envelope(tr,key)
  local ok,chunk=R.GetEnvelopeStateChunk(env,'',false)
  return not ok or chunk:match('\nACT%s+1')~=nil
 end
-local function list_tracks(proj)
+local function list_tracks(proj,bounds)
  local out=J.array()
  for i=0,R.CountTracks(proj)-1 do
   local tr=R.GetTrack(proj,i);local _,name=R.GetTrackName(tr)
@@ -30,10 +30,20 @@ local function list_tracks(proj)
    local dest=R.GetTrackSendInfo_Value(tr,0,n,'P_DESTTRACK')
    sends[#sends+1]={destination=dest and R.GetTrackGUID(dest)or '',volume_db=db(R.GetTrackSendInfo_Value(tr,0,n,'D_VOL'))}
   end
+  local playing_items
+  if bounds then
+   playing_items=0;local fixed=R.GetMediaTrackInfo_Value(tr,'I_NUMFIXEDLANES')>0
+   for n=0,R.CountTrackMediaItems(tr)-1 do
+    local item=R.GetTrackMediaItem(tr,n);local pos=R.GetMediaItemInfo_Value(item,'D_POSITION')
+    local lane=R.GetMediaItemInfo_Value(item,'C_LANEPLAYS')
+    if pos<bounds[2]and pos+R.GetMediaItemInfo_Value(item,'D_LENGTH')>bounds[1]
+     and R.GetMediaItemInfo_Value(item,'B_MUTE')==0 and lane~=-1 and (not fixed or lane>0)then playing_items=playing_items+1 end
+   end
+  end
   out[#out+1]={id=R.GetTrackGUID(tr),name=name,volume_db=db(R.GetMediaTrackInfo_Value(tr,'D_VOL')),
    pan=R.GetMediaTrackInfo_Value(tr,'D_PAN'),pan_mode=R.GetMediaTrackInfo_Value(tr,'I_PANMODE'),
    muted=R.GetMediaTrackInfo_Value(tr,'B_MUTE')~=0,solo=R.GetMediaTrackInfo_Value(tr,'I_SOLO')~=0,
-   items=R.CountTrackMediaItems(tr),parent=parent and R.GetTrackGUID(parent)or '',sends=sends,
+   items=R.CountTrackMediaItems(tr),playing_items_in_passage=playing_items,parent=parent and R.GetTrackGUID(parent)or '',sends=sends,
    volume_automated=active_envelope(tr,'<VOLENV2'),pan_automated=active_envelope(tr,'<PANENV2'),effects=fx}
  end
  return out
@@ -178,7 +188,17 @@ function B.inspect(s)
  end
  local master=R.GetMasterTrack(s.project);local effects=J.array()
  for i=0,R.TrackFX_GetCount(master)-1 do local _,name=R.TrackFX_GetFXName(master,i,'');effects[#effects+1]={name=name,enabled=R.TrackFX_GetEnabled(master,i)}end
- return {tracks=list_tracks(s.project),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,
+ local trims=J.array()
+ for _,row in ipairs(s.owned)do if row.trim then
+  local tr=track(row.track,s.project);local idx=fx_index(tr,row.id)
+  local env=R.GetFXEnvelope(tr,idx,0,false);local points=J.array()
+  if env then for i=0,R.CountEnvelopePointsEx(env,-1)-1 do
+   local ok,seconds,value=R.GetEnvelopePointEx(env,-1,i)
+   if ok then points[#points+1]={seconds=seconds,db=value}end
+  end end
+  trims[#trims+1]={track=row.track,effect=row.id,points=points}
+ end end
+ return {tracks=list_tracks(s.project,s.bounds),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,trim_envelopes=trims,
   capabilities={mix_tools_version=3,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
   master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
@@ -363,9 +383,9 @@ function B.execute(s,name,a)
    local _,label=R.TrackFX_GetParamName(tr,idx,a.parameter,'');local _,value=R.TrackFX_GetFormattedParamValue(tr,idx,a.parameter,'')
    return {name=label,formatted=value,normalized=R.TrackFX_GetParamNormalized(tr,idx,a.parameter)}
   elseif name=='set_trim_automation'then
-   assert(type(a.points)=='table'and #a.points>=2 and #a.points<=64,'Supply 2–64 automation points')
+   assert(type(a.points)=='table'and #a.points>=2 and #a.points<=256,'Supply 2–256 automation points')
    local previous=-1
-   for _,point in ipairs(a.points)do finite(point.seconds,s.bounds[1],s.bounds[2]);finite(point.db,-12,3);assert(point.seconds>previous,'Points must be strictly ordered');previous=point.seconds end
+   for _,point in ipairs(a.points)do finite(point.seconds,s.bounds[1],s.bounds[2]);finite(point.db,-12,6);assert(point.seconds>previous,'Points must be strictly ordered');previous=point.seconds end
    assert(a.points[1].seconds==s.bounds[1]and a.points[#a.points].seconds==s.bounds[2]and a.points[1].db==0 and a.points[#a.points].db==0,'Use zero dB endpoints at excerpt boundaries')
    local tr=track(a.track,s.project);local idx
    for _,row in ipairs(s.owned)do if row.track==a.track and row.trim then idx=fx_index(tr,row.id)end end
