@@ -51,10 +51,14 @@ function B.plugins()
 end
 function B.diagnostics(s)
  local project,path=R.EnumProjects(-1,'')
+ local offline_inactive
+ if R.get_config_var_string then local ok,value=R.get_config_var_string('offlineinact');if ok then offline_inactive=value~='0'end end
  local out={time=os.time(),project_path=path,transport=R.GetPlayState(),
+  media_offline_when_inactive=offline_inactive,
   engine_running=R.Audio_IsRunning and R.Audio_IsRunning()~=0,
   all_project_transport=R.GetAllProjectPlayStates and R.GetAllProjectPlayStates()or nil,
   project_version=R.GetProjectStateChangeCount(project),expected_version=s and s.version,
+  undo_label=R.Undo_CanUndo2 and R.Undo_CanUndo2(project),
   session_project_path=s and s.project_path,mode=s and s.mode,render_count=s and s.renders}
  if R.GetMasterTrack and R.TrackFX_GetCount then
   local master=R.GetMasterTrack(project);local effects=J.array()
@@ -119,6 +123,7 @@ function B.recover(path)
  end
  data.path=path;data.project=p;data.version=R.GetProjectStateChangeCount(p);data.renders=0
  data.recovery_changed=changed
+ B.trace(data,'checkpoint_recovered',B.diagnostics(data))
  return data
 end
 function B.find_session(root,legacy)
@@ -206,6 +211,11 @@ local function render(s,bounds,scope)
  for k in pairs(numbers)do oldn[k]=R.GetSetProjectInfo(s.project,k,0,false)end
  for k in pairs(strings)do local _,v=R.GetSetProjectInfo_String(s.project,k,'',false);olds[k]=v end
  local ok,err=xpcall(function()
+  -- The offline-inactive preference can close source media between agent calls.
+  -- Programmatic render does not reliably reopen it, although pressing Play does.
+  -- Bring this project's media online for the render; leave the preference alone.
+  R.Main_OnCommand(40101,0) -- Item: Set all media online.
+  B.trace(s,'render_media_online',{render=pattern})
   for k,v in pairs(numbers)do R.GetSetProjectInfo(s.project,k,v,true)end
   for k,v in pairs(strings)do R.GetSetProjectInfo_String(s.project,k,v,true)end
   B.trace(s,'render_started',{render=pattern,bounds=bounds,scope=scope,context=B.diagnostics(s)})

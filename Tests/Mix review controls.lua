@@ -3,6 +3,7 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0;local function check(v,name)assert(v,name);passed=passed+1;print('PASS '..name)end
 local state,transport,session,compared,kept,reverted,buttons,archived,foreign,extstate
 local settings,writes,launches,input,job,legacy,measurement_error,measurements,labels
+local poll_clock,bridge_request,bridge_calls=0,nil,0
 local J={array=function(t)return t or {}end,write=function(path,value)writes[path]=value end}
 function J.read(path)
  if path:match('/status.json$')then return {state=state,events={},measurements=measurements or {},measurement_error=measurement_error}end
@@ -11,9 +12,11 @@ function J.read(path)
  if path:match('/library.json$')then return {references={},default=''}end
  if path:match('/snapshot.json$')then return {finished=false,project_path='other.rpp'}end
  if path:match('/connection.json$')then return {connected=true}end
+ if path:match('/request.json$')then return bridge_request end
 end
 local B={json=J,find_session=function()return not foreign and session or nil end,
  trace=function()end,diagnostics=function()return {transport=transport}end,
+ execute=function()bridge_calls=bridge_calls+1;return {}end,
  guard=function()assert(transport==0,'Stop transport')end,
  compare=function(_,mode)compared=mode;session.mode=mode end,
  keep=function()kept=true;session.finished=true end,
@@ -28,7 +31,7 @@ function dofile(path)
  return original_dofile(path)
 end
 reaper={RecursiveCreateDirectory=function()end,GetExtState=function(_,key)return key=='mix_session'and legacy or ''end,
- GetPlayState=function()return transport end,time_precise=function()return 0 end,
+ GetPlayState=function()return transport end,time_precise=function()return poll_clock end,
  GetSet_LoopTimeRange2=function()return 0,20 end,SetExtState=function(_,_,v)extstate=v end,
  GetUserInputs=function()return true,input end,ExecProcess=function()launches=launches+1;return ''end}
 gfx={setfont=function()end,rect=function()end,measurestr=function(v)return #v*7 end}
@@ -38,7 +41,7 @@ local ui={text=function(label)labels[label]=true end,color=function()end,colors=
 local function panel(t,status,mode,changed,other_project)
  transport=t;state=status or 'review';session={path='/nonexistent-test-mix',mode=mode or 'candidate',recovery_changed=changed}
  compared=nil;kept=false;reverted=false;archived=false;foreign=other_project;extstate=nil;buttons={};labels={}
- writes={};launches=0;job={direction='Original direction',rounds=20,stop_after_usd=2}
+ writes={};launches=0;job={direction='Original direction',rounds=20,stop_after_usd=2};poll_clock=0;bridge_request=nil;bridge_calls=0
  legacy=other_project and '/other-project-mix'or session.path
  local x=factory({ns='test'},ui);x.draw(0,0,1200,700);return x
 end
@@ -65,10 +68,15 @@ panel(0,'cancelled');check(buttons['Give feedback…'].enabled and not buttons['
 panel(1,'review','original');check(not buttons['Keep mix'].enabled and buttons.Candidate.enabled,'Recovered Original can switch back but cannot be kept')
 panel(0,'review','original');check(not buttons['Continue mixing'].enabled,'Continue requires Candidate')
 local resumed=panel(0,'review_warning');input='80,2';buttons['Pass limits: 60 rounds…'].run()
+bridge_request={id='old-worker-99',name='add_effect',arguments={}}
 buttons['Continue mixing'].run()
 check(launches==1 and job.resume and job.rounds==80 and job.stop_after_usd==2,'Continue uses latest limits instead of the old twenty-round job')
 check(not archived and not kept and not reverted and resumed.pending(),'Continue preserves original comparison and session ownership')
 check(job.direction:find('reuse session%-owned effects')~=nil,'Continuation asks to reuse owned effects')
+state='running';poll_clock=1;resumed.poll()
+check(bridge_calls==0,'Recovered continuation cannot replay the old worker final effect edit')
+bridge_request={id='new-worker-1',name='inspect_project',arguments={}};poll_clock=2;resumed.poll()
+check(bridge_calls==1,'New worker requests are still processed after retiring the old request')
 settings={rounds=7,stop_after_usd=1};panel(0);input='Lift vocals';buttons['Give feedback…'].run()
 check(job.rounds==7 and job.stop_after_usd==1 and job.direction:find('Lift vocals',1,true),'Feedback preserves explicitly configured smaller budgets')
 settings=nil

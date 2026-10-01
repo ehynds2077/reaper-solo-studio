@@ -89,10 +89,13 @@ local function fixture(initial_view)
     end end
     if path:match('solo_mix.lua$')then return function()return {draw=function()f.mix_drawn=true end,poll=function()end,busy=function()return f.mix_busy end,
      close=function()f.mix_closed=(f.mix_closed or 0)+1 end,key=function()return false end}end end
+    if path:match('solo_mcp.lua$')then return function()return {poll=function()end,close=function()end}end end
     if path:match('solo_take_selection.lua$')then return dofile(path)end
     error('Unexpected module '..path)
   end},{__index=_G})
   assert(loadfile(root..'/Scripts/Solo Studio - Open recording panel.lua','t',env))()
+  f.startup_deferred=#f.labels==0 and type(f.frame)=='function'
+  f.frame() -- Complete the launching action before the first deferred UI frame.
   function f.mouse(x,y,down,mods)
     g.mouse_x=x;g.mouse_y=y;g.mouse_cap=(down and 1 or 0)|(mods or 0)
     f.frame()
@@ -104,6 +107,7 @@ local function check(ok,name)assert(ok,name);passed=passed+1;print('PASS: '..nam
 local function labeled(f,label)for _,v in ipairs(f.labels)do if v==label then return true end end;return false end
 local function open_template(f)f.menu_choice=5;f.click(f.gfx.w-90,128)end
 local template=fixture('timeline')
+check(template.startup_deferred,'First UI frame waits until the launching action has returned')
 check(not labeled(template,'Use selected tracks'),'Existing-track capture is absent from the main toolbar')
 open_template(template)
 check(template.menu.x==1036 and template.menu.y==145 and labeled(template,'Create new template')and labeled(template,'Use selected tracks'),'Instrument menu anchors below its button and opens the template window')

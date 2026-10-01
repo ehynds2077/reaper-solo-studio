@@ -12,7 +12,7 @@ for i=-1,count-1 do
  local tr=i==-1 and R.GetMasterTrack(original)or R.GetTrack(original,i)
  local ok,chunk=R.GetTrackStateChunk(tr,'',false);assert(ok);chunks[i]=chunk
 end
-local project,session,job;local passed=0;local resets=0;local renders=0
+local project,session,job;local passed=0;local resets=0;local renders=0;local media_opens=0
 local native_command=R.Main_OnCommand
 local function check(v,label)assert(v,label);passed=passed+1;log:write('PASS: '..label..'\n');log:flush()end
 local function cleanup(ok,err)
@@ -45,6 +45,7 @@ local ok,err=xpcall(function()
  R.SetMediaItemInfo_Value(item,'D_LENGTH',8)
  session=B.begin(job,{0,8});J.write(job..'/config.json',{bounds={0,8},visual_analysis=false,rounds=3})
  R.Main_OnCommand=function(command,flag)
+  if command==40101 then media_opens=media_opens+1 end
   if command~=42230 then return native_command(command,flag)end
   renders=renders+1
   if renders~=2 then return native_command(command,flag)end
@@ -64,6 +65,12 @@ local function tick()
   local request=J.read(job..'/request.json')
   if request and request.id~=handled then
    handled=request.id
+   if request.name=='measure_mix'then
+    -- Reproduce source availability after REAPER has gone inactive. This must
+    -- recover before rendering, without relying on a playback/engine restart.
+    native_command(40100,0) -- Item: Set all media offline.
+    session.version=R.GetProjectStateChangeCount(project)
+   end
    if request.name=='recover_silent_render'then resets=resets+1 end
    local accepted,result=pcall(B.execute,session,request.name,request.arguments)
    J.write(job..'/response-'..request.id..'.json',accepted and {result=result}or {error=tostring(result),fatal=true})
@@ -72,6 +79,7 @@ local function tick()
   if result then
    check(result.ok,'Worker recovered to measured review: '..tostring(result.error or 'valid output'))
    check(resets==1 and renders==3,'Exactly one engine restart and three renders including original')
+   check(media_opens==3,'Every fresh render reopens offline media; cached renders are reused')
    check(R.Audio_IsRunning()~=0,'Audio engine running after recovery')
    local cached=0;for _ in pairs(session.render_cache)do cached=cached+1 end
    check(cached==1,'Only the successful retry remains in render cache')

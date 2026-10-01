@@ -730,4 +730,6 @@ local function frame()
  end
  gfx.update();if ch>=0 and ch~=27 then R.defer(frame) end
 end
-frame()
+-- Let the action that launches this script finish before recovering a mixer
+-- checkpoint. REAPER can advance its project counter when that action returns.
+R.defer(frame)

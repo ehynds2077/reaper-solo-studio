@@ -81,10 +81,19 @@ without restarting audio. The review panel marks a failed candidate unverified,
 disables Keep, and leaves Original/Revert available. Local failure details are
 saved to `failed-measurement.json`. This handles intermittent processing failures;
 successful real-time playback alone does not validate an offline render.
+Before each fresh render, the bridge runs REAPER's **Item: Set all media online**.
+REAPER's inactive-app preference can close source files between agent calls;
+programmatic rendering could then produce silence even though playback reopened
+them correctly. The bridge leaves that global preference unchanged. Render traces
+record this step and the inactive-media setting for diagnosis.
 
 The [local MCP server](../MCP/README.md) exposes start/resume/cancel and diagnostic
 tools to Codex. New passes retain append-only worker and REAPER logs, with the
 actual guard/timeout/close reason saved separately from generic worker cancellation.
+The panel defers its first frame until its launching REAPER action returns, so
+recovering a mix does not capture a stale project counter during startup.
+Continuing a recovered pass also retires its previous bridge request before the
+new worker starts; an old render or effect edit is never replayed on resume.
 
 **Visual analysis** is on by default and can be disabled in mix setup. With an
 image-capable model, the worker attaches small PNG evidence charts to its model

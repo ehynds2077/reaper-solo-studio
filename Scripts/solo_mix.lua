@@ -190,12 +190,18 @@ return function(M,ui,options)
  local function resume(value,options)
   assert(not X.busy()and state,'Wait for the current pass before giving feedback.')
   assert(not worker_active(),'The previous worker is still stopping. Wait before continuing.')
-  B.guard(session,true);assert(session.mode=='candidate','Select Candidate first.')
+  local guarded,reason=pcall(B.guard,session,true)
+  if not guarded then B.trace(session,'resume_rejected',{message=tostring(reason),context=B.diagnostics(session)});error(reason,0)end
+  assert(session.mode=='candidate','Select Candidate first.')
   local job=read(session.path..'/config.json');job.resume=true
   job.direction=job.direction..'\nUser feedback: '..value
   job.rounds=config.rounds;job.stop_after_usd=config.stop_after_usd
   for _,key in ipairs({'rounds','stop_after_usd','model','visual_analysis'})do if options and options[key]~=nil then job[key]=options[key]end end
   J.write(session.path..'/config.json',job)
+  -- A reopened panel has no in-memory handled ID. Retire the previous pass's
+  -- final request before publishing running, so it cannot replay during spawn.
+  local previous_request=read(session.path..'/request.json')
+  handled=previous_request and previous_request.id or ''
   os.remove(session.path..'/cancel')
   os.remove(session.path..'/panel-stop.json')
   B.trace(session,'resume_requested',{feedback=value,source=options and options.source or 'panel'})
