@@ -68,5 +68,19 @@ check(not pcall(B.compare,s,'candidate')and writes==before,'Incomplete candidate
 s=session();project='another song';before=writes
 check(not pcall(B.compare,s,'original')and writes==before,'Project switching blocks live A/B')
 check(undo==0,'Undo blocks are balanced')
+play=0;s=session();s.render_cache={bad={path='silent.wav'}}
+local resets,engine,other_play=0,1,1
+reaper.GetAllProjectPlayStates=function()return other_play end
+reaper.Audio_Quit=function()resets=resets+1;engine=0 end
+reaper.Audio_Init=function()engine=1 end -- Native API returns no values.
+reaper.Audio_IsRunning=function()return engine end
+check(not pcall(B.execute,s,'recover_silent_render',{})and resets==0,'Render recovery cannot interrupt another project transport')
+other_play=0;before=writes
+local recovered_audio=B.execute(s,'recover_silent_render',{})
+check(recovered_audio.restarted and resets==1 and engine==1 and writes==before and next(s.render_cache)==nil,'Recovery restarts the engine and clears render cache without editing mix settings')
+s.render_cache={bad={}};B.execute(s,'discard_measurements',{})
+check(next(s.render_cache)==nil and resets==1,'Discarding silent analysis clears the native cache without restarting audio')
+reaper.Audio_Init=function()end
+check(not pcall(B.execute,s,'recover_silent_render',{})and engine==0,'Unavailable audio device is reported instead of accepting an empty render')
 os.remove(path..'/snapshot.json');os.remove(path)
 print(passed..' mix comparison checks passed')

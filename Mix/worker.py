@@ -470,6 +470,11 @@ on the largest gaps; solo-render only tracks needed to resolve a specific questi
 The round budget is a maximum, not a target: finish when measured work is complete.
 If a tool returns an error, correct its arguments or choose another approach;
 do not repeat the same failed request unchanged.
+An unmeasurable render is NOT 0 LUFS and is not a reason to boost or neutralize
+processors. The worker discards failed analysis and may recover/re-render once.
+If a diagnostic window stays silent, inspect source activity and measure a known
+active window. Mix edits remain locked until a valid mix measurement succeeds.
+If the full passage stays unmeasurable, the pass stops for signal-path inspection.
 Rendering is expensive. Batch related fader/EQ/dynamics edits before measuring;
 do not request a solo render of every track as a routine inventory step. The shared
 diagnostic window is chosen from an energetic 30 seconds of the original passage.
@@ -565,6 +570,7 @@ class Session:
         self.visuals_enabled = False
         self.pending_images = []
         self.visual_status = {'enabled': False, 'attached': 0}
+        self.measurement_error = None
 
     def cancelled(self):
         return (self.dir / 'cancel').exists()
@@ -576,7 +582,8 @@ class Session:
             'events': self.events[-120:], 'calls': self.calls, 'cost_usd': self.cost,
             'measurements': self.measurements, 'reference_issues': self.reference_issues,
             'responses': self.responses, 'completion_reason': self.completion_reason,
-            'measurement_timings': self.timings, 'visual_analysis': self.visual_status})
+            'measurement_timings': self.timings, 'visual_analysis': self.visual_status,
+            'measurement_error': self.measurement_error})
 
     def queue_image(self, path, caption):
         # Only our own locally generated, bounded PNGs are eligible for upload.
@@ -774,6 +781,8 @@ class Session:
         if spec is None:
             raise ValueError('Unknown tool')
         validate(args, spec)
+        if self.measurement_error and (name in EDIT_TOOLS or name == 'apply_mix_batch'):
+            raise ValueError('Mix edits are paused after a failed render. Obtain a valid measure_mix result from an active passage before changing settings.')
         if name == 'apply_mix_batch':
             return self.apply_mix_batch(args['operations'])
         if name == 'inspect_effects':
@@ -788,7 +797,7 @@ class Session:
             return self.arrangement(args)
         return self.bridge(name, args)
 
-    def measure(self, label, track_id=None, window=None):
+    def measure(self, label, track_id=None, window=None, _retry=False):
         bounds = list(window if window is not None else self.config['bounds'])
         full = bounds == list(self.config['bounds'])
         self.publish('Measuring %s · %.0f seconds (%s)…' % (
@@ -819,6 +828,40 @@ class Session:
         expected = bounds[1] - bounds[0]
         if abs(profile['duration_seconds'] - expected) > .1:
             raise RuntimeError('Render was incomplete or had unexpected bounds. Cancel/revert and retry.')
+        loudness = profile.get('loudness', {})
+        valid = all(isinstance(loudness.get(key), (int, float)) and
+                    not isinstance(loudness.get(key), bool) and math.isfinite(loudness[key])
+                    for key in ('integrated_lufs', 'true_peak_dbtp'))
+        if not valid:
+            # Neither cache may recycle silence as a successful measurement.
+            self.analysis_cache.clear()
+            discarded = self.bridge('discard_measurements', {})
+            if discarded.get('error'):
+                raise RuntimeError('Could not discard a failed render. Reopen Solo Studio before continuing.')
+            self.timings.append({'label': label, 'bounds': bounds, 'track': track_id,
+                                 'render_seconds': round(render_time, 3),
+                                 'analysis_seconds': round(time.monotonic() - analysis_start, 3),
+                                 'reused': bool(cached), 'valid': False})
+            failure = {'label': label, 'bounds': bounds, 'track': track_id,
+                       'reason': 'silent_or_unmeasurable', 'render': path.name,
+                       'loudness': loudness, 'retried': _retry}
+            write(self.dir / 'failed-measurement.json', failure)
+            if track_id:
+                self.publish('Track contribution has no measurable audio in this passage; it was not cached.')
+                raise ValueError('Track contribution is silent or too quiet to measure in this passage. Check its activity/routing or choose another window; do not boost silence.')
+            self.measurement_error = failure
+            self.publish('Mix render has no measurable audio. This is not 0 LUFS; the failed render was discarded.')
+            if not _retry and self.project.get('capabilities', {}).get('silent_render_recovery'):
+                self.publish('Restarting the stopped audio engine and retrying this render once; mix settings stay unchanged.')
+                recovery = self.bridge('recover_silent_render', {})
+                if recovery.get('error'):
+                    raise RuntimeError('Mix paused: render recovery failed. ' + recovery['error'])
+                return self.measure(label, window=bounds, _retry=True)
+            # A genuinely empty diagnostic window is recoverable by choosing a
+            # different passage; an unmeasurable entire mix must stop the agent.
+            if not full:
+                raise ValueError('Mix diagnostic is silent or unmeasurable after recovery. Inspect source activity and choose another window before making mix edits.')
+            raise RuntimeError('Mix paused: the full passage is still silent or unmeasurable. No more AI edits were made after this failure. Original/Revert remain available; inspect playback and the signal path before continuing.')
         if not cached:
             self.analysis_cache[str(path)] = copy.deepcopy(profile)
         profile.update(title=label, measurement_bounds=bounds,
@@ -828,6 +871,7 @@ class Session:
             profile['scope'] = rendered['scope']
             profile['track'] = track_id
         else:
+            self.measurement_error = None
             if self.references:
                 profile['reference_comparison'] = reference_comparison(profile, self.references)
             if full:
@@ -839,7 +883,8 @@ class Session:
         elapsed = time.monotonic() - analysis_start
         self.timings.append({'label': label, 'bounds': bounds, 'track': track_id,
                              'render_seconds': round(render_time, 3),
-                             'analysis_seconds': round(elapsed, 3), 'reused': bool(cached)})
+                             'analysis_seconds': round(elapsed, 3), 'reused': bool(cached), 'valid': True,
+                             'recovered': _retry})
         self.publish('%s %s: %s LUFS, %s dBTP · render %.1fs, analysis %.1fs.' % (
             'Reused' if cached else 'Measured', label, profile['loudness']['integrated_lufs'],
             profile['loudness']['true_peak_dbtp'], render_time, elapsed))

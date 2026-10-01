@@ -71,6 +71,17 @@ with an empty cache. Cancelled/incomplete renders are never cached as valid
 measurements. The status feed separates rendering from analysis and reports their
 elapsed times; session status also saves measurement timings for diagnosis.
 
+Silent or unmeasurable output is a failed measurement, not 0 LUFS. Both render
+and analysis caches are cleared. For a failed mix measurement the worker restarts
+the audio engine once (only with transport stopped in every project), then renders
+the same passage again without changing mix settings. Persistent full-passage
+failure stops the pass; a silent diagnostic window blocks mix edits until another
+active window measures successfully. Empty track contributions return a tool error
+without restarting audio. The review panel marks a failed candidate unverified,
+disables Keep, and leaves Original/Revert available. Local failure details are
+saved to `failed-measurement.json`. This handles intermittent processing failures;
+successful real-time playback alone does not validate an offline render.
+
 **Visual analysis** is on by default and can be disabled in mix setup. With an
 image-capable model, the worker attaches small PNG evidence charts to its model
 requests alongside the numeric measurements:
@@ -261,6 +272,13 @@ plus Original/Candidate/Revert in a silent disposable project. It requires
 `Tests/mix-tone.wav`, stopped transport, and the Solo Studio panel closed; it
 restores the original song, checks its track contents, and reopens the panel.
 The scripted worker makes no network/model calls.
+`Tests/Run render recovery checks.lua` uses the same synthetic fixture and
+requirements. It injects one valid-length silent WAV, then checks that the real
+worker clears both caches, restarts the stopped engine once, renders audible
+output, and reaches measured review without changing candidate settings. Python
+tests separately cover persistent silence, unavailable audio, diagnostic edit
+locks, silent tracks, and genuine numeric 0 LUFS. Lua review checks cover the
+unverified label and Keep/Original/Revert availability after failure.
 `Tests/Run mix checks.lua` uses an isolated REAPER tab and a
 synthetic sine, with all hardware outputs removed. It checks real native effects,
 automation, fader/pan edits, render setting restoration, A/B, rollback, manual-edit

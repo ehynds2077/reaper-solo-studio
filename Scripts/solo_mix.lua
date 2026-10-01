@@ -253,7 +253,8 @@ return function(M,ui)
    text(label,x,y+52,4)
    if first then
     text('Original: '..metric(first.loudness.integrated_lufs)..' LUFS  /  '..metric(first.loudness.true_peak_dbtp)..' dBTP',x+355,y+58,3,C.muted)
-    if last and #measurements>1 then text('Candidate: '..metric(last.loudness.integrated_lufs)..' LUFS  /  '..metric(last.loudness.true_peak_dbtp)..' dBTP',x+730,y+58,3,C.blue)end
+    if state.measurement_error then text('Candidate: unverified (render failed)',x+730,y+58,3,C.gold)
+    elseif last and #measurements>1 then text('Candidate: '..metric(last.loudness.integrated_lufs)..' LUFS  /  '..metric(last.loudness.true_peak_dbtp)..' dBTP',x+730,y+58,3,C.blue)end
    end
    local transport=R.GetPlayState();local stopped=transport==0;local reviewing=not busy and transport&4==0
    button('Original',x,y+85,105,32,function()B.compare(session,'original')end,session.mode=='original'and C.blue or nil,reviewing)
