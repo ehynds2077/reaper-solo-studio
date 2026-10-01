@@ -166,6 +166,8 @@ Switching keeps a running song at its current position. When stopped, it prepare
 
 Open **Tracks** beside Timeline, Takes, and Mix to see every project track, its folder indentation, recording set, input, item count, and effect count. Click a row to select that track in REAPER. Use **+ Instrument** to add another guitar, vocal, or other recording part; each addition can have its own name and recording set.
 
+New guitars, vocals, and bass tracks are numbered automatically: **Guitar 1**, **Guitar 2**, and so on. Numbering continues after the highest matching track or group name in the current project, including tracks added in REAPER. An existing plain **Guitar** counts as number 1, so the next addition is **Guitar 2**. Existing names and custom drum microphone names are preserved; **Rename...** still lets you choose your own names.
+
 - **Rename...** changes the native track name. A single-track recording set follows that name, so doubled guitars or backing vocals are easy to distinguish in the recording-set tabs. Multitrack set names stay separate from microphone names.
 - **Delete...** shows a confirmation with the number of items and effects being removed. Deleting a folder includes its child tracks and states that explicitly. Source audio files remain on disk. **Cmd+Z in REAPER** restores the operation, including recordings, effects, and folder structure.
 - Deleting one microphone leaves the surviving tracks available in their recording set. Empty sets disappear from the tab row; native Undo restores their membership. Renaming and deleting are disabled while recording.

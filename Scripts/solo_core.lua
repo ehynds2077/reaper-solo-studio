@@ -374,8 +374,23 @@ end
 function M.add_instrument(kind,names)
   local color={Vocals={130,175,216},Guitar={221,184,104},Bass={160,184,131},Drums={190,151,196}}
   local c=color[kind] or color.Vocals; local tracks={}
+  local label=kind
+  if not names then
+    -- Scan native names as well as group labels, including tracks added outside
+    -- Solo Studio. An older unnumbered name occupies the first number.
+    local base=kind:lower();local last=0
+    local function include(name)
+      name=name:match('^%s*(.-)%s*$'):lower()
+      if name==base then last=math.max(last,1);return end
+      local prefix,number=name:match('^(.-)%s+(%d+)$')
+      if prefix==base then last=math.max(last,tonumber(number)or 0)end
+    end
+    for i=0,R.CountTracks(0)-1 do include(M.track_name(R.GetTrack(0,i)))end
+    for _,set in ipairs(M.sets())do include(set.name)end
+    label=kind..' '..string.format('%.0f',last+1)
+  end
   M.edit('add '..kind,function()
-    for _,name in ipairs(names or {kind}) do
+    for _,name in ipairs(names or {label}) do
       local idx=R.CountTracks(0); R.InsertTrackAtIndex(idx,true); local tr=R.GetTrack(0,idx); tracks[#tracks+1]=tr
       R.GetSetMediaTrackInfo_String(tr,'P_NAME',name,true)
       R.SetTrackColor(tr,R.ColorToNative(c[1],c[2],c[3])|0x1000000)
@@ -384,7 +399,7 @@ function M.add_instrument(kind,names)
     end
     M.select_tracks(tracks)
   end)
-  M.capture(kind); return tracks
+  M.capture(label); return tracks
 end
 function M.listen_comp()
   M.stopped();M.cancel_preview()
