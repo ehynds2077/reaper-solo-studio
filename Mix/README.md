@@ -12,7 +12,8 @@ After the main Solo Studio installation:
 1. Copy `Mix/worker.py`, `Mix/experiments.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, `Mix/track_graphics.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua` and
-   `solo_mix_effects.lua`, `solo_mix_controls.lua` and `solo_mix_measure.lua`.
+   `solo_mix_effects.lua`, `solo_mix_controls.lua`, `solo_mix_measure.lua`,
+   `solo_mix_processors.lua` and `solo_mix_plugin_state.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
 3. Copy `Effects/Mix trim.jsfx` into `Effects/Solo Studio/`.
 4. Install FFmpeg/ffprobe and the Python dependencies in `ReferenceLab/requirements.txt`
@@ -30,6 +31,44 @@ is a protected local file, not encrypted Keychain storage. An inherited
 `OPENROUTER_API_KEY` environment variable also works and takes precedence.
 
 ## Use
+
+The agent can use native VST3 **UADx Ampex ATR-102**, **UADx SSL G Bus
+Compressor**, and **StandardCLIP** through physical-unit tools, individually or
+in a batch. Existing instances remain editable and restorable. StandardCLIP and
+Neutron 5 Clipper are now discoverable when installed; Neutron uses inspected
+generic controls. UADx is preferred over DSP-only UAD instances for new effects.
+
+For new Ampex instances, the preferred starting point is **Clean Ultralinear
+Master**. `configure_tape` reads the factory asset from the local UA macOS
+installation and applies its verified parameter state; no vendor preset is
+redistributed. This reproduces the factory audio settings, though the UA preset
+browser name may not update. Unknown/missing preset versions fail explicitly.
+Subsequent calls omit `preset` and adjust absolute stereo input/output dB while
+retaining the tape/EQ settings. Explicit gain changes default Auto Gain off for
+independent, repeatable control; preset-only preserves its factory Auto Gain.
+
+`configure_bus_compressor` offers SSL threshold/makeup, ratio, attack/release,
+detector HPF and wet mix. `configure_clipper` offers StandardCLIP input/output,
+clip level and softness in the verified Soft Clip Classic mode (zero softness
+by default). Optional oversampling selects REAPER's per-instance target rate,
+separate from StandardCLIP's internal oversampling. The agent must enable the
+host instance and use `move_effect` to place clipping before the final limiter.
+These stages are optional: clipping should catch brief peaks so the limiter
+needs less reduction at the **same** loudness goal, not raise the target. The
+agent is directed to compare checkpoints at matched loudness, preserve attacks,
+report unsupported GR as unknown, and verify the complete rendered output.
+
+UADx parameter inspection hides its thousands of MIDI CC placeholders by
+default while preserving native indices and pagination. `include_midi=true`
+reveals them. Processor operations protect automation and roll back the entire
+effect on failed validation. StandardCLIP restore comparison recognizes only
+its preset-browser dirty flag and matching first-reconstruction version marker
+as metadata; parameters, internal/host oversampling, routing and bypass remain
+significant. Other formats retain strict opaque-state comparison.
+
+Control semantics: [UA Ampex manual](https://help.uaudio.com/hc/en-us/articles/28281608779540-Ampex-ATR-102-Master-Tape-Recorder-Manual),
+[UA SSL G manual](https://help.uaudio.com/hc/en-us/articles/30847649785748-SSL-4000-G-Bus-Compressor-Manual),
+[StandardCLIP manual](https://www.siraudiotools.com/manual.php?id=standardclip).
 
 Stop transport and clear track solos. Choose up to two saved references, or
 **Analyze new…** to measure another local recording. Choose a time selection or

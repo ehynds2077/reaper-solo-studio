@@ -2,6 +2,7 @@
 -- and parameter envelopes. Never replace a track's media/routing/other effects.
 local R=reaper;local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 local State=dofile(dir..'/solo_mix_state.lua')
+local PluginState=dofile(dir..'/solo_mix_plugin_state.lua')
 local F={}
 function F.blocks(chunk)
  local rows,stack,current={},{};local position=1
@@ -32,6 +33,7 @@ function F.same(a,b)
   -- trailer when loading a snapshot. This exact host-metadata substitution
   -- is not a change to the plugin state payload preceding it.
   value=value:gsub('(<VST[^\n]*\n.-)\nAAAQAAAA(\r?\n%s*>)','%1\nAFByb2dyYW0gMQAQAAAA%2')
+  value=PluginState.normalize(value)
   return State.normalize('<FXCHAIN\n'..value..'>\n')
  end
  return type(a)=='string'and type(b)=='string'and normalized(a)==normalized(b)

@@ -188,10 +188,10 @@ TOOLS = [
            {'start_track': {'type': 'integer', 'minimum': 0}, 'track_count': {'type': 'integer', 'minimum': 1, 'maximum': 16}}, []),
     schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. For master output use set_master_output; automated controls are protected.',
            {'track': TRACK, 'volume_db': number(-90, 24), 'pan': number(-1, 1)}, ['track', 'volume_db', 'pan']),
-    schema('add_effect', 'Append one effect on a track or MASTER. Use an exact name from available_plugins. Reuse suitable existing processors before adding another. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Put the master limiter last. For trim rides call set_trim_automation directly; it creates/reuses its dedicated processor. Do not add JS Mix Trim with this tool.',
+    schema('add_effect', 'Append one effect on a track or MASTER. Use an exact name from available_plugins. Reuse suitable existing processors before adding another. ReaEQ/ReaComp, FabFilter Pro-L 2, native VST3 UADx Ampex/SSL G and StandardCLIP have physical-unit adapters. Put the master limiter last. For trim rides call set_trim_automation directly; it creates/reuses its dedicated processor. Do not add JS Mix Trim with this tool.',
            {'track': TRACK, 'plugin': {'type': 'string'}}, ['track', 'plugin']),
-    schema('inspect_effect', 'Read any existing or session-added track/master effect: parameter indices, raw ranges, normalized/formatted values and active automation. Offline effects must be loaded with set_effect_state offline=false before inspecting parameters.',
-           {'track': TRACK, 'effect': FX, 'start_parameter': {'type': 'integer', 'minimum': 0}}, ['track', 'effect']),
+    schema('inspect_effect', 'Read any existing or session-added track/master effect: parameter indices, raw ranges, normalized/formatted values and active automation. MIDI CC placeholders are hidden by default; native parameter indices are preserved and next_start is the pagination cursor. Offline effects must be loaded with set_effect_state offline=false before inspecting parameters.',
+           {'track': TRACK, 'effect': FX, 'start_parameter': {'type': 'integer', 'minimum': 0}, 'include_midi': {'type': 'boolean'}}, ['track', 'effect']),
     schema('set_effect_state', 'Enable/bypass or load/offline any existing or session-added track/master effect. enabled=true alone does NOT load an offline effect; use offline=false. Existing plugin state is saved before changes for Original/Candidate and Revert. Prefer bypassing redundant limiters to stacking more.',
            {'track': TRACK, 'effect': FX, 'enabled': {'type': 'boolean'}, 'offline': {'type': 'boolean'}}, ['track', 'effect']),
     schema('configure_compressor', 'Configure any ReaComp, including explicit makeup gain. Threshold should act on the source level, not a generic preset. Re-measure dynamics and loudness.',
@@ -201,6 +201,21 @@ TOOLS = [
     schema('configure_limiter', 'Configure any existing or session-added FabFilter Pro-L 2 on MASTER (or a track): gain in dB, output ceiling, true-peak limiting ON, 2x oversampling, unity gain OFF. Load offline=false and enable it with set_effect_state first. MASTER fader gain happens AFTER the limiter: use master.limiter_headroom to compensate positive master gain. Re-render and verify actual peaks.',
            {'track': TRACK, 'effect': FX, 'gain_db': number(0, 24), 'ceiling_db': number(-12, -1), 'override_automation': OVERRIDE_AUTOMATION},
            ['track', 'effect', 'gain_db', 'ceiling_db']),
+    schema('configure_tape', 'Configure native VST3 UADx Ampex ATR-102 in dB. For a newly added master tape, apply Clean Ultralinear Master once, then adjust input/output. Preset is read from the installed UA factory asset; unavailable/unknown versions fail without approximation. Gain values are absolute, apply equally to L/R, and default Auto Gain OFF for independent input/output adjustment. Preset-only retains its Auto Gain. Omitting preset preserves tape/EQ settings. Does not enable host bypass or reorder FX.',
+           {'track': TRACK, 'effect': FX, 'preset': {'type': 'string', 'enum': ['Clean Ultralinear Master']},
+            'input_db': number(-40, 9.5), 'output_db': number(-40, 9.3), 'auto_gain': {'type': 'boolean'},
+            'override_automation': OVERRIDE_AUTOMATION}, ['track', 'effect']),
+    schema('configure_bus_compressor', 'Configure native VST3 UADx SSL G Bus Compressor. Threshold/makeup in dB. Defaults: 2:1, 30ms attack, Auto release, 80Hz detector HPF, 100% wet, zero makeup. Headroom/color setting is preserved. Start with light glue, measure actual GR if supported, and loudness-match the comparison. Does not enable host bypass or reorder FX.',
+           {'track': TRACK, 'effect': FX, 'threshold_db': number(-15, 15), 'makeup_db': number(0, 15),
+            'ratio': {'type': 'number', 'enum': [2, 4, 10]}, 'attack_ms': {'type': 'number', 'enum': [.1, .3, 1, 3, 10, 30]},
+            'release': {'type': 'string', 'enum': ['100ms', '300ms', '600ms', '1200ms', 'auto']},
+            'sidechain_hpf_hz': number(0, 500), 'mix_percent': number(0, 100),
+            'override_automation': OVERRIDE_AUTOMATION}, ['track', 'effect', 'threshold_db']),
+    schema('configure_clipper', 'Configure VST3 StandardCLIP to shave brief peaks BEFORE the final limiter, reducing limiter workload. clipping_db sets its Clipping control (dB); input/output default 0dB. Uses verified Soft Clip Classic mode; softness defaults 0%. Existing ceiling settings are preserved. Optional oversampling sets REAPER host target (~96/192/384kHz), not internal oversampling; playback must be stopped. Clipping is NOT a true-peak guarantee. Enable and order with set_effect_state/move_effect, then remeasure at matched loudness.',
+           {'track': TRACK, 'effect': FX, 'clipping_db': number(-24, 0), 'input_db': number(-24, 24),
+            'output_db': number(-24, 24), 'softness_percent': number(0, 100),
+            'oversampling': {'type': 'string', 'enum': ['96k', '192k', '384k']},
+            'override_automation': OVERRIDE_AUTOMATION}, ['track', 'effect', 'clipping_db']),
     schema('configure_eq', 'Set frequency and gain of an existing band in any ReaEQ. Broad default bandwidth. Use low_shelf/high_shelf index 0, or bell index 0/1.',
            {'track': TRACK, 'effect': FX, 'band': {'type': 'string', 'enum': ['low_shelf', 'bell', 'high_shelf']},
             'band_index': {'type': 'integer', 'minimum': 0, 'maximum': 1},
@@ -247,7 +262,7 @@ TOOLS.extend([
 EDIT_TOOLS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS
               if tool['function']['name'] in (
                   'set_track_mix', 'add_effect', 'configure_eq', 'configure_compressor',
-                  'configure_limiter', 'set_effect_parameter', 'set_effect_state', 'set_trim_automation', 'set_phrase_rides',
+                  'configure_limiter', 'configure_tape', 'configure_bus_compressor', 'configure_clipper', 'set_effect_parameter', 'set_effect_state', 'set_trim_automation', 'set_phrase_rides',
                   'create_mix_bus', 'set_master_output', 'move_effect', 'set_send', 'set_pre_fx_automation', 'restore_mix_checkpoint')}
 BATCH_VARIANTS = []
 for name, parameters in EDIT_TOOLS.items():
@@ -710,14 +725,52 @@ passes. Inspect and reconfigure them; do not stack duplicate processors on resum
 After source balance and tonal work, use master compression if needed and reuse
 the final FabFilter Pro-L 2 when present. Only append one if no suitable limiter
 exists. configure_limiter provides calibrated gain, true-peak
-limiting and ceiling. Use this final level stage to approach reference LUFS;
+limiting and ceiling. Use this final level stage to approach the supplied loudness_goal;
 do not pull the whole mix back simply because transient peaks limit a fader boost.
-Start limiter drive from the measured loudness deficit, render, then refine it.
-Reference-like density may require substantial peak reduction. Evaluate crest,
+Estimate the required gain from the measured loudness deficit, but do not assume
+all of it should come from limiter drive. Use available headroom and consider
+brief peak shaving before limiting. Render and refine; avoid excessive limiting. Evaluate crest,
 tonal balance and dynamics after processing. A 10+ LU gap is unfinished work, not
 an excuse for "restrained" processing. Scratch track names do not justify lighter
 processing: mix the populated tracks as the source material the user supplied.
 Keep the -1 dBTP output ceiling. Do not stack limiters or boost every routing stage.
+Master processing preferences: the user likes Ampex tape starting from
+Clean Ultralinear Master, SSL G bus compression, and StandardCLIP before limiting.
+These are available options, not a mandatory chain. inspect_project exposes
+installed plugins and processor adapters. Prefer native UADx VST3 (no DSP hardware),
+reuse existing instances, and avoid stacking duplicate tape/compressors/clippers.
+For new Ampex use configure_tape preset="Clean Ultralinear Master" ONCE. Then omit
+preset and adjust input_db/output_db to set tape drive and compensate output.
+Preset-only preserves factory settings including Auto Gain; explicit gain changes
+default Auto Gain off so absolute L/R gains are independent and reproducible.
+Use the returned physical readbacks. Do not repeatedly reset useful adjustments,
+and do not substitute an invented preset if the installed asset is unavailable.
+For SSL G use configure_bus_compressor: start 2:1, 10 or 30ms attack, Auto or
+100/300ms release, with a detector HPF if low-end pumping is a concern. Set threshold
+from actual signal, aiming initially for light glue (roughly 1–2dB average GR,
+when measurable); compensate makeup for comparison. GR may be unsupported—never
+claim measured reduction from knob positions or pre/post loudness differences.
+A useful chain to TEST is tone/balance -> SSL G and/or Ampex -> StandardCLIP ->
+final true-peak limiter. Tape/compressor order is a musical choice. add_effect
+APPENDS: use move_effect to put the clipper BEFORE the existing limiter and keep
+the limiter last. Inspect the resulting order rather than assume it is correct.
+The clipper's purpose is shaving short transient peaks so the limiter has LESS
+work to do at the SAME loudness target, not pushing the master louder. Start by
+catching about 0.5–2dB of the briefest peaks, using a representative loud/transient
+passage to set its threshold, and back off when attacks flatten. StandardCLIP is
+preferred; other installed clippers (e.g. Neutron) use inspected generic controls,
+not this adapter. configure_clipper supports verified Soft Clip Classic mode and
+optional host oversampling (~192kHz is a reasonable initial test). This is separate
+from plugin-internal oversampling, which is not exposed by this adapter.
+Save a checkpoint before these experiments. Compare clipper+limiter versus limiter
+only with compare_mix_checkpoints, same passage and matched playback loudness;
+reduce/re-tune limiter drive after clipping. Compare actual output loudness, true
+peak, crest, transient shapes and available GR. Do not treat spectral changes as
+proof of inaudible distortion or claim you heard audio from charts alone. Report
+uncertainty and provide an A/B for the user. Keep the supplied loudness_goal
+(default -12 LUFS) and -1dBTP ceiling; clipping/tape cannot guarantee true peak.
+Do not force tape, glue compression or clipping when the evidence favors fewer
+stages. Finish with the full-passage loudness/peak and level-balance checks.
 The master fader is AFTER the limiter and is editable with set_master_output. inspect_project returns
 master.limiter_headroom.suggested_limiter_ceiling_db, compensating positive static
 master gain with 0.1 dB margin. Use that plugin ceiling: for example +2.57 dB on

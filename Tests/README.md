@@ -1,5 +1,17 @@
 # Recording workflow checks
 
+`Run master processor checks.lua` checks installed native UADx Ampex/SSL G and
+StandardCLIP in a silent disposable project: factory tape settings, physical
+gain/dynamics readbacks, UAD parameter pagination, host oversampling, failed-write
+rollback, checkpoints, Original/Candidate, automation protection and Revert.
+Close Solo Studio and stop transport first. It needs the installed licensed
+plugins, UA's local Clean Ultralinear Master factory asset, and `mix-tone.wav`.
+It restores the original project and verifies its audio fingerprint; results
+are private in `master-processor-checks.txt`. It makes no paid/model calls.
+`lua "$PWD/Tests/Master processor state.lua"` tests parameter pagination and
+StandardCLIP's narrowly recognized restore metadata using synthetic fixtures;
+gain, oversampling, bypass and unknown-format differences must still fail.
+
 `Run advanced mix checks.lua` tests master gain, effect order, shared sends/buses,
 pre-FX rides, named checkpoint restores, A/B, Revert and deferred gain-reduction
 sampling in a silent disposable project. Close Solo Studio and stop transport

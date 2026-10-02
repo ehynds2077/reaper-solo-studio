@@ -99,6 +99,34 @@ class ExperimentTests(unittest.TestCase):
         self.assertEqual(self.session.global_edit_revision, self.session.mix_revision)
         self.assertEqual(self.session.mix_revision, 4)
 
+    def test_master_processors_batch_and_invalidate_level_evidence(self):
+        operations = [
+            {'tool': 'configure_tape', 'arguments': {'track': 'MASTER', 'effect': 'tape',
+                'preset': 'Clean Ultralinear Master'}},
+            {'tool': 'configure_tape', 'arguments': {'track': 'MASTER', 'effect': 'tape',
+                'input_db': -6, 'output_db': 6}},
+            {'tool': 'configure_bus_compressor', 'arguments': {'track': 'MASTER',
+                'effect': 'ssl', 'threshold_db': -4, 'attack_ms': 30, 'release': 'auto'}},
+            {'tool': 'configure_clipper', 'arguments': {'track': 'MASTER',
+                'effect': 'clip', 'clipping_db': -2, 'oversampling': '192k'}},
+            {'tool': 'move_effect', 'arguments': {'track': 'MASTER', 'effect': 'clip', 'index': 2}}]
+        result = self.session.execute_tool('apply_mix_batch', {'operations': operations})
+        self.assertEqual(result['completed'], 5)
+        self.assertEqual([c[0] for c in self.calls], [op['tool'] for op in operations])
+        self.assertEqual(self.session.global_edit_revision, 5)
+
+    def test_invalid_processor_batch_rejected_before_any_writes(self):
+        for tool, args in (
+            ('configure_tape', {'input_db': 20}),
+            ('configure_tape', {'preset': 'invented preset'}),
+            ('configure_bus_compressor', {'threshold_db': -4, 'attack_ms': 20}),
+            ('configure_clipper', {'clipping_db': -2, 'oversampling': '16x'})):
+            with self.subTest(tool=tool, args=args), self.assertRaises(ValueError):
+                self.session.execute_tool('apply_mix_batch', {'operations': [
+                    {'tool': 'set_master_output', 'arguments': {'volume_db': -3}},
+                    {'tool': tool, 'arguments': {'track': 'MASTER', 'effect': 'fx', **args}}]})
+        self.assertEqual(self.calls, [])
+
     def test_checkpoint_bypassed_rides_are_reactivated_not_skipped_as_unchanged(self):
         rides = [{'start_seconds': 12, 'end_seconds': 15, 'gain_db': -3}]
         points = worker.planning.phrase_envelope([], rides, [10, 18])

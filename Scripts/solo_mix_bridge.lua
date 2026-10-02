@@ -4,6 +4,7 @@ local J=dofile(dir..'/solo_json.lua')
 local AudioState=dofile(dir..'/solo_mix_state.lua')
 local FXState=dofile(dir..'/solo_mix_effects.lua')
 local Controls=dofile(dir..'/solo_mix_controls.lua')
+local Processors=dofile(dir..'/solo_mix_processors.lua')
 local Probe=dofile(dir..'/solo_mix_measure.lua')
 local R=reaper
 local B={json=J};local API={}
@@ -29,7 +30,7 @@ local function effect_list(tr)
  for n=0,R.TrackFX_GetCount(tr)-1 do
   local _,label=R.TrackFX_GetFXName(tr,n,'')
   fx[#fx+1]={id=R.TrackFX_GetFXGUID(tr,n),index=n,name=label,enabled=R.TrackFX_GetEnabled(tr,n),
-   offline=R.TrackFX_GetOffline(tr,n),editable=true}
+   offline=R.TrackFX_GetOffline(tr,n),editable=true,processor=Processors.describe(label)}
  end
  return fx
 end
@@ -66,7 +67,7 @@ function B.plugins()
  local result=J.array();local seen={}
  for i=0,10000 do
   local ok,name=R.EnumInstalledFX(i);if not ok then break end
-  if name:find('ReaEQ',1,true)or name:find('ReaComp',1,true)or name:find('ReaVerbate',1,true)or name:find('ReaDelay',1,true)or name:find('FabFilter',1,true)or name:find('UADx',1,true)then
+  if name:find('ReaEQ',1,true)or name:find('ReaComp',1,true)or name:find('ReaVerbate',1,true)or name:find('ReaDelay',1,true)or name:find('FabFilter',1,true)or name:find('UADx',1,true)or name:find('StandardCLIP',1,true)or name:find('Neutron 5 Clipper',1,true)then
    -- Prefer VST3 or stock VST; omit AU duplicates, instruments and DSP-only UAD.
    if (name:match('^VST3:')or name:match('^VST:'))and not seen[name]then result[#result+1]=name;seen[name]=true end
   end
@@ -284,7 +285,7 @@ function B.inspect(s)
   local target=row.pretrim and pretrims or trims;target[#target+1]={track=row.track,effect=row.id,points=points,enabled=R.TrackFX_GetEnabled(tr,idx),offline=R.TrackFX_GetOffline(tr,idx)}
  end end
  return {tracks=list_tracks(s.project,s.bounds),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,trim_envelopes=trims,pre_fx_envelopes=pretrims,
-  capabilities={mix_tools_version=4,master_output=true,signal_taps=true,gain_reduction_probe=true,pre_fx_automation=true,mix_checkpoints=true,effect_order=true,send_controls=true,existing_effects_editable=true,parameter_automation_override=true,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
+  capabilities={mix_tools_version=4,master_processor_adapters=true,master_output=true,signal_taps=true,gain_reduction_probe=true,pre_fx_automation=true,mix_checkpoints=true,effect_order=true,send_controls=true,existing_effects_editable=true,parameter_automation_override=true,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
   master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL')),limiter_headroom=master_headroom(s.project)},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
@@ -375,7 +376,7 @@ function B.execute(s,name,a)
  -- may have partially changed a plugin, so invalidate before applying them.
  if name~='inspect_effect'then s.render_cache={}end
  local fx_attempt
- if ({set_effect_state=true,set_effect_parameter=true,configure_eq=true,configure_compressor=true,configure_limiter=true})[name]then
+ if ({set_effect_state=true,set_effect_parameter=true,configure_eq=true,configure_compressor=true,configure_limiter=true})[name]or Processors.names[name]then
   local tr=track(a.track,s.project);fx_index(tr,a.effect)
   fx_attempt={track=tr,id=a.effect,original=FXState.capture(tr,a.effect)}
  end
@@ -401,16 +402,13 @@ function B.execute(s,name,a)
    local tr,idx,info=effect(s,a.track,a.effect);local params=J.array()
    if R.TrackFX_GetOffline(tr,idx)then return {plugin=info.plugin,offline=true,enabled=R.TrackFX_GetEnabled(tr,idx),parameters=params,
     next_step='Use set_effect_state offline=false to load this plugin before inspecting/configuring parameters. Offline effects do not process audio.'}end
-   assert(R.TrackFX_GetNumParams(tr,idx)<=1600,'Plugin has too many parameters for this adapter')
-   local start=a.start_parameter or 0;finite(start,0,R.TrackFX_GetNumParams(tr,idx)-1);assert(start%1==0,'Integer parameter offset required')
-   for i=start,math.min(start+95,R.TrackFX_GetNumParams(tr,idx)-1) do
-    local _,label=R.TrackFX_GetParamName(tr,idx,i,'');local _,formatted=R.TrackFX_GetFormattedParamValue(tr,idx,i,'')
-    local raw,lo,hi=R.TrackFX_GetParam(tr,idx,i)
-    local env=R.GetFXEnvelope(tr,idx,i,false);local automated=false
-    if env then local good,chunk=R.GetEnvelopeStateChunk(env,'',false);automated=not good or chunk:match('\nACT%s+1')~=nil end
-    params[#params+1]={index=i,name=label,formatted=formatted,raw=raw,min=lo,max=hi,normalized=R.TrackFX_GetParamNormalized(tr,idx,i),automated=automated}
-   end
-   return {plugin=info.plugin,offline=false,enabled=R.TrackFX_GetEnabled(tr,idx),parameters=params,total_parameters=R.TrackFX_GetNumParams(tr,idx),next_start=(start+#params<R.TrackFX_GetNumParams(tr,idx))and (start+#params)or J.null}
+   local result=Processors.inspect(tr,idx,a.start_parameter,a.include_midi)
+   result.parameters=J.array(result.parameters);result.next_start=result.next_start or J.null
+   result.plugin=info.plugin;result.offline=false;result.enabled=R.TrackFX_GetEnabled(tr,idx);result.processor=Processors.describe(info.plugin)
+   return result
+  elseif Processors.names[name]then
+   local tr,idx,row=editable(s,a.track,a.effect)
+   return Processors.configure(name,tr,idx,row.plugin,a,parameter_automation)
   elseif name=='set_effect_state'then
    assert(type(a.enabled)=='boolean'or type(a.offline)=='boolean','Supply enabled and/or offline')
    local tr,idx=editable(s,a.track,a.effect)
