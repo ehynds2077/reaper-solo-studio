@@ -165,6 +165,21 @@ track GUID, so duplicate track names and later short measurements do not erase
 the full-passage view. Older captures remain explicitly dated snapshots; they may
 reflect earlier mix settings.
 
+By default, every new or continued AI pass first measures **all active instrument
+source tracks** across the selected passage and creates their spectrogram,
+waterfall and dynamics charts, before asking the model to make edits. This
+includes individual drum mics, doubles and unnamed tracks; muted/unused sources
+and empty folders/returns are skipped. Progress and any failures appear in the
+mix log. `instrument-baseline.json` records coverage and full numerical profiles.
+Image-capable models receive all startup spectrograms on readable two-track
+sheets in their first request (the normal four-image limit resumes afterward).
+Non-vision models still get every numerical profile, and local charts are saved
+even with visual analysis disabled. The agent is instructed to review the band
+and plan before editing. These measurements also seed the level-balance cache,
+avoiding an immediate duplicate full-track render for vocals/guitars. The startup
+pass adds render time but consumes no AI rounds. Advanced JSON configuration can
+opt out with `instrument_charts: false`.
+
 For current settings, stop transport, select **Candidate**, and choose **Render
 track…** (or press **T** while graphs are open). Pick the desired track. This
 uses the selected mix passage and the existing guarded track-render path, restores
@@ -179,7 +194,7 @@ models also receive the track spectrogram when visual analysis is on. The separa
 **AI mix review** button still reviews the full mix against the reference. Use
 `worker.py --track-graphics SESSION` to backfill saved track views from the CLI.
 
-At most four images are retained in model context; older images are replaced by
+After the initial instrument survey, at most four images remain in model context; older images are replaced by
 text notices while numerical results remain. Charts are saved in the session's
 `visuals/` folder, accessible through **Show analysis files**. They are transmitted
 as PNG data in memory, not public image URLs or screenshots. Image payloads are

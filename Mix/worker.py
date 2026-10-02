@@ -487,8 +487,9 @@ unchanged. Different songs are not time/section aligned. Do not mistake masterin
 level or arrangement differences for EQ defects or chase a louder reference master.
 Use visual patterns to choose targeted measurements and level rides, then verify
 with the numeric data. Do not infer vocal intelligibility, musical quality or an
-exact gain adjustment from waveform size. Only the most recent four images remain
-in context; earlier numeric measurements remain available. Chart axes use absolute
+exact gain adjustment from waveform size. The first request includes all startup
+instrument chart sheets. Later rounds retain the most recent four images;
+earlier numeric measurements remain available. Chart axes use absolute
 project seconds; source-overview and processed-waveform amplitude scales differ.
 
 Assume the original is a rough, UNMIXED recording unless the user's direction says
@@ -533,7 +534,8 @@ force a sparse verse to have a dense chorus's spectrum, width or LRA. Those
 differences require a stated adjustment to the target, not abandoning the reference.
 Measure after each meaningful batch of changes, check whether the important gaps
 actually shrank, and revise moves that worsen the result. Spend the limited rounds
-on the largest gaps; solo-render only tracks needed to resolve a specific question.
+on the largest gaps; after the startup pass, solo-render only tracks needed to
+resolve a specific question.
 The round budget is a maximum, not a target: finish when measured work is complete.
 If a tool returns an error, correct its arguments or choose another approach;
 do not repeat the same failed request unchanged.
@@ -542,8 +544,16 @@ processors. The worker discards failed analysis and may recover/re-render once.
 If a diagnostic window stays silent, inspect source activity and measure a known
 active window. Mix edits remain locked until a valid mix measurement succeeds.
 If the full passage stays unmeasurable, the pass stops for signal-path inspection.
-Rendering is expensive. Batch related fader/EQ/dynamics edits before measuring;
-do not request a solo render of every track as a routine inventory step. The shared
+Before your first turn, the worker normally measures EVERY active source track
+over the full selected passage and renders its spectrogram/waterfall/dynamics.
+instrument_baseline contains the results, skipped sources and failures. Review
+all supplied instrument chart sheets and numerical profiles BEFORE making edits;
+state the main balance, frequency and dynamics problems and a coordinated plan.
+Do not assume a missing/failed chart means silence or a good balance. These are
+the current settings at the start of this pass, including on Continue mixing.
+Do not repeat this inventory: reuse the baseline and the seeded level reports.
+Rendering is expensive. Batch related fader/EQ/dynamics edits before measuring.
+The shared
 diagnostic window is chosen from an energetic 30 seconds of the original passage.
 Default measure_mix/measure_track calls use that same window. Compare like-for-like
 windows; measurement_bounds are absolute project seconds, while envelope_1s times
@@ -565,8 +575,8 @@ Use measure_tracks to compare several informative sources over the same window
 when processed source measurements are needed: use its default short diagnostic
 window for EQ/dynamics, not full_passage=true on an entire track inventory.
 Full-passage renders belong at the baseline and final verification, not after
-each local adjustment. Do not render an entire inventory
-without a specific reason. Its summary compares contributions through shared
+each local adjustment. The startup inventory is already provided; do not rerender
+it after every change. Its summary compares contributions through shared
 returns/master, so their loudness values are not additive or isolated dry levels.
 Use inspect_effects to establish multiple third-party parameter mappings together.
 Prefer apply_mix_batch for independent known changes across multiple tracks, or
@@ -734,6 +744,8 @@ class Session:
         self.trim_changes = {}
         self.global_edit_revision = 0
         self.level_plans = {}
+        self.track_graphs = {}
+        self.instrument_inventory = None
 
     def trace(self, kind, **details):
         # Append-only per worker pass. No provider headers or opaque reasoning.
@@ -767,7 +779,8 @@ class Session:
             'failure': self.failure, 'pass_id': self.nonce,
             'loudness_goal': loudness_goal(self.references, self.maximum_lufs),
             'level_balance': {'targets': self.level_targets, 'reviews': self.level_reviews,
-                              'remaining': self.leveling_issues()}})
+                              'remaining': self.leveling_issues()},
+            'instrument_inventory': self.instrument_inventory})
 
     def queue_image(self, path, caption):
         # Only our own locally generated, bounded PNGs are eligible for upload.
@@ -778,9 +791,7 @@ class Session:
         self.pending_images.append((path, caption))
         self.pending_images = self.pending_images[-4:]
 
-    def attach_images(self, messages):
-        if not self.pending_images:
-            return
+    def attach_images(self, messages, image_limit=4):
         content = []; count = 0
         for path, caption in self.pending_images:
             try:
@@ -797,11 +808,10 @@ class Session:
                                 'url': 'data:image/png;base64,' + base64.b64encode(png).decode('ascii')}}])
             count += 1
         self.pending_images = []
-        if not content:
-            return
         # Tool replies must all arrive before the next user/vision message.
-        messages.append({'role': 'user', 'content': content})
-        remaining = 4
+        if content:
+            messages.append({'role': 'user', 'content': content})
+        remaining = image_limit
         for message in reversed(messages):
             if not isinstance(message.get('content'), list):
                 continue
@@ -814,8 +824,66 @@ class Session:
                     remaining -= 1
                 kept.append(part)
             message['content'] = list(reversed(kept))
-        self.visual_status['attached'] += count
-        self.publish('Attached %d measured evidence chart%s for the model.' % (count, '' if count == 1 else 's'))
+        if count:
+            self.visual_status['attached'] += count
+            self.publish('Attached %d measured evidence chart%s for the model.' % (count, '' if count == 1 else 's'))
+
+    def prepare_instrument_charts(self, original):
+        """Measure all contributing sources before the first editable model turn."""
+        from track_graphics import instrument_tracks, chart_sheets
+        tracks, skipped = instrument_tracks(self.project)
+        self.batch_budget(len(tracks))
+        report = {'state': 'running', 'bounds': list(self.config['bounds']),
+                  'total': len(tracks), 'completed': 0, 'tracks': [], 'skipped': skipped, 'errors': []}
+        self.instrument_inventory = report
+        saved_images = self.pending_images[:]
+        entries = []; profiles = []
+        for index, row in enumerate(tracks, 1):
+            if self.cancelled():
+                raise RuntimeError('Session cancelled')
+            self.publish('Preparing instrument charts %d/%d · %s…' % (index, len(tracks), row['name']))
+            self.track_graphs.pop(row['id'], None)
+            try:
+                profile = self.measure('Pre-mix · ' + row['name'], row['id'], window=report['bounds'])
+            except ValueError as error:
+                report['errors'].append({'track': row['id'], 'name': row['name'], 'error': str(error)})
+                continue
+            profiles.append(dict(profile, name=row['name']))
+            entry = self.track_graphs.get(row['id'])
+            if entry:
+                entries.append(entry)
+            else:
+                report['errors'].append({'track': row['id'], 'name': row['name'],
+                                         'error': 'Charts unavailable; numeric measurement is available.'})
+            report['tracks'].append({'track': row['id'], 'name': row['name'],
+                                     'loudness': profile.get('loudness'), 'charts_ready': bool(entry)})
+            report['completed'] += 1
+            # The mandatory vocal/guitar level pass can reuse this exact baseline
+            # instead of immediately rendering the same full passage again.
+            try:
+                levels = leveling.level_report(profile, original, report['bounds'], self.project.get('regions', []))
+                levels.update(track=row['id'], name=row['name'], verification_scope='full_passage', revision=self.mix_revision)
+                self.level_reports[row['id']] = {'revision': self.mix_revision, 'report': levels}
+                self.level_baselines[row['id']] = {'revision': self.mix_revision, 'track': profile, 'mix': original, 'report': levels}
+            except ValueError:
+                pass  # Short/percussive material may lack enough active samples.
+        if self.cancelled():
+            raise RuntimeError('Session cancelled')
+        # Restore the mix/reference images evicted by sequential track charts.
+        self.pending_images = saved_images
+        if self.visuals_enabled and entries:
+            try:
+                self.pending_images.extend(chart_sheets(self.dir, entries, self.nonce))
+            except Exception:
+                self.publish('Instrument chart sheets unavailable; attaching individual spectrograms instead.')
+                self.pending_images.extend((self.dir / 'visuals' / r['views']['spectrogram'],
+                    'Pre-mix processed instrument: %s (%s). %s' % (r['name'], r['track'], r['scope'])) for r in entries)
+        report['state'] = 'ready_with_errors' if report['errors'] else 'ready'
+        write(self.dir / 'instrument-baseline.json', dict(report, profiles=profiles))
+        write(self.dir / 'level-balance.json', self.level_reports)
+        self.publish('Instrument chart pass complete: %d/%d measured, %d charts ready, %d skipped.' % (
+            report['completed'], report['total'], len(entries), len(skipped)))
+        return dict(report, profiles=profiles, level_reports=[r['report'] for r in self.level_reports.values() if 'report' in r])
 
     def arrangement(self, args):
         if not self.project.get('capabilities', {}).get('arrangement_peaks'):
@@ -1292,6 +1360,7 @@ class Session:
                 from track_graphics import record
                 name = next((t['name'] for t in self.project.get('tracks', []) if t['id'] == track_id), track_id)
                 entry = record(self.dir, path, profile, name, pass_id=self.nonce)
+                self.track_graphs[track_id] = entry
                 if self.visuals_enabled:
                     self.queue_image(self.dir / 'visuals' / entry['views']['spectrogram'],
                         'Processed track spectrogram: %s, project seconds %s. %s. Snapshot of these measured settings, not a dry stem or a source-clip waveform.' % (name, bounds, entry['scope']))
@@ -1366,15 +1435,16 @@ class Session:
                 raise RuntimeError('This excerpt is silent or too quiet to measure. Select an audible passage.')
             self.diagnostic_bounds = diagnostic_bounds(original, self.config['bounds'])
             self.publish('Quick checks will use %.1f–%.1fs; final review checks the full selected passage.' % tuple(self.diagnostic_bounds))
+            inventory = self.prepare_instrument_charts(original) if self.config.get('instrument_charts', True) else None
             messages = [{'role': 'system', 'content': SYSTEM}, {'role': 'user', 'content': json.dumps({
                 'direction': self.config.get('direction', 'Natural indie rock; clear vocals, punchy drums, preserve dynamics.'),
                 'current_request': self.config.get('feedback', ''),
                 'excerpt_seconds': self.config['bounds'], 'diagnostic_seconds': self.diagnostic_bounds, 'project': project,
                 'original': original, 'references': refs,
                 'loudness_goal': loudness_goal(refs, self.maximum_lufs),
-                'level_balance_targets': self.level_targets}, allow_nan=False)}]
+                'level_balance_targets': self.level_targets, 'instrument_baseline': inventory}, allow_nan=False)}]
             messages[1]['content'] = json.dumps(planning.model_evidence(json.loads(messages[1]['content'])), allow_nan=False)
-            self.attach_images(messages)
+            initial_image_limit = max(4, len(self.pending_images))
             rounds = min(MAX_ROUNDS, max(1, int(self.config.get('rounds', DEFAULT_ROUNDS))))
             empty_retries = 0
             completion_checks = 0
@@ -1384,7 +1454,7 @@ class Session:
                 if self.cancelled():
                     raise RuntimeError('Session cancelled')
                 self.publish('Waiting for OpenRouter · round %d / %d…' % (turn + 1, rounds))
-                self.attach_images(messages)
+                self.attach_images(messages, image_limit=initial_image_limit if turn == 0 else 4)
                 planning.compact_history(messages)
                 self.phase('openrouter_request', round=turn + 1)
                 response = self.api('/chat/completions', {'model': self.config.get('model', DEFAULT_MODEL),

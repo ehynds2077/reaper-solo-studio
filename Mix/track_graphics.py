@@ -9,6 +9,62 @@ import time
 SCOPE = 'Solo-in-place contribution including routing, shared returns and master FX'
 
 
+def instrument_tracks(project):
+    """Source tracks in the passage, including every drum mic and unnamed source.
+
+    Empty folders/returns are already represented in their children's renders.
+    Do not infer instruments from names or discard automated/pre-fader sources.
+    """
+    tracks = project.get('tracks', [])
+    by_id = {row['id']: row for row in tracks}
+    selected = []; skipped = []
+    for row in tracks:
+        reason = None
+        if row.get('muted'):
+            reason = 'Muted'
+        elif row.get('playing_items_in_passage', row.get('items', 0)) <= 0:
+            reason = 'No playing source items in this passage (empty track, folder or return)'
+        elif row.get('fader_silent') and not row.get('volume_automated') and not row.get('sends'):
+            reason = 'Silent static fader with no sends'
+        parent = row.get('parent'); seen = {row['id']}
+        while parent in by_id and parent not in seen:
+            seen.add(parent)
+            if by_id[parent].get('muted'):
+                reason = 'Muted parent folder'; break
+            parent = by_id[parent].get('parent')
+        if reason:
+            skipped.append({'track': row['id'], 'name': row.get('name', ''), 'reason': reason})
+        else:
+            selected.append(row)
+    return selected, skipped
+
+
+def chart_sheets(directory, entries, pass_id):
+    """Two full-resolution spectrograms per PNG; never drop later instruments."""
+    from PIL import Image
+    directory = Path(directory).resolve() / 'visuals'
+    sheets = []
+    for offset in range(0, len(entries), 2):
+        rows = entries[offset:offset + 2]
+        panels = []
+        for row in rows:
+            path = (directory / row['views']['spectrogram']).resolve()
+            if path.parent != directory:
+                raise ValueError('Unexpected track chart location')
+            with Image.open(path) as source:
+                panels.append(source.convert('RGB'))
+        sheet = Image.new('RGB', (max(p.width for p in panels), sum(p.height for p in panels)), 'white')
+        y = 0
+        for panel in panels:
+            sheet.paste(panel, (0, y)); y += panel.height; panel.close()
+        path = directory / ('instrument-start-%s-%d.png' % (pass_id, offset // 2 + 1))
+        sheet.save(path); sheet.close()
+        sheets.append((path, 'Pre-mix instrument spectrograms, top to bottom: ' +
+            json.dumps([{'track': r['track'], 'name': r['name'], 'bounds': r['bounds']} for r in rows]) +
+            '. Same fixed dBFS color scale. ' + SCOPE + '. Baseline before this pass; not dry stems or additive levels.'))
+    return sheets
+
+
 def render_path(directory, name):
     if not isinstance(name, str) or not re.fullmatch(r'render-[\w-]+\.wav', name):
         raise ValueError('Invalid saved track render')

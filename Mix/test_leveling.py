@@ -185,7 +185,11 @@ class LevelWorkflowTests(unittest.TestCase):
             self.assertEqual(self.session.run(), 'review')
         self.assertEqual(len(payloads), 3)
         self.assertIn('level_balance_targets', json.loads(payloads[0]['messages'][1]['content']))
-        self.assertEqual(len(json.loads(payloads[1]['messages'][-1]['content'])['level_verification']['reports']), 2)
+        # The startup chart pass now supplies the same full-passage evidence;
+        # an unreviewed baseline still blocks completion, without rendering twice.
+        initial = json.loads(payloads[0]['messages'][1]['content'])['instrument_baseline']
+        self.assertEqual(len(initial['level_reports']), 2)
+        self.assertIsNone(json.loads(payloads[1]['messages'][-1]['content'])['level_verification'])
         self.assertEqual(self.session.leveling_issues(), [])
 
     def test_exhausted_budget_reports_unverified_leveling(self):
