@@ -11,7 +11,8 @@ After the main Solo Studio installation:
 
 1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, `Mix/track_graphics.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
-   Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
+   Keep the main Lua modules updated too, including `solo_mix_visuals.lua` and
+   `solo_mix_effects.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
 3. Copy `Effects/Mix trim.jsfx` into `Effects/Solo Studio/`.
 4. Install FFmpeg/ffprobe and the Python dependencies in `ReferenceLab/requirements.txt`
@@ -53,7 +54,8 @@ quieter references lowering the effective target further. Change it from −24 t
 to the next mix/continuation. Completion uses this target (within 1 LU), not the
 raw level of a louder reference master. The mixer is directed to reduce limiter
 drive when a result feels over-limited; lowering post-limiter output would leave
-the flattened dynamics intact. Source clips and existing user FX remain protected.
+the flattened dynamics intact. Source clips remain protected. Existing plugins
+are editable, with their previous states saved for Original/Candidate and Revert.
 The cost threshold
 is checked *after* each response, so it is not a guaranteed billing cap.
 
@@ -381,7 +383,8 @@ the song automatically; use your normal REAPER save workflow.
 ## Tools and limits
 
 - Project inspection includes track GUIDs, names, levels, pan, mute/solo, parents,
-  sends, regions, existing FX names and a filtered installed-plugin inventory.
+  sends, regions, existing FX names/GUIDs, enabled and offline states, and a
+  filtered installed-plugin inventory.
 - Track volume is bounded to -90…+24 dB, without a cap relative to the rough mix. Pan supports
   classic/balance modes; dual/stereo pan and existing volume/pan automation are
   protected. Separate trim automation can ride a track without replacing its
@@ -389,23 +392,35 @@ the song automatically; use your normal REAPER save workflow.
 - ReaEQ supports 20 Hz–20 kHz and ±12 dB. ReaComp supports thresholds down to
   -60 dB, ratios up to 20:1, and explicit 0–6 dB makeup gain. Both have physical-unit
   adapters with parameter-layout and formatted-readback validation.
-- Session-owned effects can be added to `MASTER`, including EQ, compression and
+- Existing track/master effects can be edited, and effects can be added to
+  `MASTER`, including EQ, compression and
   FabFilter Pro-L 2. Its calibrated adapter sets 0–24 dB gain, a -12…-1 dBTP
   ceiling, true-peak limiting on, 2x oversampling and unity gain off. The master
-  fader and pre-existing master effects stay unchanged. Original/Candidate and
-  Revert include the session's master effects. The full render verifies output
+  fader stays unchanged. Original/Candidate and Revert include edited existing
+  plugins and session-added effects. The full render verifies output
   after the master fader; a limiter setting alone does not guarantee final peaks.
   Inspection and limiter readback expose the post-FX master gain and a suggested
   compensated plugin ceiling with 0.1 dB margin. For example, a +2.57 dB master
   fader needs about -3.67 dB at the limiter. This is guidance, not an automatic
   gain change; automated master gain and adapter-range limits are flagged.
 - New instances of ReaEQ, ReaComp, FabFilter and UADx VST/VST3 effects are available.
-  Existing FX are read-only. Parameters are inspected in pages of 96 with actual
-  names/ranges/normalized values/formatted readbacks. Each normalized move is
-  limited to 0.20. The agent must establish the mapping before using it.
+  Existing top-level track/master plugins of any format expose their host
+  parameters, inspected in pages of 96 with actual names/ranges/normalized values
+  and formatted readbacks. Moves can span the full normalized 0–1 range; the
+  agent must establish the mapping before using it. `set_effect_state` controls
+  bypass and offline status separately: an enabled but offline plugin does not
+  process audio. Load it before inspecting or changing parameters.
+- Existing plugin state is journaled locally before the first edit, including
+  opaque state, bypass/offline flags and parameter envelopes. Original/Candidate
+  restores these snapshots without stopping playback; Revert restores originals
+  and deletes only session-added effects. Later manual edits are preserved as
+  conflicts. Active parameter automation requires explicit
+  `override_automation: true` to suspend it for a constant setting; its points
+  remain saved and Original/Revert restore it. Raw plugin snapshots are never
+  sent to OpenRouter.
 - Third-party discovery is not a license/load test or a calibrated hardware
-  emulation adapter. UAD DSP-only plugins, arbitrary FX, sends/routing edits,
-  item edits and edits to pre-existing FX are outside this version's tools.
+  emulation adapter. Adding UAD DSP-only plugins, nested FX containers, take FX,
+  sends/routing edits and item edits are outside this version's tools.
 - Full-mix and solo-in-place contribution renders run through routing and master
   processing. Solo measurements include shared returns; they are not dry stems.
 - Analysis includes integrated LUFS, true peak, LRA, RMS, crest, spectrum,
@@ -420,7 +435,7 @@ the song automatically; use your normal REAPER save workflow.
 - 24-bit render output makes clipping a failed candidate rather than preserving
   above-full-scale samples. A final true peak above -1 dBTP prevents Keep.
 - Edits/transport changes stop tool execution. Tool schemas, finite bounds and
-  plugin ownership are enforced in code; model instructions alone do not enforce
+  plugin snapshot requirements are enforced in code; model instructions alone do not enforce
   these rules. A pass defaults to 60 model rounds, configurable from 1–100 in
   Advanced settings or the review screen's Pass limits. A round is one model
   response, potentially containing several tool calls. It can finish early.

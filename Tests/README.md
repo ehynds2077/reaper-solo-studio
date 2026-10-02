@@ -21,7 +21,18 @@ lua 'Tests/Lead-in restoration.lua'
 lua "$PWD/Tests/Mix comparison.lua"
 lua "$PWD/Tests/Mix review controls.lua"
 lua "$PWD/Tests/Mix window guard.lua"
+lua "$PWD/Tests/Mix FX snapshots.lua"
 ```
+
+`Mix FX snapshots.lua` checks per-plugin snapshot boundaries, untouched adjacent
+plugins, strict opaque-state comparisons and rollback after failed restoration.
+`Run existing FX checks.lua` copies an existing master Pro-L 2 into a separate
+project with no hardware outputs. It checks existing-plugin inspection, loading,
+parameter changes, live Original/Candidate, recovery, automation overrides and
+Revert, including preservation of later manual edits. Close Solo Studio and stop
+all transport first; the current project must contain Pro-L 2. It restores the
+original tab and reopens the panel, checks the original song's audio state, and
+writes `existing-fx-native-checks.txt`. It makes no model requests.
 
 For the native REAPER checks, first generate their synthetic audio:
 

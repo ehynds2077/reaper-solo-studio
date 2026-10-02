@@ -30,3 +30,9 @@ for index, frequency in enumerate((220, 880), 1):
         for frame in range(RATE * 2)
     ))
 print("Generated bounce-1.wav and bounce-2.wav in Tests/.")
+
+write_mono("mix-tone.wav", (
+    round(3277 * math.sin(2 * math.pi * 440 * frame / RATE))
+    for frame in range(RATE * 8)
+))
+print("Generated mix-tone.wav in Tests/.")

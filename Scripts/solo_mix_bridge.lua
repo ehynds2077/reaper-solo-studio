@@ -2,6 +2,7 @@
 local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 local J=dofile(dir..'/solo_json.lua')
 local AudioState=dofile(dir..'/solo_mix_state.lua')
+local FXState=dofile(dir..'/solo_mix_effects.lua')
 local R=reaper
 local B={json=J}
 local function finite(v,lo,hi)assert(type(v)=='number'and v==v and v>=lo and v<=hi,'Value outside allowed range');return v end
@@ -21,12 +22,21 @@ local function active_envelope(tr,key)
  local ok,chunk=R.GetEnvelopeStateChunk(env,'',false)
  return not ok or chunk:match('\nACT%s+1')~=nil
 end
+local function effect_list(tr)
+ local fx=J.array()
+ for n=0,R.TrackFX_GetCount(tr)-1 do
+  local _,label=R.TrackFX_GetFXName(tr,n,'')
+  fx[#fx+1]={id=R.TrackFX_GetFXGUID(tr,n),index=n,name=label,enabled=R.TrackFX_GetEnabled(tr,n),
+   offline=R.TrackFX_GetOffline(tr,n),editable=true}
+ end
+ return fx
+end
 local function list_tracks(proj,bounds)
  local out=J.array()
  for i=0,R.CountTracks(proj)-1 do
   local tr=R.GetTrack(proj,i);local _,name=R.GetTrackName(tr)
   local parent=R.GetParentTrack(tr);local fx=J.array();local sends=J.array()
-  for n=0,R.TrackFX_GetCount(tr)-1 do local _,label=R.TrackFX_GetFXName(tr,n,'');fx[#fx+1]={name=label,enabled=R.TrackFX_GetEnabled(tr,n)}end
+  fx=effect_list(tr)
   for n=0,R.GetTrackNumSends(tr,0)-1 do
    local dest=R.GetTrackSendInfo_Value(tr,0,n,'P_DESTTRACK')
    sends[#sends+1]={destination=dest and R.GetTrackGUID(dest)or '',volume_db=db(R.GetTrackSendInfo_Value(tr,0,n,'D_VOL'))}
@@ -92,13 +102,17 @@ end
 local function journal(s)
  J.write(s.path..'/snapshot.json',{original=s.original,owned=s.owned,bounds=s.bounds,expected=s.expected,
   candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path,resolution=s.resolution,
-  audio_signature=s.audio_signature})
+  audio_signature=s.audio_signature,modified=s.modified})
 end
 local function remember(s)
  s.expected={}
  for _,row in ipairs(s.original)do
   local tr=track(row.id,s.project)
   s.expected[row.id]={volume=R.GetMediaTrackInfo_Value(tr,'D_VOL'),pan=R.GetMediaTrackInfo_Value(tr,'D_PAN')}
+ end
+ for _,row in ipairs(s.modified or {})do
+  row.expected=FXState.capture(track(row.track,s.project),row.id)
+  if s.mode=='candidate'then row.candidate=row.expected end
  end
  s.audio_signature=AudioState.capture(s.project)
  s.version=R.GetProjectStateChangeCount(s.project);journal(s)
@@ -134,6 +148,10 @@ function B.recover(path)
  for _,row in ipairs(data.owned)do
   local ok=pcall(function()return fx_index(track(row.track,p),row.id)end)
   if not ok then changed=true end
+ end
+ for _,row in ipairs(data.modified or {})do
+  local ok,value=pcall(function()return FXState.capture(track(row.track,p),row.id)end)
+  if not ok or not FXState.same(value,row.expected)then changed=true end
  end
  data.path=path;data.project=p;data.version=R.GetProjectStateChangeCount(p);data.renders=0
  local signature=AudioState.capture(p)
@@ -202,6 +220,37 @@ local function own(s,guid,effect)
  for _,row in ipairs(s.owned)do if row.track==guid and row.id==effect then return tr,fx_index(tr,effect),row end end
  error('Only effects added by this session can be changed')
 end
+local function effect(s,guid,id)
+ local tr=track(guid,s.project);local idx=fx_index(tr,id)
+ local _,plugin=R.TrackFX_GetFXName(tr,idx,'')
+ return tr,idx,{track=guid,id=id,plugin=plugin}
+end
+local function editable(s,guid,id)
+ local tr,idx,info=effect(s,guid,id)
+ for _,row in ipairs(s.owned)do if row.track==guid and row.id==id then return tr,idx,row end end
+ s.modified=s.modified or J.array()
+ for _,row in ipairs(s.modified)do if row.track==guid and row.id==id then return tr,idx,row end end
+ local original=FXState.capture(tr,id)
+ info.original=original;info.candidate=original;info.expected=original
+ s.modified[#s.modified+1]=info;journal(s) -- Durable rollback before the first write.
+ return tr,idx,info
+end
+local function parameter_automation(tr,idx,parameters,override)
+ local envelopes={}
+ for _,parameter in ipairs(parameters)do
+  local env=R.GetFXEnvelope(tr,idx,parameter,false)
+  if env then
+   local ok,chunk=R.GetEnvelopeStateChunk(env,'',false);assert(ok,'Could not inspect parameter automation')
+   if chunk:match('\nACT%s+1')then
+    assert(override==true,'Parameter has active automation. Inspect it; use override_automation=true to suspend it for this constant setting. Original/Revert restore it.')
+    envelopes[#envelopes+1]={env=env,chunk=chunk}
+   end
+  end
+ end
+ for _,row in ipairs(envelopes)do
+  assert(R.SetEnvelopeStateChunk(row.env,row.chunk:gsub('(\nACT%s+)1','%10',1),false),'Could not suspend parameter automation')
+ end
+end
 local function master_headroom(proj)
  local master=R.GetMasterTrack(proj);local volume=R.GetMediaTrackInfo_Value(master,'D_VOL')
  local automated=active_envelope(master,'<VOLENV2')
@@ -215,8 +264,7 @@ function B.inspect(s)
  for i=0,10000 do local ok,isregion,start,ending,name=R.EnumProjectMarkers3(s.project,i);if ok==0 then break end
   if isregion then regions[#regions+1]={name=name,start_seconds=start,end_seconds=ending}end
  end
- local master=R.GetMasterTrack(s.project);local effects=J.array()
- for i=0,R.TrackFX_GetCount(master)-1 do local _,name=R.TrackFX_GetFXName(master,i,'');effects[#effects+1]={name=name,enabled=R.TrackFX_GetEnabled(master,i)}end
+ local master=R.GetMasterTrack(s.project);local effects=effect_list(master)
  local trims=J.array()
  for _,row in ipairs(s.owned)do if row.trim then
   local tr=track(row.track,s.project);local idx=fx_index(tr,row.id)
@@ -228,7 +276,7 @@ function B.inspect(s)
   trims[#trims+1]={track=row.track,effect=row.id,points=points}
  end end
  return {tracks=list_tracks(s.project,s.bounds),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,trim_envelopes=trims,
-  capabilities={mix_tools_version=3,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
+  capabilities={mix_tools_version=3,existing_effects_editable=true,parameter_automation_override=true,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
   master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL')),limiter_headroom=master_headroom(s.project)},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
@@ -315,6 +363,11 @@ function B.execute(s,name,a)
  -- nonlinear master FX make per-track-only invalidation unsafe. Failed tools
  -- may have partially changed a plugin, so invalidate before applying them.
  if name~='inspect_effect'then s.render_cache={}end
+ local fx_attempt
+ if ({set_effect_state=true,set_effect_parameter=true,configure_eq=true,configure_compressor=true,configure_limiter=true})[name]then
+  local tr=track(a.track,s.project);fx_index(tr,a.effect)
+  fx_attempt={track=tr,id=a.effect,original=FXState.capture(tr,a.effect)}
+ end
  R.Undo_BeginBlock2(s.project)
  local ok,result=xpcall(function()
   if name=='set_track_mix'then
@@ -333,23 +386,37 @@ function B.execute(s,name,a)
    local id=R.TrackFX_GetFXGUID(tr,idx);s.owned[#s.owned+1]={track=a.track,id=id,plugin=a.plugin}
    journal(s);return {effect=id,plugin=a.plugin,next_step='Inspect parameter names and formatted values before changing anything.'}
   elseif name=='inspect_effect'then
-   local tr,idx=own(s,a.track,a.effect);local params=J.array()
+   local tr,idx,info=effect(s,a.track,a.effect);local params=J.array()
+   if R.TrackFX_GetOffline(tr,idx)then return {plugin=info.plugin,offline=true,enabled=R.TrackFX_GetEnabled(tr,idx),parameters=params,
+    next_step='Use set_effect_state offline=false to load this plugin before inspecting/configuring parameters. Offline effects do not process audio.'}end
    assert(R.TrackFX_GetNumParams(tr,idx)<=1600,'Plugin has too many parameters for this adapter')
    local start=a.start_parameter or 0;finite(start,0,R.TrackFX_GetNumParams(tr,idx)-1);assert(start%1==0,'Integer parameter offset required')
    for i=start,math.min(start+95,R.TrackFX_GetNumParams(tr,idx)-1) do
     local _,label=R.TrackFX_GetParamName(tr,idx,i,'');local _,formatted=R.TrackFX_GetFormattedParamValue(tr,idx,i,'')
     local raw,lo,hi=R.TrackFX_GetParam(tr,idx,i)
-    params[#params+1]={index=i,name=label,formatted=formatted,raw=raw,min=lo,max=hi,normalized=R.TrackFX_GetParamNormalized(tr,idx,i)}
+    local env=R.GetFXEnvelope(tr,idx,i,false);local automated=false
+    if env then local good,chunk=R.GetEnvelopeStateChunk(env,'',false);automated=not good or chunk:match('\nACT%s+1')~=nil end
+    params[#params+1]={index=i,name=label,formatted=formatted,raw=raw,min=lo,max=hi,normalized=R.TrackFX_GetParamNormalized(tr,idx,i),automated=automated}
    end
-   return {parameters=params,total_parameters=R.TrackFX_GetNumParams(tr,idx),next_start=(start+#params<R.TrackFX_GetNumParams(tr,idx))and (start+#params)or J.null}
+   return {plugin=info.plugin,offline=false,enabled=R.TrackFX_GetEnabled(tr,idx),parameters=params,total_parameters=R.TrackFX_GetNumParams(tr,idx),next_start=(start+#params<R.TrackFX_GetNumParams(tr,idx))and (start+#params)or J.null}
+  elseif name=='set_effect_state'then
+   assert(type(a.enabled)=='boolean'or type(a.offline)=='boolean','Supply enabled and/or offline')
+   local tr,idx=editable(s,a.track,a.effect)
+   if a.offline~=nil then assert(type(a.offline)=='boolean','offline must be a boolean');R.TrackFX_SetOffline(tr,idx,a.offline)end
+   if a.enabled~=nil then assert(type(a.enabled)=='boolean','enabled must be a boolean');R.TrackFX_SetEnabled(tr,idx,a.enabled)end
+   assert(a.offline==nil or R.TrackFX_GetOffline(tr,idx)==a.offline,'Plugin could not reach the requested online/offline state')
+   assert(a.enabled==nil or R.TrackFX_GetEnabled(tr,idx)==a.enabled,'Plugin could not reach the requested bypass state')
+   return {enabled=R.TrackFX_GetEnabled(tr,idx),offline=R.TrackFX_GetOffline(tr,idx)}
   elseif name=='configure_compressor'then
-   local tr,idx,row=own(s,a.track,a.effect);assert(row.plugin:find('ReaComp',1,true),'This adapter requires ReaComp')
+   local tr,idx,row=editable(s,a.track,a.effect);assert(row.plugin:find('ReaComp',1,true),'This adapter requires ReaComp')
+   assert(not R.TrackFX_GetOffline(tr,idx),'Load this effect with set_effect_state offline=false first')
    finite(a.threshold_db,-60,0);finite(a.ratio,1,20);finite(a.attack_ms,.1,200);finite(a.release_ms,10,3000)
    local makeup=finite(a.makeup_db or 0,0,6)
    local values={{0,'Threshold',10^(a.threshold_db/20)/2,a.threshold_db},{1,'Ratio',(a.ratio-1)/99,a.ratio},
     {2,'Attack',a.attack_ms/500,a.attack_ms},{3,'Release',a.release_ms/5000,a.release_ms},
     {10,'Dry',0},{11,'Wet',10^(makeup/20)/2,makeup},{15,'Auto Make Up Gain',0}}
    for _,v in ipairs(values)do local _,label=R.TrackFX_GetParamName(tr,idx,v[1],'');assert(label==v[2],'ReaComp parameter layout differs from the validated adapter')end
+   parameter_automation(tr,idx,{0,1,2,3,10,11,15},a.override_automation)
    local old={};for _,v in ipairs(values)do old[v[1]]=R.TrackFX_GetParamNormalized(tr,idx,v[1])end
    local good,why=pcall(function()
     for _,v in ipairs(values)do
@@ -360,7 +427,8 @@ function B.execute(s,name,a)
    if not good then for i,v in pairs(old)do R.TrackFX_SetParamNormalized(tr,idx,i,v)end;error(why)end
    return {threshold_db=a.threshold_db,ratio=a.ratio,attack_ms=a.attack_ms,release_ms=a.release_ms,makeup_db=makeup}
   elseif name=='configure_limiter'then
-   local tr,idx,row=own(s,a.track,a.effect)
+   local tr,idx,row=editable(s,a.track,a.effect)
+   assert(not R.TrackFX_GetOffline(tr,idx),'Load this effect with set_effect_state offline=false first')
    assert(row.plugin=='VST3: Pro-L 2 (FabFilter)'or row.plugin=='VST: FabFilter Pro-L 2 (FabFilter)','This adapter requires FabFilter Pro-L 2')
    finite(a.gain_db,0,24);finite(a.ceiling_db,-12,-1)
    -- Calibrated on installed Pro-L 2. Verify labels and physical readbacks before accepting changes.
@@ -370,9 +438,9 @@ function B.execute(s,name,a)
    local old={}
    for _,v in ipairs(values)do
     local _,label=R.TrackFX_GetParamName(tr,idx,v[1],'');assert(label==v[2],'Pro-L 2 parameter layout differs from the validated adapter')
-    assert(not R.GetFXEnvelope(tr,idx,v[1],false),'Automated limiter parameters are protected')
     old[v[1]]=R.TrackFX_GetParamNormalized(tr,idx,v[1])
    end
+   parameter_automation(tr,idx,{0,10,15,17,18,9},a.override_automation)
    local good,why=pcall(function()
     for _,v in ipairs(values)do
      assert(R.TrackFX_SetParamNormalized(tr,idx,v[1],v[3]),'Pro-L 2 rejected a parameter')
@@ -388,9 +456,16 @@ function B.execute(s,name,a)
     estimated_post_fader_ceiling_db=headroom and not headroom.volume_automated and not headroom.fader_silent and (a.ceiling_db+headroom.post_fx_fader_db)or nil,
     next_step='If master gain raises the ceiling, lower the plugin ceiling using master_headroom, then render measure_mix to verify final loudness and true peak. Existing master fader is unchanged.'}
   elseif name=='configure_eq'then
-   local tr,idx,row=own(s,a.track,a.effect);assert(row.plugin:find('ReaEQ',1,true),'This adapter requires ReaEQ')
+   local tr,idx,row=editable(s,a.track,a.effect);assert(row.plugin:find('ReaEQ',1,true),'This adapter requires ReaEQ')
+   assert(not R.TrackFX_GetOffline(tr,idx),'Load this effect with set_effect_state offline=false first')
    local band=({low_shelf=1,bell=2,high_shelf=4})[a.band];assert(band,'Unknown EQ band')
    finite(a.band_index,0,1);assert(a.band_index%1==0,'Integer band index required');finite(a.frequency_hz,20,20000);finite(a.gain_db,-12,12)
+   local parameters={}
+   for i=0,R.TrackFX_GetNumParams(tr,idx)-1 do
+    local found,bt,bi,pt=R.TrackFX_GetEQParam(tr,idx,i)
+    if found and bt==band and bi==a.band_index and (pt==0 or pt==1)then parameters[#parameters+1]=i end
+   end
+   parameter_automation(tr,idx,parameters,a.override_automation)
    local old={};for i=0,R.TrackFX_GetNumParams(tr,idx)-1 do old[i]=R.TrackFX_GetParamNormalized(tr,idx,i)end
    local good,why=pcall(function()
     assert(R.TrackFX_SetEQParam(tr,idx,band,a.band_index,0,a.frequency_hz,false),'EQ frequency could not be set')
@@ -407,10 +482,10 @@ function B.execute(s,name,a)
    if not good then for i,v in pairs(old)do R.TrackFX_SetParamNormalized(tr,idx,i,v)end;error(why)end
    return {band=a.band,frequency_hz=a.frequency_hz,gain_db=a.gain_db}
   elseif name=='set_effect_parameter'then
-   local tr,idx=own(s,a.track,a.effect);finite(a.parameter,0,R.TrackFX_GetNumParams(tr,idx)-1);assert(a.parameter%1==0,'Integer parameter index required')
-   finite(a.normalized,0,1);local old=R.TrackFX_GetParamNormalized(tr,idx,a.parameter)
-   assert(math.abs(old-a.normalized)<=0.200001,'Limit each parameter move to 0.20 normalized units')
-   assert(not R.GetFXEnvelope(tr,idx,a.parameter,false),'Automated parameters are protected')
+   local tr,idx=editable(s,a.track,a.effect);assert(not R.TrackFX_GetOffline(tr,idx),'Load this effect with set_effect_state offline=false first')
+   finite(a.parameter,0,R.TrackFX_GetNumParams(tr,idx)-1);assert(a.parameter%1==0,'Integer parameter index required')
+   finite(a.normalized,0,1)
+   parameter_automation(tr,idx,{a.parameter},a.override_automation)
    assert(R.TrackFX_SetParamNormalized(tr,idx,a.parameter,a.normalized),'Parameter was rejected')
    local _,label=R.TrackFX_GetParamName(tr,idx,a.parameter,'');local _,value=R.TrackFX_GetFormattedParamValue(tr,idx,a.parameter,'')
    return {name=label,formatted=value,normalized=R.TrackFX_GetParamNormalized(tr,idx,a.parameter)}
@@ -432,6 +507,14 @@ function B.execute(s,name,a)
    R.Envelope_SortPointsEx(env,-1);return {points=#a.points}
   else error('Unknown mixing tool')end
  end,debug.traceback)
+ if not ok and fx_attempt then
+  local restored,why=pcall(function()
+   if not FXState.same(FXState.capture(fx_attempt.track,fx_attempt.id),fx_attempt.original)then
+    FXState.apply({FXState.plan(fx_attempt.track,{[fx_attempt.id]=fx_attempt.original})})
+   end
+  end)
+  if not restored then result=tostring(result)..'\nPlugin rollback failed: '..tostring(why)end
+ end
  R.Undo_EndBlock2(s.project,'Solo Studio mix: '..name,-1);R.UpdateArrange();remember(s)
  if not ok then error(result)end;return result
 end
@@ -456,8 +539,18 @@ function B.compare(s,mode)
   local v=mode=='original'and row or (values and values[row.id])
   assert(v and type(v.volume)=='number'and type(v.pan)=='number','No candidate snapshot')
  end
+ local replacements={};local plans={}
+ for _,row in ipairs(s.modified or {})do
+  local tr=track(row.track,s.project);fx_index(tr,row.id)
+  if mode=='original'then row.candidate=FXState.capture(tr,row.id)end
+  replacements[row.track]=replacements[row.track]or {}
+  replacements[row.track][row.id]=assert(row[mode],'No existing-plugin '..mode..' snapshot')
+ end
+ for guid,values in pairs(replacements)do plans[#plans+1]=FXState.plan(track(guid,s.project),values)end
  s.render_cache={}
  R.Undo_BeginBlock2(s.project)
+ local restored,reason=pcall(FXState.apply,plans)
+ if not restored then R.Undo_EndBlock2(s.project,'Solo Studio plugin comparison failed',-1);remember(s);error(reason)end
  for _,row in ipairs(s.original)do
   local tr=tracks[row.id];local v=mode=='original'and row or values[row.id]
   R.SetMediaTrackInfo_Value(tr,'D_VOL',v.volume);R.SetMediaTrackInfo_Value(tr,'D_PAN',v.pan)
@@ -467,7 +560,17 @@ function B.compare(s,mode)
 end
 function B.revert(s)
  B.guard(s,false,true);local conflicts=0
+ local replacements,plans={},{}
+ for _,row in ipairs(s.modified or {})do
+  local ok,current=pcall(function()return FXState.capture(track(row.track,s.project),row.id)end)
+  if ok and FXState.same(current,row.expected)then
+   replacements[row.track]=replacements[row.track]or {};replacements[row.track][row.id]=row.original
+  else conflicts=conflicts+1 end -- Preserve manual edits made after the pass.
+ end
+ for guid,values in pairs(replacements)do plans[#plans+1]=FXState.plan(track(guid,s.project),values)end
  R.Undo_BeginBlock2(s.project)
+ local restored,reason=pcall(FXState.apply,plans)
+ if not restored then R.Undo_EndBlock2(s.project,'Solo Studio plugin revert failed',-1);error(reason)end
  for _,row in ipairs(s.original)do
   local ok,tr=pcall(track,row.id,s.project)
   if ok then

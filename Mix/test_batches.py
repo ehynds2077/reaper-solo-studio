@@ -46,6 +46,21 @@ class BatchTests(unittest.TestCase):
     def batch(self, operations):
         return self.session.execute_tool('apply_mix_batch', {'operations': operations})
 
+    def test_existing_plugin_state_and_full_parameter_moves_work_in_a_batch(self):
+        operations = [
+            {'tool': 'set_effect_state', 'arguments': {'track': 'MASTER', 'effect': '{existing}', 'offline': False, 'enabled': True}},
+            {'tool': 'set_effect_parameter', 'arguments': {'track': 'MASTER', 'effect': '{existing}', 'parameter': 0, 'normalized': .9, 'override_automation': True}},
+            {'tool': 'configure_limiter', 'arguments': {'track': 'MASTER', 'effect': '{existing}', 'gain_db': 6, 'ceiling_db': -2}},
+        ]
+        result = self.batch(operations)
+        self.assertEqual(result['completed'], 3)
+        self.assertEqual([args['effect'] for _, args in self.calls], ['{existing}'] * 3)
+        self.assertEqual(self.session.mix_revision, 3)
+        self.assertEqual(self.session.global_edit_revision, 3)
+        for value in (0, 1, 'false'):
+            with self.assertRaises(ValueError):
+                self.session.execute_tool('set_effect_state', {'track': 'MASTER', 'effect': '{existing}', 'offline': value})
+
     def test_ten_eqs_added_and_configured_without_model_round_or_render_between(self):
         plan = eq_operations()
         result = self.batch(plan)

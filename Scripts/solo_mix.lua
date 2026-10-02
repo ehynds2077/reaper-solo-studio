@@ -47,7 +47,7 @@ return function(M,ui,options)
    status='This project has changed since its previous AI mix.'
   elseif saved.state=='review'or saved.state=='review_warning'then
    status='Candidate recovered. Play and switch Original / Candidate to compare.'
-  else saved.state='recovery';status='Unfinished session recovered. Revert restores its faders and removes its added effects.'end
+  else saved.state='recovery';status='Unfinished session recovered. Revert restores levels and edited plugins, and removes added effects.'end
   return saved
  end
  session=B.find_session(data..'/sessions',R.GetExtState(M.ns,'mix_session'))
@@ -86,7 +86,7 @@ return function(M,ui,options)
   assert(session,'No session');cancelled()
   if revert then
    local conflicts=B.revert(session)
-   status=conflicts>0 and ('Reverted; preserved '..conflicts..' fader/pan controls you changed manually.')or 'Original mix restored. Recordings and existing effects are preserved.'
+   status=conflicts>0 and ('Reverted; preserved '..conflicts..' controls or plugins you changed manually.')or 'Original mix restored, including edited plugins. Recordings are preserved.'
   else
    assert(state and state.state=='review','Only a measured candidate with peaks at or below -1 dBTP can be kept.')
    B.keep(session);status='Candidate kept. Save your REAPER project when you are ready.'
@@ -250,7 +250,7 @@ return function(M,ui,options)
   if ok and value~=''then resume(value)end
  end
  local function continue_mix()
-  resume('Continue from this candidate. Inspect and reuse session-owned effects, measure the current result, and address the remaining reference, balance and output-peak gaps. Finish when the measured result is ready for audition.')
+  resume('Continue from this candidate. Inspect and reuse session-owned effects and existing plugins, including the master chain. You may modify existing plugin parameters, bypass and online/offline states. Fix the remaining reference, balance and output-peak gaps; verify the measured result before finishing.')
  end
  local function track_job(capture)
   assert(not track_working,'Wait for the current track graphics job.')
@@ -322,7 +322,7 @@ return function(M,ui,options)
    text('The previous pass\'s snapshots and analysis stay saved on this Mac.',x,y+175,3,C.muted,w)
    button('Start a new mix',x,y+218,190,43,restart,C.blue,R.GetPlayState()==0)
    button('Revert previous pass',x+203,y+218,190,43,function()finish(true)end,nil,R.GetPlayState()&4==0)
-   text('Revert removes that pass\'s added effects and restores its unchanged faders; manual level/pan edits stay.',x,y+286,3,C.muted,w)
+   text('Revert removes added effects and restores levels and edited plugins; later manual edits stay.',x,y+286,3,C.muted,w)
    text('Enter: start a new mix from the current sound. Stop playback first.',x,y+322,3,C.muted,w)
   elseif phase=='setup'then
    models.ensure()

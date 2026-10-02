@@ -172,8 +172,9 @@ def schema(name, description, properties, required):
                        'required': required, 'additionalProperties': False}}}
 
 
-TRACK = {'type': 'string', 'description': 'Exact track GUID returned by inspect_project, or MASTER for session-owned master effects'}
-FX = {'type': 'string', 'description': 'Exact effect GUID returned by add_effect'}
+TRACK = {'type': 'string', 'description': 'Exact track GUID returned by inspect_project, or MASTER for master effects'}
+FX = {'type': 'string', 'description': 'Exact effect GUID from inspect_project track/master effects or add_effect'}
+OVERRIDE_AUTOMATION = {'type': 'boolean', 'description': 'Explicitly suspend active automation on the parameters being set. Defaults false. Original/Revert restore the saved automation.'}
 MAX_BATCH_EDITS = 64
 MAX_BATCH_READS = 16
 WINDOW = {
@@ -182,29 +183,31 @@ WINDOW = {
     'full_passage': {'type': 'boolean', 'description': 'Measure the entire selected passage. When true, takes precedence over start_seconds/duration_seconds; those range fields are ignored.'},
 }
 TOOLS = [
-    schema('inspect_project', 'Read tracks, master, routing, regions, available plugins and session_effects IDs. Reuse these owned effects on refinement instead of adding duplicates.', {}, []),
+    schema('inspect_project', 'Read tracks, master, routing, regions, available plugins and all existing effect GUIDs, chain indices, enabled/offline states. Existing and session-added track/master effects are editable and restorable. Reuse them instead of adding duplicates.', {}, []),
     schema('view_arrangement', 'Inspect source clip positions and available peak shapes without rendering. Returns up to 16 tracks per page; use next_track to paginate. Source peaks do NOT include track FX/faders/master and each track image is scaled independently. MIDI/unavailable peaks are not silence. Images are attached separately when vision is enabled.',
            {'start_track': {'type': 'integer', 'minimum': 0}, 'track_count': {'type': 'integer', 'minimum': 1, 'maximum': 16}}, []),
     schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. Master fader and automated controls are protected.',
            {'track': TRACK, 'volume_db': number(-90, 24), 'pan': number(-1, 1)}, ['track', 'volume_db', 'pan']),
-    schema('add_effect', 'Append one effect on a track or MASTER. Use an exact name from available_plugins, not session_effects. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Only session-added effects can be changed. Put the master limiter last. For trim rides call set_trim_automation directly; it creates/reuses its dedicated processor. Do not add JS Mix Trim with this tool.',
+    schema('add_effect', 'Append one effect on a track or MASTER. Use an exact name from available_plugins. Reuse suitable existing processors before adding another. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Put the master limiter last. For trim rides call set_trim_automation directly; it creates/reuses its dedicated processor. Do not add JS Mix Trim with this tool.',
            {'track': TRACK, 'plugin': {'type': 'string'}}, ['track', 'plugin']),
-    schema('inspect_effect', 'Read parameter indices, raw ranges, normalized values and formatted values of a newly added effect.',
+    schema('inspect_effect', 'Read any existing or session-added track/master effect: parameter indices, raw ranges, normalized/formatted values and active automation. Offline effects must be loaded with set_effect_state offline=false before inspecting parameters.',
            {'track': TRACK, 'effect': FX, 'start_parameter': {'type': 'integer', 'minimum': 0}}, ['track', 'effect']),
-    schema('configure_compressor', 'Configure a newly added ReaComp, including explicit makeup gain. Threshold should act on the source level, not a generic preset. Re-measure dynamics and loudness.',
+    schema('set_effect_state', 'Enable/bypass or load/offline any existing or session-added track/master effect. enabled=true alone does NOT load an offline effect; use offline=false. Existing plugin state is saved before changes for Original/Candidate and Revert. Prefer bypassing redundant limiters to stacking more.',
+           {'track': TRACK, 'effect': FX, 'enabled': {'type': 'boolean'}, 'offline': {'type': 'boolean'}}, ['track', 'effect']),
+    schema('configure_compressor', 'Configure any ReaComp, including explicit makeup gain. Threshold should act on the source level, not a generic preset. Re-measure dynamics and loudness.',
            {'track': TRACK, 'effect': FX, 'threshold_db': number(-60, 0), 'ratio': number(1, 20),
-            'attack_ms': number(.1, 200), 'release_ms': number(10, 3000), 'makeup_db': number(0, 6)},
+            'attack_ms': number(.1, 200), 'release_ms': number(10, 3000), 'makeup_db': number(0, 6), 'override_automation': OVERRIDE_AUTOMATION},
            ['track', 'effect', 'threshold_db', 'ratio', 'attack_ms', 'release_ms']),
-    schema('configure_limiter', 'Configure session-added FabFilter Pro-L 2 on MASTER (or a track): gain in dB, plugin output ceiling, true-peak limiting ON, 2x oversampling, unity gain OFF. MASTER fader gain happens AFTER the limiter: use inspect_project master.limiter_headroom to choose a ceiling that compensates positive master gain. Raise gain toward the measured LUFS gap, re-render, and refine. Existing user FX are untouched.',
-           {'track': TRACK, 'effect': FX, 'gain_db': number(0, 24), 'ceiling_db': number(-12, -1)},
+    schema('configure_limiter', 'Configure any existing or session-added FabFilter Pro-L 2 on MASTER (or a track): gain in dB, output ceiling, true-peak limiting ON, 2x oversampling, unity gain OFF. Load offline=false and enable it with set_effect_state first. MASTER fader gain happens AFTER the limiter: use master.limiter_headroom to compensate positive master gain. Re-render and verify actual peaks.',
+           {'track': TRACK, 'effect': FX, 'gain_db': number(0, 24), 'ceiling_db': number(-12, -1), 'override_automation': OVERRIDE_AUTOMATION},
            ['track', 'effect', 'gain_db', 'ceiling_db']),
-    schema('configure_eq', 'Set frequency and gain of an existing band in a newly added ReaEQ. Broad default bandwidth. Use low_shelf/high_shelf index 0, or bell index 0/1.',
+    schema('configure_eq', 'Set frequency and gain of an existing band in any ReaEQ. Broad default bandwidth. Use low_shelf/high_shelf index 0, or bell index 0/1.',
            {'track': TRACK, 'effect': FX, 'band': {'type': 'string', 'enum': ['low_shelf', 'bell', 'high_shelf']},
             'band_index': {'type': 'integer', 'minimum': 0, 'maximum': 1},
-            'frequency_hz': number(20, 20000), 'gain_db': number(-12, 12)},
+            'frequency_hz': number(20, 20000), 'gain_db': number(-12, 12), 'override_automation': OVERRIDE_AUTOMATION},
            ['track', 'effect', 'band', 'band_index', 'frequency_hz', 'gain_db']),
-    schema('set_effect_parameter', 'Set a parameter on a newly added effect. Use inspection/readback, never assume normalized units. Change <=0.20 per call; render after processing changes.',
-           {'track': TRACK, 'effect': FX, 'parameter': {'type': 'integer', 'minimum': 0}, 'normalized': number(0, 1)}, ['track', 'effect', 'parameter', 'normalized']),
+    schema('set_effect_parameter', 'Set any exposed parameter on an existing or session-added track/master effect, across the full normalized 0–1 range. Inspect the mapping/readback; never guess units. No incremental 0.20 cap. Active parameter automation requires explicit override_automation=true. Render after meaningful processing changes.',
+           {'track': TRACK, 'effect': FX, 'parameter': {'type': 'integer', 'minimum': 0}, 'normalized': number(0, 1), 'override_automation': OVERRIDE_AUTOMATION}, ['track', 'effect', 'parameter', 'normalized']),
     schema('set_trim_automation', 'Replace the WHOLE session-owned trim envelope: inspect_project trim_envelopes shows existing rides to retain/merge on resume. Linear points in absolute project seconds, within the selected passage, -12 to +6 dB, up to 256 points. Smooth phrase/section rides; zero dB at passage endpoints. Existing user automation and source clips stay intact.',
            {'track': TRACK, 'points': {'type': 'array', 'minItems': 2, 'maxItems': 256,
             'items': {'type': 'object', 'properties': {'seconds': number(0, 86400), 'db': number(-12, 6)},
@@ -223,12 +226,12 @@ TOOLS = [
 EDIT_TOOLS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS
               if tool['function']['name'] in (
                   'set_track_mix', 'add_effect', 'configure_eq', 'configure_compressor',
-                  'configure_limiter', 'set_effect_parameter', 'set_trim_automation', 'set_phrase_rides')}
+                  'configure_limiter', 'set_effect_parameter', 'set_effect_state', 'set_trim_automation', 'set_phrase_rides')}
 BATCH_VARIANTS = []
 for name, parameters in EDIT_TOOLS.items():
     parameters = copy.deepcopy(parameters)
     if 'effect' in parameters['properties']:
-        parameters['properties']['effect']['description'] = 'Owned effect GUID, or $alias from an earlier add_effect in this batch.'
+        parameters['properties']['effect']['description'] = 'Existing or session-added effect GUID, or $alias from an earlier add_effect in this batch.'
     properties = {'tool': {'type': 'string', 'enum': [name]}, 'arguments': parameters}
     if name == 'add_effect':
         properties['save_as'] = {'type': 'string', 'description': 'Optional batch-local alias, e.g. guitar_eq. Later effect fields may use $guitar_eq.'}
@@ -238,7 +241,7 @@ TOOLS.extend([
     schema('apply_mix_batch', 'Apply a planned pass of up to 64 edits across tracks, without rendering between edits. Add and configure effects in one request using save_as aliases. All argument/alias validation happens first. Executes sequentially; stops at the first runtime error and reports completed edits (NOT atomic rollback). Reuse returned GUIDs on later calls. Measure once after a meaningful pass.',
            {'operations': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_EDITS,
                            'items': {'oneOf': BATCH_VARIANTS}}}, ['operations']),
-    schema('inspect_effects', 'Read parameter pages for up to 16 session-owned effects together. No rendering. Useful for establishing actual third-party parameter mappings across tracks before a batch edit.',
+    schema('inspect_effects', 'Read parameter pages for up to 16 existing or session-added effects together. No rendering. Establish third-party parameter mappings before a batch edit.',
            {'effects': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_READS,
                         'items': next(t['function']['parameters'] for t in TOOLS if t['function']['name'] == 'inspect_effect')}}, ['effects']),
     schema('measure_tracks', 'Compare up to 16 track contributions over the SAME project-time window in one request. Returns a side-by-side summary plus numeric profiles. Each contribution still requires a sequential solo-in-place render unless cached; includes shared returns/master, NOT isolated dry stems. Choose informative tracks; do not routinely render every track. Errors are reported per track.',
@@ -513,12 +516,17 @@ Reference LUFS/LRA/crest remain context, not an instruction to copy heavy limiti
 For comparable material aim within about 2 dB of broad normalized band balance.
 These are working tolerances, not a quality guarantee. Use gain staging and
 appropriate compression, with output true peaks <= -1 dBTP.
-If the user says the mix is over-limited, REDUCE drive into owned master limiters
+If the user says the mix is over-limited, REDUCE drive into the master limiters
 and inspect gain staging before doing anything else. Reducing post-limiter output
 gain only makes the same flattened waveform quieter. Do not lower the limiter
 ceiling as a way to reduce limiting, or add another limiter to hit the target.
-Existing user plugins are read-only: report upstream clipping/limiting that the
-available owned-effect/input controls cannot undo. Never claim measured gain
+You are authorized to modify EXISTING plugins as well as session-added ones,
+including every listed master clipper/limiter. Their complete state is saved for
+Original/Candidate and Revert. Never claim they are read-only. Check both enabled
+AND offline: an enabled offline plugin does not process audio. Load it with
+set_effect_state offline=false, enabled=true before configuring it. Prefer one
+effective final true-peak limiter; bypass redundant stages rather than stacking.
+Never claim measured gain
 reduction from a waveform or spectrogram; plugin GR metering is not available.
 Compare crest/peak-to-loudness, LRA and short-window crest to decide whether the
 gap needs dynamics control rather than only gain. Avoid crushing transients or
@@ -668,15 +676,16 @@ check exposes a remaining level problem, fix and recheck it rather than merely
 checking a box. Do not claim leveling is finished if evidence is missing, stale,
 or unmeasurable. Report any budget/tool limit and the affected tracks explicitly.
 
-Preserve timing and phase relationships. No edits of items, takes, inputs, routing
-or existing plugins. Do not hard-pan individual close drum microphones; keep related
+Preserve timing and phase relationships. Do not edit items, takes, inputs or routing.
+Do not hard-pan individual close drum microphones; keep related
 mics coherent. Avoid boost cascades through folders. Stop on silent/empty projects.
 You CAN rebalance faders up to +24 dB, EQ by up to +/-12 dB, set ReaComp makeup,
-and add your own EQ/compressor/limiter on MASTER. Existing plugins remain read-only.
+and edit any listed existing track/master plugin or add an appropriate processor.
 session_effects lists the effect IDs owned by this session, including earlier
 passes. Inspect and reconfigure them; do not stack duplicate processors on resume.
-After source balance and tonal work, use master compression if needed and append
-FabFilter Pro-L 2 last. configure_limiter provides calibrated gain, true-peak
+After source balance and tonal work, use master compression if needed and reuse
+the final FabFilter Pro-L 2 when present. Only append one if no suitable limiter
+exists. configure_limiter provides calibrated gain, true-peak
 limiting and ceiling. Use this final level stage to approach reference LUFS;
 do not pull the whole mix back simply because transient peaks limit a fader boost.
 Start limiter drive from the measured loudness deficit, render, then refine it.
@@ -693,11 +702,14 @@ not compensate automatically and returns the estimated post-fader ceiling.
 If master gain is automated or the suggested ceiling is outside the adapter's
 range, inspect/report that constraint rather than assume a fixed ceiling works.
 Always verify the actual rendered output; downstream FX/routing can change peaks.
-Use the configure_eq/configure_compressor physical-unit adapters for new ReaEQ/ReaComp instances where useful. Optional installed FabFilter/UADx plugins require
+Use the configure_eq/configure_compressor physical-unit adapters for existing or new ReaEQ/ReaComp instances where useful. Other existing FabFilter/UAD/AU/JS plugins require
 inspection of actual parameter names and formatted values; do not guess units.
 Do not change a parameter if you cannot establish its mapping. Generic normalized
-parameter moves remain limited to 0.20 per call; this is not a small-step restriction
-on calibrated dB/Hz/ratio adapters or faders. Verify the completed pass by measuring.
+parameters can move directly to any justified value in 0–1. If active parameter
+automation would override an intended constant, you may explicitly suspend only
+that parameter's automation with override_automation=true; saved points remain
+available in Original/Revert. Preserve useful musical automation otherwise.
+Verify the completed pass by measuring.
 Automation points must begin/end at zero trim to avoid changing other sections.
 Communicate short plans, actions and measured results in plain language. Do not
 emit private chain-of-thought. Never declare success before measuring a candidate.
