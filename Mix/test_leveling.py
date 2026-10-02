@@ -118,6 +118,17 @@ class LevelWorkflowTests(unittest.TestCase):
         self.review('vocal'); self.review('guitar')
         self.assertEqual(self.session.leveling_issues(), [])
 
+    def test_measured_review_can_explain_several_rides_without_a_hidden_512_character_limit(self):
+        self.analyze()
+        reason = 'Measured phrase rides and section dynamics remain verified. ' * 20
+        self.session.execute_tool('review_level_balance', {
+            'track': 'vocal', 'decision': 'intentional_dynamics', 'reason': reason})
+        self.assertEqual(self.session.level_reviews['vocal']['reason'], reason.strip())
+        for invalid in ('x' * 2049, '', 'bad\x00reason'):
+            with self.assertRaises(ValueError):
+                self.session.execute_tool('review_level_balance', {
+                    'track': 'vocal', 'decision': 'intentional_dynamics', 'reason': invalid})
+
     def test_requires_current_evidence_after_individual_and_batch_edits(self):
         with self.assertRaises(ValueError): self.review('vocal')
         self.analyze(); self.review('vocal'); self.review('guitar')

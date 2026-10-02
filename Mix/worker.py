@@ -241,7 +241,7 @@ TOOLS.extend([
            {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': 8, 'items': TRACK}}, ['tracks']),
     schema('review_level_balance', 'Record the measured leveling outcome for a track after analyze_track_levels at the CURRENT mix settings. Explain corrected times/gains, or why the measured dynamics should stay. automated requires session trim rides; unmeasurable requires a failed level analysis and remains visibly unverified. This does not edit audio.',
            {'track': TRACK, 'decision': {'type': 'string', 'enum': ['automated', 'already_consistent', 'intentional_dynamics', 'unmeasurable']},
-            'reason': {'type': 'string'}}, ['track', 'decision', 'reason']),
+            'reason': {'type': 'string', 'maxLength': 2048, 'description': 'Concise measured outcome and musical rationale, up to 2048 characters.'}}, ['track', 'decision', 'reason']),
 ])
 TOOL_SPECS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS}
 
@@ -272,8 +272,9 @@ def validate(value, spec):
         for item in value:
             validate(item, spec['items'])
     elif kind == 'string':
-        if not isinstance(value, str) or not 0 < len(value) <= 512 or '\x00' in value:
-            raise ValueError('Invalid tool string')
+        limit = spec.get('maxLength', 512)
+        if not isinstance(value, str) or not 0 < len(value) <= limit or '\x00' in value:
+            raise ValueError('Expected a nonempty string of at most %d characters, without NUL' % limit)
     elif kind == 'boolean':
         if not isinstance(value, bool):
             raise ValueError('Expected boolean')
