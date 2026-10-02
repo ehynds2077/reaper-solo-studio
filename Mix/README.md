@@ -389,10 +389,23 @@ ffmpeg -f lavfi -i 'sine=frequency=1000:duration=8:sample_rate=48000' -ac 2 Test
 Live paid-model behavior requires the user's OpenRouter key and is a separate
 validation from these deterministic tests.
 
+Continuous leveling was verified on an actual 269-second, 19-track project with
+GPT-6 Luna. One 50%/3-second curve per source reduced the measured active one-second
+p90–p10 spread from 8.60 to 6.53 dB on guitar and 11.68 to 9.91 dB on vocals.
+Full-song output measured −9.8 LUFS and −1.1 dBTP after a further paired overhead
+EQ refinement. The pass reached measured review in 7m40s, with 12 full renders,
+17 short renders, 19 model rounds and $0.135 reported cost. Short refinement
+renders took roughly 2–4 seconds. The preceding pass took 16m17s and 30 full
+renders, but these were different continuations, not a controlled speed benchmark.
+Original/Candidate remained available; the test did not Keep or save the song.
+The Python suite has 84 passing checks, including full-resolution evidence,
+curve/gap/range behavior, preview/apply staleness, idempotence, partial failure,
+short diagnostic selection and mandatory final verification.
+
 On the development machine, 47 native integration checks passed, including the
 complete asynchronous worker/REAPER/render/analyzer/chart loop, compressor makeup,
-master limiting, source-peak reading and master-FX rollback. Thirty Python checks cover the worker
-and completion handling; 87 Lua checks cover A/B and review controls, with another
+master limiting, source-peak reading and master-FX rollback. Python checks cover the
+worker and completion handling; 87 Lua checks cover A/B and review controls, with another
 18 covering recovery and 11 covering source-overview scope/pagination. Visual
 checks verify peak-preserving PCM reduction, absolute chart times, image protocol
 ordering, bounded context, capability fallback and no extra audio renders.
