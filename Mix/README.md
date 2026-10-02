@@ -125,6 +125,7 @@ requests alongside the numeric measurements:
 
 **Graphs** now includes **Overview**, **Spectrogram**, **Waterfall** (perspective
 height plus color) and **Dynamics** (one-second RMS, sample peaks and crest).
+Press **V** to open the spectrogram and cycle through the views back to the log.
 **Open full size** opens the selected PNG. These local views are generated even
 when AI visual analysis is off; that switch controls image transmission to the
 model. The agent receives the 2D spectrogram alongside existing measured charts;

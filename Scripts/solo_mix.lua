@@ -324,7 +324,7 @@ return function(M,ui,options)
    button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,reviewing or stopped)
    button('Show analysis files',x+510,y+85,169,32,function()R.ExecProcess('/usr/bin/open '..quote(session.path),-1)end)
    button('Give feedback…',x+690,y+85,155,32,refine,nil,not busy and stopped and state~=nil)
-   text('A/B at actual levels.  1: Original  /  2: Candidate  /  Space: play or stop',x,y+126,3,C.muted,680)
+   text('A/B at actual levels.  1: Original / 2: Candidate / Space: play / V: graphs',x,y+126,3,C.muted,680)
    button('Continue mixing',x+690,y+121,155,27,continue_mix,nil,not busy and stopped and state~=nil and session.mode=='candidate')
    button('Target '..metric(config.target_lufs)..' LUFS · Limits…',x+855,y+121,233,27,advanced,nil,not busy)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
@@ -406,6 +406,14 @@ return function(M,ui,options)
    R.SetExtState(M.ns,'mix_view',mix_view,true);return true
   end
   if mix_view=='bounces'then return bounces().key(ch)end
+  if phase=='session'and (ch==118 or ch==86)and state and #(state.measurements or {})>1 then
+   if not show_graphs then show_graphs=true;graph_mode='spectrogram'
+   else
+    local next_view={spectrogram='waterfall',waterfall='dynamics',dynamics='overview'}
+    if next_view[graph_mode]then graph_mode=next_view[graph_mode]else show_graphs=false end
+   end
+   return true
+  end
   if ch==13 and phase=='recovery'then if R.GetPlayState()==0 then ui.run(restart)end;return true end
   if phase=='session'and (ch==103 or ch==71)then ui.run(refine);return true end
   if phase=='session'and (ch==49 or ch==50)then

@@ -95,6 +95,9 @@ check(buttons.Spectrogram and buttons.Waterfall and buttons.Dynamics and buttons
 check(buttons['Generate graphics'].enabled,'Legacy review can generate plots from saved renders')
 buttons['Generate graphics'].run();check(launches==1,'Generating graphics launches a local background job')
 check(not kept and not reverted and not compared,'Graph generation cannot change the candidate')
+graph_panel=panel(0);check(graph_panel.key(118),'V opens measured graphics from the keyboard')
+buttons={};graph_panel.draw(0,0,1200,700)
+check(buttons['Chat log']and buttons.Spectrogram,'Keyboard graphics use the same graph view')
 measurements=nil
 local x=panel(0,'review','candidate',true)
 check(buttons['Start a new mix'].enabled and not buttons.Original,'Changed project offers current-mix recovery instead of outdated A/B')
