@@ -1287,6 +1287,16 @@ class Session:
             profile['loudness']['true_peak_dbtp'], render_time, elapsed))
         self.trace('measurement', label=label, bounds=bounds, track=track_id,
                    loudness=profile['loudness'], render=path.name, cached=bool(cached), recovered=_retry)
+        if track_id:
+            try:
+                from track_graphics import record
+                name = next((t['name'] for t in self.project.get('tracks', []) if t['id'] == track_id), track_id)
+                entry = record(self.dir, path, profile, name, pass_id=self.nonce)
+                if self.visuals_enabled:
+                    self.queue_image(self.dir / 'visuals' / entry['views']['spectrogram'],
+                        'Processed track spectrogram: %s, project seconds %s. %s. Snapshot of these measured settings, not a dry stem or a source-clip waveform.' % (name, bounds, entry['scope']))
+            except Exception:
+                self.publish('Track spectrogram unavailable; numerical track measurement remains valid.')
         if full and not track_id:
             try:
                 from visuals import mix_graphics
@@ -1602,8 +1612,13 @@ def main():
     parser.add_argument('--review-graphs', type=Path)
     parser.add_argument('--link-reference')
     parser.add_argument('--source', type=Path)
+    parser.add_argument('--track-graphics', type=Path)
+    parser.add_argument('--track-capture', type=Path)
     args = parser.parse_args()
-    if args.reference_graphics or args.review_graphs:
+    if args.track_graphics or args.track_capture:
+        from track_graphics import run
+        run(args.track_graphics or args.track_capture, capture=bool(args.track_capture))
+    elif args.reference_graphics or args.review_graphs:
         import fcntl
         from reference_graphics import build, review
         directory = args.reference_graphics or args.review_graphs

@@ -3,7 +3,7 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0;local function check(v,name)assert(v,name);passed=passed+1;print('PASS '..name)end
 local state,transport,session,compared,kept,reverted,buttons,archived,foreign,extstate
 local settings,writes,launches,input,job,legacy,measurement_error,measurements,labels
-local graph_manifest,reference_manifest,loaded_image
+local graph_manifest,reference_manifest,track_manifest,loaded_image,graph_test_project,graph_capture_result,graph_operations,last_launch
 local poll_clock,bridge_request,bridge_calls=0,nil,0
 local J={array=function(t)return t or {}end,write=function(path,value)writes[path]=value end}
 function J.read(path)
@@ -15,11 +15,18 @@ function J.read(path)
  if path:match('/connection.json$')then return {connected=true}end
  if path:match('/graphics.json$')then return graph_manifest end
  if path:match('/reference%-graphics.json$')then return reference_manifest end
+ if path:match('/track%-graphics.json$')then return track_manifest end
  if path:match('/request.json$')then return bridge_request end
 end
 local B={json=J,find_session=function()return not foreign and session or nil end,
  trace=function()end,diagnostics=function()return {transport=transport}end,
- execute=function()bridge_calls=bridge_calls+1;return {}end,
+ execute=function(_,name,args)
+  bridge_calls=bridge_calls+1
+  if graph_operations then graph_operations[#graph_operations+1]={name=name,args=args}end
+  if name=='inspect_project'and graph_test_project then return graph_test_project end
+  if name=='measure_track'and graph_capture_result then return graph_capture_result end
+  return {}
+ end,
  guard=function()assert(transport==0,'Stop transport')end,
  compare=function(_,mode)compared=mode;session.mode=mode end,
  keep=function()kept=true;session.finished=true end,
@@ -36,7 +43,7 @@ end
 reaper={RecursiveCreateDirectory=function()end,GetExtState=function(_,key)return key=='mix_session'and legacy or ''end,
  GetPlayState=function()return transport end,time_precise=function()return poll_clock end,
  GetSet_LoopTimeRange2=function()return 0,20 end,SetExtState=function(_,_,v)extstate=v end,
- GetUserInputs=function()return true,input end,ExecProcess=function()launches=launches+1;return ''end}
+ GetUserInputs=function()return true,input end,ExecProcess=function(command)last_launch=command;launches=launches+1;return ''end}
 gfx={setfont=function()end,rect=function()end,measurestr=function(v)return #v*7 end,
  setimgdim=function()end,loadimg=function(_,path)loaded_image=path;return 701 end,
  getimgdim=function()return 1200,600 end,blit=function()end}
@@ -113,6 +120,27 @@ graph_panel.key(98);graph_panel.draw(0,0,1200,700)
 check(loaded_image:match('/comparison.png$'),'B selects the loudness-matched comparison')
 graph_manifest.render='render-2-test.wav';poll_clock=2;graph_panel.draw(0,0,1200,700)
 check(loaded_image:match('/mix.png$'),'A new render cannot display stale reference comparison')
+track_manifest={tracks={{key='{A}:full',track='{A}',name='Guitar',bounds={0,20},measured_at=100,views={spectrogram='guitar.png'}}}}
+poll_clock=3;graph_panel.draw(0,0,1200,700);graph_panel.key(98);graph_panel.draw(0,0,1200,700)
+check(loaded_image:match('/guitar.png$'),'Track spectrogram is selectable independently of reference/mix graphs')
+graph_panel.key(98);graph_panel.draw(0,0,1200,700)
+check(loaded_image:match('/mix.png$'),'Source cycling returns from the track to the mix')
+track_manifest=nil
+graph_test_project={tracks={{id='{A}',name='Guitar'},{id='{B}',name='Guitar'}}}
+graph_capture_result={path='/nonexistent-test-mix/render-1-test.wav',bounds={0,20},scope='Solo-in-place including master FX'}
+gfx.showmenu=function()return 2 end
+graph_panel=panel(0);graph_panel.key(118);graph_operations={};graph_panel.key(116)
+local capture=writes['/nonexistent-test-mix/track-graphics-request.json']
+check(capture.track=='{B}'and capture.render=='render-1-test.wav','Track render uses selected GUID even when names match')
+check(#graph_operations==2 and graph_operations[1].name=='inspect_project'and graph_operations[2].name=='measure_track','Manual graph render has no mixing edits')
+check(last_launch:find('%-%-track%-capture')and not graph_panel.busy(),'Track analysis runs locally without starting an AI mixing pass')
+for _,t in ipairs({1,4,5})do
+ graph_panel=panel(t);graph_panel.key(118);graph_operations={};graph_panel.key(116)
+ check(#graph_operations==0,'Track rendering cannot interrupt transport '..t)
+end
+graph_panel=panel(0,'review','original');graph_panel.key(118);graph_operations={};graph_panel.key(116)
+check(#graph_operations==0,'Track rendering cannot silently switch Original to Candidate')
+graph_test_project=nil;graph_capture_result=nil;graph_operations=nil
 graph_manifest=nil;reference_manifest=nil
 measurements=nil
 local x=panel(0,'review','candidate',true)

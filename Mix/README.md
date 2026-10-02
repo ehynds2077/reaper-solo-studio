@@ -9,7 +9,7 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, `Mix/track_graphics.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
@@ -157,6 +157,27 @@ without verified image support cannot run this review. The analysis concerns the
 saved render named in the report; subsequent live edits/A/B do not refresh it.
 The CLI equivalents are `--reference-graphics SESSION` and `--review-graphs SESSION`.
 Both use existing renders; only the latter sends a paid model request.
+
+Individual tracks also appear in the graph source dropdown, with their measured
+time ranges. Use **Build saved track views** to plot existing AI track renders
+without bouncing again. It keeps the latest full passage and latest excerpt per
+track GUID, so duplicate track names and later short measurements do not erase
+the full-passage view. Older captures remain explicitly dated snapshots; they may
+reflect earlier mix settings.
+
+For current settings, stop transport, select **Candidate**, and choose **Render
+track…** (or press **T** while graphs are open). Pick the desired track. This
+uses the selected mix passage and the existing guarded track-render path, restores
+solos/render settings, and builds spectrogram/waterfall/dynamics plots locally.
+No AI request or mixing pass is started. These are **solo-in-place contributions**
+through track processing, routing, shared returns and master FX; they are not dry
+stems, and nonlinear shared processing can react differently than in the full mix.
+Render or analysis failures retain the previous successful track graphs.
+
+Subsequent AI track measurements publish these views automatically; image-capable
+models also receive the track spectrogram when visual analysis is on. The separate
+**AI mix review** button still reviews the full mix against the reference. Use
+`worker.py --track-graphics SESSION` to backfill saved track views from the CLI.
 
 At most four images are retained in model context; older images are replaced by
 text notices while numerical results remain. Charts are saved in the session's

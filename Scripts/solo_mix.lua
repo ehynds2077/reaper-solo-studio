@@ -29,6 +29,8 @@ return function(M,ui,options)
  local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
  local graph_mode='spectrogram';local graphics;local graphics_working=false;local graph_image;local graph_slot=701
  local reference_graphics;local graph_source=0;local reference_working=false;local graph_review
+ local track_graphics;local graph_track;local track_working=false;local graph_notice
+ local graph_menu_x,graph_menu_y=24,400
  local model_x,model_y=24,215
  local mix_view=R.GetExtState(M.ns,'mix_view')=='bounces'and 'bounces'or 'ai'
  local library
@@ -107,6 +109,15 @@ return function(M,ui,options)
   graphics=read(session.path..'/graphics.json')
   reference_graphics=read(session.path..'/reference-graphics.json')
   graph_review=read(session.path..'/graph-review.json')
+  track_graphics=read(session.path..'/track-graphics.json')
+  if track_working then
+   local result=read(session.path..'/track-graphics-status.json')
+   if result and result.state~='running'then
+    track_working=false
+    graph_notice=result.state=='error'and result.message or 'Track graphs ready. Saved measurements may reflect earlier settings.'
+    if result.selected then graph_track=result.selected;graph_source=0;graph_mode='spectrogram';show_graphs=true end
+   end
+  end
   if reference_working then
    local result=read(session.path..'/reference-graphics-status.json')
    if result and result.state~='running'then
@@ -123,6 +134,7 @@ return function(M,ui,options)
   if state and (state.state=='review'or state.state=='review_warning')then
    status=state.reference_issues and #state.reference_issues>0 and ('Reference target not reached: '..state.reference_issues[1])or 'Play and switch Original / Candidate to compare. Keep the mix when you are happy with it.'
   end
+  if graph_notice then status=graph_notice end
   if X.busy()then
    local ok,err=pcall(B.guard,session,true)
    if not ok then stopped('guard_rejected',tostring(err));return end
@@ -240,6 +252,36 @@ return function(M,ui,options)
  local function continue_mix()
   resume('Continue from this candidate. Inspect and reuse session-owned effects, measure the current result, and address the remaining reference, balance and output-peak gaps. Finish when the measured result is ready for audition.')
  end
+ local function track_job(capture)
+  assert(not track_working,'Wait for the current track graphics job.')
+  os.remove(session.path..'/track-graphics-status.json');graph_notice=nil;track_working=true
+  local ok,err=pcall(launch,{capture and '--track-capture'or '--track-graphics',session.path})
+  if not ok then track_working=false;error(err)end
+ end
+ local function render_track_graph()
+  assert(session and not X.busy()and not track_working,'Wait for the current operation.')
+  assert(R.GetPlayState()==0,'Stop playback before rendering a track.')
+  assert(session.mode=='candidate','Select Candidate before rendering a track.')
+  local project=B.execute(session,'inspect_project',{})
+  local menu={};local choices={}
+  for i,t in ipairs(project.tracks)do
+   local silent=t.muted or t.fader_silent
+   menu[i]=(silent and '#'or '')..t.name:gsub('[|<>!#]',' ')..(silent and ' (muted/silent)'or '')
+   choices[i]=t
+  end
+  gfx.x=graph_menu_x;gfx.y=graph_menu_y
+  local choice=gfx.showmenu(table.concat(menu,'|'));local t=choices[choice]
+  if not t then return end
+  assert(not t.muted and not t.fader_silent,'Unmute the track and raise its fader before rendering it.')
+  -- Use the existing guarded render path, which restores solos and render
+  -- settings on both success and failure. No mixing worker or model is started.
+  if R.Audio_IsRunning and R.Audio_IsRunning()==0 then B.execute(session,'recover_silent_render',{})end
+  local result=B.execute(session,'measure_track',{track=t.id})
+  J.write(session.path..'/track-graphics-request.json',{track=t.id,name=t.name,
+   render=result.path:match('([^/]+)$'),bounds=result.bounds,scope=result.scope,
+   measured_at=os.time(),origin='Manual track capture'})
+  track_job(true)
+ end
  function X.control_status()
   return {session_id=session and session.path:match('([^/]+)$'),state=state and state.state,
    busy=X.busy()or false,pending=X.pending()or false,mode=session and session.mode,
@@ -334,44 +376,59 @@ return function(M,ui,options)
    button(busy and 'Cancel & revert'or 'Revert',x+350,y+85,148,32,function()finish(true)end,nil,reviewing or stopped)
    button('Show analysis files',x+510,y+85,169,32,function()R.ExecProcess('/usr/bin/open '..quote(session.path),-1)end)
    button('Give feedback…',x+690,y+85,155,32,refine,nil,not busy and stopped and state~=nil)
-   text('A/B at actual levels.  1: Original / 2: Candidate / Space: play / V: graphs / B: source',x,y+126,3,C.muted,680)
+   text('1: Original / 2: Candidate · Space: play · V: graphs · B: source · T: render track',x,y+126,3,C.muted,680)
    button('Continue mixing',x+690,y+121,155,27,continue_mix,nil,not busy and stopped and state~=nil and session.mode=='candidate')
    button('Target '..metric(config.target_lufs)..' LUFS · Limits…',x+855,y+121,233,27,advanced,nil,not busy)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
    button('New mix…',x+970,y+85,118,32,restart,nil,not busy and stopped)
    if show_graphs and #measurements>1 then
     local refs=reference_graphics and graphics and reference_graphics.render==graphics.render and reference_graphics.references or {}
+    local tracks=track_graphics and track_graphics.tracks or {}
+    local track;for _,row in ipairs(tracks)do if row.key==graph_track then track=row;break end end
+    if graph_track and not track then graph_track=nil end
     local ref=refs[math.abs(graph_source)]
     if not ref then graph_source=0 end
-    local source_label=ref and ((graph_source<0 and 'Compare: 'or 'Reference: ')..ref.title)or 'Current mix'
+    local source_label=track and ('Track: '..track.name)or ref and ((graph_source<0 and 'Compare: 'or 'Reference: ')..ref.title)or 'Current mix'
+    graph_menu_x=x+540;graph_menu_y=y+183
     local function graph_job(review)
      os.remove(session.path..'/reference-graphics-status.json');reference_working=true
      launch({review and '--review-graphs'or '--reference-graphics',session.path})
     end
     for i,tab in ipairs({{'overview','Overview'},{'spectrogram','Spectrogram'},{'waterfall','Waterfall'},{'dynamics','Dynamics'}})do
-     button(tab[2],x+(i-1)*132,y+154,122,29,function()graph_mode=tab[1];if graph_source<0 then graph_source=math.abs(graph_source)end end,graph_mode==tab[1]and C.blue or nil)
+     button(tab[2],x+(i-1)*132,y+154,122,29,function()graph_mode=tab[1];if graph_mode=='overview'then graph_source=0;graph_track=nil elseif graph_source<0 then graph_source=math.abs(graph_source)end end,graph_mode==tab[1]and C.blue or nil)
     end
     button(source_label..' ▾',x+540,y+154,220,29,function()
-     local menu={'Current mix'};local choices={0}
+     local menu={'Current mix'};local choices={{source=0}}
      for i,r in ipairs(refs)do
       local name=r.title:gsub('[|<>!#]',' ')
-      menu[#menu+1]='Reference: '..name;choices[#choices+1]=i
-      menu[#menu+1]='Compare: '..name;choices[#choices+1]=-i
+      menu[#menu+1]='Reference: '..name;choices[#choices+1]={source=i}
+      menu[#menu+1]='Compare: '..name;choices[#choices+1]={source=-i}
+     end
+     for _,row in ipairs(tracks)do
+      menu[#menu+1]=string.format('Track: %s [%.0f–%.0fs] · saved',row.name:gsub('[|<>!#]',' '),row.bounds[1],row.bounds[2])
+      choices[#choices+1]={track=row.key,source=0}
      end
      menu[#menu+1]=(busy or reference_working)and '#Build reference views'or 'Build reference views'
+     local reference_action=#menu
+     menu[#menu+1]=(busy or track_working)and '#Build saved track views'or 'Build saved track views'
+     local saved_action=#menu
+     menu[#menu+1]=(busy or track_working or not stopped or session.mode~='candidate')and '#Render track… (stop, select Candidate)'or 'Render track…'
+     local render_action=#menu
      gfx.x=x+540;gfx.y=y+183;local choice=gfx.showmenu(table.concat(menu,'|'))
-     if choices[choice]~=nil then graph_source=choices[choice];if graph_mode=='overview'or graph_source<0 then graph_mode='spectrogram'end
-     elseif choice==#menu and not busy and not reference_working then graph_job(false)end
+     if choices[choice]then graph_source=choices[choice].source;graph_track=choices[choice].track;graph_notice=nil;if graph_mode=='overview'or graph_source<0 then graph_mode='spectrogram'end
+     elseif choice==reference_action and not busy and not reference_working then graph_job(false)
+     elseif choice==saved_action and not busy and not track_working then track_job(false)
+     elseif choice==render_action then render_track_graph()end
     end)
-    button(reference_working and 'Working…'or 'AI graph review…',x+900,y+154,190,29,function()
+    button(reference_working and 'Working…'or track and 'AI mix review…'or 'AI graph review…',x+900,y+154,190,29,function()
      local available=graph_review and graphics and graph_review.render==graphics.render
      gfx.x=x+900;gfx.y=y+183
-     local choice=gfx.showmenu((available and ''or '#')..'Open saved review|Review graphs (one AI request)')
+     local choice=gfx.showmenu((available and ''or '#')..'Open saved mix/reference review|Review mix/reference graphs (one AI request)')
      if choice==1 and available then R.ExecProcess('/usr/bin/open '..quote(session.path..'/Graph review.txt'),-1)
      elseif choice==2 then graph_job(true)end
     end,nil,not busy and not reference_working)
     if graph_mode~='overview'then
-     local filename=ref and (graph_source<0 and ref.comparison or ref.views[graph_mode])or graphics and graphics.views and graphics.views[graph_mode]
+     local filename=track and track.views[graph_mode]or ref and (graph_source<0 and ref.comparison or ref.views[graph_mode])or graphics and graphics.views and graphics.views[graph_mode]
      if filename and not filename:match('^[%w_.%-]+%.png$')then filename=nil end
      local path=filename and session.path..'/visuals/'..filename
      if path then
@@ -383,7 +440,9 @@ return function(M,ui,options)
       if graph_image then
        local iw,ih=gfx.getimgdim(graph_slot);local scale=math.min(w/iw,math.max(1,h-236)/ih)
        gfx.x=x+(w-iw*scale)/2;gfx.y=y+194;gfx.a=1;gfx.blit(graph_slot,scale,0)
-       text(source_label..' · Last measured audio, not live A/B.'..(graph_source<0 and ' Reference display gain matches mix LUFS; songs are not section-aligned.'or ''),x,y+h-24,3,C.muted,w)
+       local caption=track and string.format('%s · %.1f–%.1fs · Captured %s · Solo-in-place, routing/returns/master FX. Saved settings, not live A/B.',source_label,track.bounds[1],track.bounds[2],os.date('%m/%d %H:%M',track.measured_at))
+        or source_label..' · Last measured audio, not live A/B.'..(graph_source<0 and ' Reference display gain matches mix LUFS; songs are not section-aligned.'or '')
+       text(caption,x,y+h-24,3,C.muted,w)
       else text('Chart could not be loaded. Use Open full size or Show analysis files.',x,y+215,3,C.gold,w)end
      else
       text(graphics_working and 'Building graphics from the saved audio…'or 'Create these views from the last measured full mix.',x,y+210,3,C.muted,w)
@@ -443,20 +502,26 @@ return function(M,ui,options)
    R.SetExtState(M.ns,'mix_view',mix_view,true);return true
   end
   if mix_view=='bounces'then return bounces().key(ch)end
+  if phase=='session'and show_graphs and (ch==116 or ch==84)then
+   if not X.busy()and not track_working and R.GetPlayState()==0 and session.mode=='candidate'then ui.run(render_track_graph)
+   else graph_notice='Stop playback and select Candidate; wait for any active job before rendering a track.'end
+   return true
+  end
   if phase=='session'and show_graphs and (ch==98 or ch==66)then
    local refs=reference_graphics and graphics and reference_graphics.render==graphics.render and reference_graphics.references or {}
-   if #refs>0 then
-    if graph_source==0 then graph_source=1 elseif graph_source>0 then graph_source=-graph_source
-    else graph_source=math.abs(graph_source)<#refs and math.abs(graph_source)+1 or 0 end
-    graph_mode='spectrogram'
-   end
+   local choices={{source=0}}
+   for i=1,#refs do choices[#choices+1]={source=i};choices[#choices+1]={source=-i}end
+   for _,t in ipairs(track_graphics and track_graphics.tracks or {})do choices[#choices+1]={source=0,track=t.key}end
+   local index=1;for i,c in ipairs(choices)do if c.track==graph_track and c.source==graph_source then index=i;break end end
+   local next_choice=choices[index%#choices+1];graph_source=next_choice.source;graph_track=next_choice.track
+   graph_mode='spectrogram';graph_notice=nil
    return true
   end
   if phase=='session'and (ch==118 or ch==86)and state and #(state.measurements or {})>1 then
    if not show_graphs then show_graphs=true;graph_mode='spectrogram'
    else
     local next_view={spectrogram='waterfall',waterfall='dynamics',dynamics='overview'}
-    if next_view[graph_mode]then graph_mode=next_view[graph_mode];if graph_source<0 then graph_source=math.abs(graph_source)end else show_graphs=false end
+    if next_view[graph_mode]then graph_mode=next_view[graph_mode];if graph_mode=='overview'then graph_source=0;graph_track=nil elseif graph_source<0 then graph_source=math.abs(graph_source)end else show_graphs=false end
    end
    return true
   end

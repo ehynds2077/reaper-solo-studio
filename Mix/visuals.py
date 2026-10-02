@@ -89,8 +89,9 @@ def spectral_chart(data, profile, regions, output, perspective=False):
         fig.colorbar(surface, cax=fig.add_axes([.88, .22, .018, .58]), label='Log-frequency band power (dBFS)')
     else:
         fig.colorbar(surface, ax=ax, pad=.02, shrink=.8, label='Log-frequency band power (dBFS)')
-    fig.suptitle('%s · %s · %.1f–%.1fs\nProcessed audio · fixed −90…0 dBFS color scale · mean channel power · no per-column normalization' % (
-        label(profile.get('title', 'Measured mix')), 'Spectrum waterfall' if perspective else 'Spectrogram', start, end), fontsize=11)
+    scope = 'Solo-in-place · routing, returns and master FX' if profile.get('track') else 'Processed audio'
+    fig.suptitle('%s · %s · %.1f–%.1fs\n%s · fixed −90…0 dBFS colors · mean channel power' % (
+        label(profile.get('title', 'Measured mix')), 'Spectrum waterfall' if perspective else 'Spectrogram', start, end, scope), fontsize=11)
     return save(fig, output)
 
 
@@ -107,9 +108,10 @@ def dynamics_chart(profile, output):
                 title='Transient crest · context for dynamics, not measured limiter gain reduction')
     for ax in axes: ax.grid(alpha=.2); ax.legend(fontsize=8)
     loudness = profile.get('loudness', {})
-    fig.suptitle('%s · %s LUFS · %s dBTP · %s LU LRA\nLast measured audio; this chart does not measure plugin gain reduction' % (
+    scope = 'Solo-in-place: routing, returns and master FX' if profile.get('track') else 'Last measured audio'
+    fig.suptitle('%s · %s LUFS · %s dBTP · %s LU LRA\n%s; this chart does not measure plugin gain reduction' % (
         label(profile.get('title', 'Measured mix')), loudness.get('integrated_lufs'),
-        loudness.get('true_peak_dbtp'), loudness.get('loudness_range_lu')), fontsize=11)
+        loudness.get('true_peak_dbtp'), loudness.get('loudness_range_lu'), scope), fontsize=11)
     return save(fig, output)
 
 
