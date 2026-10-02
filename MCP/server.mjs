@@ -17,6 +17,7 @@ const limits = {
   rounds: z.number().int().min(1).max(100).optional(),
   stop_after_usd: z.number().min(.01).max(20).optional().describe('Reported-cost stopping threshold, not a guaranteed billing cap'),
   model: z.string().regex(/^[\w./:-]+$/).max(160).optional(),
+  target_lufs: z.number().min(-24).max(-8).optional().describe('Maximum integrated loudness target; default -12 LUFS. Quieter references can lower it further.'),
   visual_analysis: z.boolean().optional()
 };
 function tool(name, description, inputSchema, fn, write = false) {

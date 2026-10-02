@@ -10,6 +10,7 @@ import getpass
 import json
 import math
 import os
+import re
 from pathlib import Path
 from statistics import median
 import subprocess
@@ -344,6 +345,21 @@ def diagnostic_bounds(profile, bounds):
     return [start + best, start + best + 30]
 
 
+DEFAULT_TARGET_LUFS = -12.0
+
+
+def loudness_goal(references, maximum=DEFAULT_TARGET_LUFS):
+    """Use quieter references, but never chase a loud master's limiting by default."""
+    if not leveling.finite(maximum) or not -24 <= maximum <= -8:
+        raise ValueError('Loudness target must be between -24 and -8 LUFS.')
+    levels = [r.get('loudness', {}).get('integrated_lufs') for r in references]
+    levels = [value for value in levels if leveling.finite(value)]
+    target = min(maximum, median(levels)) if levels else maximum
+    return {'maximum_lufs': maximum, 'target_lufs': target, 'tolerance_lu': 1,
+            'reference_lufs': median(levels) if levels else None,
+            'direction': 'Preserve transients. Reduce limiter/input drive to lower loudness; post-limiter attenuation does not undo limiting. Quieter references can lower this target.'}
+
+
 def reference_comparison(profile, references):
     """Measured gaps, not EQ knob settings or a perceptual quality score."""
     if not references:
@@ -388,7 +404,7 @@ def reference_comparison(profile, references):
                               'peak is context only; output must stay at or below -1 dBTP.'}
 
 
-def reference_issues(profile, references):
+def reference_issues(profile, references, maximum_lufs=None):
     """Completion feedback, not a claim that metric matching guarantees a good mix."""
     loudness = profile.get('loudness', {})
     if any(not isinstance(loudness.get(key), (int, float)) or
@@ -396,14 +412,21 @@ def reference_issues(profile, references):
            for key in ('integrated_lufs', 'true_peak_dbtp')):
         return ['Rendered audio is silent or unmeasurable. Diagnose the signal path before continuing; this is not a reference match.']
     comparison = reference_comparison(profile, references)
-    if comparison is None:
-        return []
     issues = []
-    level = comparison['metrics'].get('integrated_lufs', {})
-    delta = level.get('delta_to_reference')
-    if delta is not None and abs(delta) > 2:
-        issues.append('Loudness %.1f LUFS vs reference %.1f LUFS (%.1f LU %s).' % (
-            level['current'], level['reference_median'], abs(delta), 'quieter' if delta > 0 else 'louder'))
+    if maximum_lufs is not None:
+        goal = loudness_goal(references, maximum_lufs)
+        delta = goal['target_lufs'] - loudness['integrated_lufs']
+        if abs(delta) > goal['tolerance_lu']:
+            issues.append('Loudness %.1f LUFS vs target %.1f LUFS (%.1f LU %s). Preserve dynamics; reduce limiter drive when too loud.' % (
+                loudness['integrated_lufs'], goal['target_lufs'], abs(delta), 'quieter' if delta > 0 else 'louder'))
+    elif comparison is not None:
+        level = comparison['metrics'].get('integrated_lufs', {})
+        delta = level.get('delta_to_reference')
+        if delta is not None and abs(delta) > 2:
+            issues.append('Loudness %.1f LUFS vs reference %.1f LUFS (%.1f LU %s).' % (
+                level['current'], level['reference_median'], abs(delta), 'quieter' if delta > 0 else 'louder'))
+    if comparison is None:
+        return issues
     bands = sorted((b for b in comparison['bands'] if b['delta_to_reference'] is not None),
                    key=lambda b: abs(b['delta_to_reference']), reverse=True)
     for band in bands[:3]:
@@ -449,6 +472,10 @@ Unavailable peaks and MIDI blocks must never be treated as measured silence.
 Use view_arrangement for additional tracks/pages if the initial overview is partial.
 Processed charts come from the same measured renders and include actual routing
 and master effects. Track charts remain solo-in-place contributions, not dry stems.
+Full-mix spectrograms show project time, logarithmic frequency and fixed-scale
+band power in color. Use them to locate evolving tonal buildup, gaps or noisy
+sections, then verify with numeric evidence. Colors are neither LUFS nor perceived
+quality. Dynamics plots show peak/RMS/crest; they do not measure limiter GR.
 Use visual patterns to choose targeted measurements and level rides, then verify
 with the numeric data. Do not infer vocal intelligibility, musical quality or an
 exact gain adjustment from waveform size. Only the most recent four images remain
@@ -464,16 +491,25 @@ not an accidental rough balance. Do not mistake "natural" or "preserve dynamics"
 for an instruction to keep an underbalanced, excessively quiet or unprocessed mix.
 
 With selected references, actively aim for similar broad EQ/tonal balance,
-integrated loudness, punch/dynamic density and stereo presentation. Start by
+punch and stereo presentation. Start by
 identifying the largest measured differences and setting a concrete plan to close
 them. reference_comparison supplies current values, reference medians/ranges and
 signed deltas. With multiple references use their shared characteristics/range;
 if they conflict, explain a compromise guided by the user's mix direction.
-For comparable material, aim initially within about 2 LU of reference integrated
-LUFS and about 2 dB of its broad normalized frequency-band balance. These are
-working tolerances, not a quality guarantee. Do not leave a mix 8-12 LU quieter
-merely to preserve its original levels. Work toward the reference loudness using
-gain staging and appropriate compression, with output true peaks <= -1 dBTP.
+The supplied loudness_goal is authoritative over a louder reference master.
+Default maximum target is -12 LUFS; quieter references lower it further. Aim
+within 1 LU of this target while retaining transients and musical dynamics.
+Reference LUFS/LRA/crest remain context, not an instruction to copy heavy limiting.
+For comparable material aim within about 2 dB of broad normalized band balance.
+These are working tolerances, not a quality guarantee. Use gain staging and
+appropriate compression, with output true peaks <= -1 dBTP.
+If the user says the mix is over-limited, REDUCE drive into owned master limiters
+and inspect gain staging before doing anything else. Reducing post-limiter output
+gain only makes the same flattened waveform quieter. Do not lower the limiter
+ceiling as a way to reduce limiting, or add another limiter to hit the target.
+Existing user plugins are read-only: report upstream clipping/limiting that the
+available owned-effect/input controls cannot undo. Never claim measured gain
+reduction from a waveform or spectrogram; plugin GR metering is not available.
 Compare crest/peak-to-loudness, LRA and short-window crest to decide whether the
 gap needs dynamics control rather than only gain. Avoid crushing transients or
 pumping to hit a number; report a remaining gap when the available tools or the
@@ -663,6 +699,8 @@ class Session:
         self.nonce = uuid.uuid4().hex[:12]
         self.measurements = previous.get('measurements', [])
         self.references = []
+        self.maximum_lufs = self.config.get('target_lufs', DEFAULT_TARGET_LUFS)
+        loudness_goal([], self.maximum_lufs)  # Validate before any project edits.
         self.reference_issues = []
         self.responses = []
         self.completion_reason = ''
@@ -718,6 +756,7 @@ class Session:
             'measurement_timings': self.timings, 'visual_analysis': self.visual_status,
             'measurement_error': self.measurement_error, 'activity': self.activity,
             'failure': self.failure, 'pass_id': self.nonce,
+            'loudness_goal': loudness_goal(self.references, self.maximum_lufs),
             'level_balance': {'targets': self.level_targets, 'reviews': self.level_reviews,
                               'remaining': self.leveling_issues()}})
 
@@ -1220,10 +1259,11 @@ class Session:
             profile['track'] = track_id
         else:
             self.measurement_error = None
+            profile['loudness_goal'] = loudness_goal(self.references, self.maximum_lufs)
             if self.references:
                 profile['reference_comparison'] = reference_comparison(profile, self.references)
             if full:
-                self.reference_issues = reference_issues(profile, self.references)
+                self.reference_issues = reference_issues(profile, self.references, self.maximum_lufs)
                 self.measurements.append(profile)
         write(self.dir / ('latest-track.json' if track_id else 'measurements.json'), profile if track_id else self.measurements)
         if not full and not track_id:
@@ -1238,6 +1278,16 @@ class Session:
             profile['loudness']['true_peak_dbtp'], render_time, elapsed))
         self.trace('measurement', label=label, bounds=bounds, track=track_id,
                    loudness=profile['loudness'], render=path.name, cached=bool(cached), recovered=_retry)
+        if full and not track_id:
+            try:
+                from visuals import mix_graphics
+                graphics = mix_graphics(path, profile, self.project.get('regions', []), self.dir / 'visuals')
+                write(self.dir / 'graphics.json', graphics)
+                if self.visuals_enabled:
+                    self.queue_image(self.dir / 'visuals' / graphics['views']['spectrogram'],
+                                     'Processed full-mix spectrogram. Time × log frequency × fixed-scale band power; not gain reduction or perceived loudness.')
+            except Exception:
+                self.publish('Mix graphics unavailable for this render; numerical measurement remains valid.')
         if self.visuals_enabled:
             try:
                 from visuals import processed_chart
@@ -1291,6 +1341,7 @@ class Session:
                 'direction': self.config.get('direction', 'Natural indie rock; clear vocals, punchy drums, preserve dynamics.'),
                 'excerpt_seconds': self.config['bounds'], 'diagnostic_seconds': self.diagnostic_bounds, 'project': project,
                 'original': original, 'references': refs,
+                'loudness_goal': loudness_goal(refs, self.maximum_lufs),
                 'level_balance_targets': self.level_targets}, allow_nan=False)}]
             messages[1]['content'] = json.dumps(planning.model_evidence(json.loads(messages[1]['content'])), allow_nan=False)
             self.attach_images(messages)
@@ -1357,7 +1408,7 @@ class Session:
                             batch = self.analyze_track_levels(stale[offset:offset + 8], 'verify')
                             verification['reports'].extend(batch['reports'])
                             verification['errors'].extend(batch['errors'])
-                    issues = reference_issues(checked, refs)
+                    issues = reference_issues(checked, refs, self.maximum_lufs)
                     level_issues = self.leveling_issues()
                     issues.extend(level_issues)
                     peak = checked.get('loudness', {}).get('true_peak_dbtp')
@@ -1416,7 +1467,7 @@ class Session:
                     self.publish('Three consecutive rounds failed every tool request. Pausing for review; see the tool errors above.')
                     break
             final = self.measure('Final candidate')
-            self.reference_issues = reference_issues(final, refs)
+            self.reference_issues = reference_issues(final, refs, self.maximum_lufs)
             try:
                 from charts import render_charts
                 render_charts(self.measurements, refs, self.dir / 'comparison.png')
@@ -1486,6 +1537,37 @@ def connect():
     print('Connected. Return to REAPER and click Refresh connection.')
 
 
+def generate_session_graphics(directory):
+    """Backfill an existing review without an API call or another DAW render."""
+    directory = Path(directory)
+    try:
+        state = read(directory / 'status.json', {})
+        if state.get('state') == 'running':
+            raise ValueError('Wait for the active mixing pass; its graphs update automatically.')
+        bounds = read(directory / 'snapshot.json')['bounds']
+        render = None
+        with (directory / 'events.jsonl').open() as source:
+            for line in source:
+                row = json.loads(line)
+                if row.get('kind') == 'measurement' and row.get('track') is None and row.get('bounds') == bounds:
+                    render = row.get('render')
+        if not isinstance(render, str) or not re.fullmatch(r'render-[\w-]+\.wav', render):
+            raise ValueError('No saved full-mix render found. Run a measured mixing pass first.')
+        path = directory / render
+        if path.resolve().parent != directory.resolve():
+            raise ValueError('Render must belong to this session.')
+        profile = analyze_audio(path, directory, 'Last measured candidate')
+        profile.update(measurement_bounds=bounds, measurement_kind='full_passage')
+        from visuals import mix_graphics
+        result = mix_graphics(path, profile, [], directory / 'visuals')
+        write(directory / 'graphics.json', result)
+        write(directory / 'graphics-status.json', {'state': 'ready'})
+        return result
+    except Exception as error:
+        write(directory / 'graphics-status.json', {'state': 'error', 'message': str(error)})
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--session', type=Path)
@@ -1494,8 +1576,11 @@ def main():
     parser.add_argument('--reference', type=Path)
     parser.add_argument('--result', type=Path)
     parser.add_argument('--models', type=Path)
+    parser.add_argument('--graphics', type=Path)
     args = parser.parse_args()
-    if args.models:
+    if args.graphics:
+        generate_session_graphics(args.graphics)
+    elif args.models:
         refresh_models(args.models)
     elif args.session:
         run_session(args.session)

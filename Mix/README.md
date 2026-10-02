@@ -9,7 +9,7 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
@@ -46,8 +46,15 @@ sessions; refreshing never silently changes that selection. **Enter model ID…*
 at the end of the dropdown supports models outside the shortlist. Press **O** in
 mix setup to open the dropdown from the keyboard.
 
-**Advanced settings** controls the model round limit and a stop threshold based
-on reported usage cost. That threshold
+**Advanced settings** controls loudness, the model round limit and a stop threshold based
+on reported usage cost. The default maximum loudness target is **−12 LUFS**, with
+quieter references lowering the effective target further. Change it from −24 to
+−8 LUFS in setup, or **Target … LUFS · Limits…** during review; the setting applies
+to the next mix/continuation. Completion uses this target (within 1 LU), not the
+raw level of a louder reference master. The mixer is directed to reduce limiter
+drive when a result feels over-limited; lowering post-limiter output would leave
+the flattened dynamics intact. Source clips and existing user FX remain protected.
+The cost threshold
 is checked *after* each response, so it is not a guaranteed billing cap.
 
 **Create candidate mix** measures the original, runs the tool loop, and measures
@@ -110,6 +117,22 @@ requests alongside the numeric measurements:
   absolute project seconds. Solo-track charts include routing, shared returns and
   master processing, matching the measurements. A chart does not require another
   audio render. Unchanged render charts are reused.
+- Full-mix spectrograms use project time horizontally, logarithmic frequency
+  vertically and fixed −90…0 dBFS log-band power in color. All overlapping Hann
+  FFT windows contribute; stereo channel powers are averaged so anti-phase audio
+  does not disappear. Time averaging is bounded to 900 columns, not isolated
+  samples. Plots show processed output, including effects, without another render.
+
+**Graphs** now includes **Overview**, **Spectrogram**, **Waterfall** (perspective
+height plus color) and **Dynamics** (one-second RMS, sample peaks and crest).
+**Open full size** opens the selected PNG. These local views are generated even
+when AI visual analysis is off; that switch controls image transmission to the
+model. The agent receives the 2D spectrogram alongside existing measured charts;
+the waterfall provides an alternate human view of the same data. Neither chart
+measures plugin gain reduction or guarantees an audible improvement.
+Graphs are snapshots of the last measured full mix, not live playback or A/B.
+Existing sessions can use **Generate graphics** to analyze their saved render
+without a paid request or new REAPER render. Charts and `graphics.json` stay local.
 
 At most four images are retained in model context; older images are replaced by
 text notices while numerical results remain. Charts are saved in the session's
@@ -129,10 +152,11 @@ The agent treats the starting session as a rough, unmixed balance unless your
 direction says otherwise. Selected references are active targets for broad EQ,
 loudness, dynamic density and stereo presentation. It can make substantial changes;
 preserving a performance does not mean preserving its starting fader levels.
-Each full-mix measurement includes signed gaps from the references' median and
+The separate quieter loudness goal takes precedence over reference mastering
+level or density. Each full-mix measurement includes signed gaps from the references' median and
 their measured range, so the agent can check whether its changes move closer.
 For comparable material, the prompt starts with working tolerances of roughly
-2 LU for integrated loudness and 2 dB for broad normalized band balance. These
+1 LU from the effective loudness target and 2 dB for broad normalized band balance. These
 are adjustable goals, not guarantees or literal EQ settings. Different arrangements
 and song sections require judgment. The agent must report remaining gaps and tool
 limits rather than claiming an unchanged rough mix is finished.
@@ -252,8 +276,8 @@ with higher peaks needs another pass or manual review; the Keep button remains
 unavailable. **Revert** removes session-added effects and restores original
 faders/pan, preserving controls you subsequently changed yourself.
 
-**Graphs** toggles native spectrum and RMS-envelope plots; the session folder
-contains a larger four-panel chart, complete measurements and render WAVs.
+The session folder also contains the larger four-panel comparison chart,
+complete measurements and render WAVs.
 
 The agent's fader, pan and effect settings apply across the track, even when
 measurement uses an excerpt. Trim automation is constrained to the excerpt with

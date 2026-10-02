@@ -73,7 +73,7 @@ export class Studio {
       try { process.kill(worker.pid, 0); workerAlive = true; } catch (error) { workerAlive = error.code === 'EPERM'; }
     }
     return { session_id: id, project_path: snapshot.project_path, mode: snapshot.mode, finished: snapshot.finished,
-      bounds: snapshot.bounds, ...pick(state, ['state', 'updated', 'calls', 'cost_usd', 'completion_reason', 'reference_issues', 'activity', 'failure', 'pass_id', 'measurement_error']),
+      bounds: snapshot.bounds, ...pick(state, ['state', 'updated', 'calls', 'cost_usd', 'completion_reason', 'reference_issues', 'activity', 'failure', 'pass_id', 'measurement_error', 'loudness_goal']),
       worker: worker ? { ...worker, process_alive: workerAlive } : null,
       panel_stop: await this.json(`${dir}/panel-stop.json`),
       measurements: (state.measurements || []).map(p => pick(p, ['title', 'measurement_bounds', 'loudness', 'rms_dbfs'])),
@@ -114,7 +114,7 @@ export class Studio {
     const request = await this.json(`${dir}/request.json`);
     const response = /^[a-zA-Z0-9-]{1,80}$/.test(request?.id || '') ? await this.json(`${dir}/response-${request.id}.json`) : null;
     return { ...await this.mixStatus(id), studio: await this.studioStatus(),
-      config: pick(await this.json(`${dir}/config.json`), ['model', 'direction', 'rounds', 'stop_after_usd', 'bounds', 'references', 'visual_analysis', 'resume']),
+      config: pick(await this.json(`${dir}/config.json`), ['model', 'direction', 'rounds', 'stop_after_usd', 'bounds', 'references', 'visual_analysis', 'resume', 'target_lufs']),
       failed_measurement: await this.json(`${dir}/failed-measurement.json`), last_bridge_request: request,
       last_bridge_response: response, awaiting_bridge_response: !!request && !response,
       worker_log: await this.readLog({ session_id: id, limit: 15 }),

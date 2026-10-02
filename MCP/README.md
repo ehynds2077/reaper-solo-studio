@@ -45,6 +45,9 @@ unfinished session instead of replacing it. All tabs must be stopped for start
 and resume. External project edits and Original/Candidate protections still
 apply. Starting/resuming sends the existing mix context to OpenRouter and spends
 credits; `stop_after_usd` is a reported-cost stopping threshold, not a hard cap.
+Start/resume also accept `target_lufs` (−24 to −8, default −12), a maximum loudness
+target that quieter references can lower further. Status/diagnostics expose the
+effective goal separately from raw reference loudness. Normal peak checks remain.
 The MCP server cannot Keep, Revert, delete, save a project, or run arbitrary code.
 
 Start returns a session ID immediately; follow it with status/log calls. Use a

@@ -168,6 +168,7 @@ class BatchTests(unittest.TestCase):
         self.assertIn('error', result)
 
     def test_model_loop_creates_ten_configured_eqs_in_one_response_then_measures(self):
+        self.session.maximum_lufs = -14  # Protocol fixture already meets its chosen target.
         requests = []
         def api(route, payload):
             requests.append(copy.deepcopy(payload))

@@ -20,7 +20,7 @@ local a=request();current='two';check(not pcall(C.execute,a)and calls==0,'Switch
 current='one';a=request();a.instance_id='old';check(not pcall(C.execute,a),'Reloaded panel rejects old commands')
 a=request();a.expires_at=os.time()-1;check(not pcall(C.execute,a),'Expired command cannot run late')
 transport=4;check(not pcall(C.execute,request()),'Recording blocks start');transport=0
-for _,args in ipairs({{rounds=101},{stop_after_usd=21},{model='bad;command'},{bounds={0,900}},{unknown=true},{references={'missing'}}})do
+for _,args in ipairs({{rounds=101},{stop_after_usd=21},{model='bad;command'},{bounds={0,900}},{unknown=true},{references={'missing'}},{target_lufs=-6},{target_lufs=-25},{target_lufs=0/0}})do
  args.project_id=C.status().project.id;check(not pcall(C.execute,request(args)),'Invalid options are rejected before execution')
 end
 check(calls==0,'Rejected commands never reach mixer')

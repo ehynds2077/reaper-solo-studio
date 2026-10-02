@@ -12,13 +12,14 @@ return function(callbacks,root)
  local function validate(command,a)
   assert(command=='start_mix'or command=='resume_mix'or command=='cancel_mix','Unknown command')
   assert(type(a)=='table','Arguments required')
-  local allowed={project_id=true,session_id=true,model=true,direction=true,feedback=true,bounds=true,rounds=true,stop_after_usd=true,references=true,visual_analysis=true}
+  local allowed={project_id=true,session_id=true,model=true,direction=true,feedback=true,bounds=true,rounds=true,stop_after_usd=true,references=true,visual_analysis=true,target_lufs=true}
   for k in pairs(a)do assert(allowed[k],'Unknown option: '..tostring(k))end
   if a.model~=nil then assert(type(a.model)=='string'and #a.model<=160 and a.model:match('^[%w_./:%-]+$'),'Invalid model ID')end
   for _,k in ipairs({'direction','feedback'})do if a[k]~=nil then assert(type(a[k])=='string'and #a[k]<=8000,'Invalid '..k)end end
   if a.rounds~=nil then assert(finite(a.rounds,1,100)and a.rounds%1==0,'Rounds must be 1–100')end
   if a.stop_after_usd~=nil then assert(finite(a.stop_after_usd,.01,20),'Cost threshold must be $0.01–$20')end
   if a.visual_analysis~=nil then assert(type(a.visual_analysis)=='boolean','Invalid visual_analysis')end
+  if a.target_lufs~=nil then assert(finite(a.target_lufs,-24,-8),'Loudness target must be -24 to -8 LUFS')end
   if a.bounds~=nil then assert(type(a.bounds)=='table'and #a.bounds==2 and finite(a.bounds[1],0,1e8)and finite(a.bounds[2],0,1e8)and a.bounds[2]-a.bounds[1]>=3 and a.bounds[2]-a.bounds[1]<=600,'Choose a 3–600 second passage')end
   if a.references~=nil then
    assert(type(a.references)=='table'and #a.references<=2,'Choose up to two reference IDs')

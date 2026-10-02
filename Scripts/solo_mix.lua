@@ -21,11 +21,13 @@ return function(M,ui,options)
  config.model=config.model or Models.default
  config.direction=config.direction or 'Natural indie rock. Clear vocals, punchy drums, preserve dynamics and performance.'
  config.rounds=config.rounds or 60;config.stop_after_usd=config.stop_after_usd or 2
+ config.target_lufs=config.target_lufs or -12
  if config.visual_analysis==nil then config.visual_analysis=true end
  local lib=read(data..'/library.json',{references=J.array(),default=''})
  local selected=config.references or (lib.default~=''and J.array({lib.default})or J.array())
  local phase='intro';local session;local state;local status='Choose a reference and direction, then create a candidate mix.'
  local lastpoll=0;local handled='';local chat_scroll=0;local full_song=false;local importing=false;local checking=false;local show_graphs=false
+ local graph_mode='spectrogram';local graphics;local graphics_working=false;local graph_image;local graph_slot=701
  local model_x,model_y=24,215
  local mix_view=R.GetExtState(M.ns,'mix_view')=='bounces'and 'bounces'or 'ai'
  local library
@@ -101,6 +103,11 @@ return function(M,ui,options)
   if checking then local c=read(data..'/connection.json');if c then checking=false;status=c.message end end
   if importing then local v=read(data..'/import-result.json');if v then importing=false;status=v.error or ('Reference saved: '..v.title);lib=read(data..'/library.json',lib)end end
   if not session or session.finished then return end
+  graphics=read(session.path..'/graphics.json')
+  if graphics_working then
+   local result=read(session.path..'/graphics-status.json')
+   if result then graphics_working=false;if result.state=='error'then status=result.message end end
+  end
   if state and (state.state=='recovery'or state.state=='stale')then return end
   local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
   if state and (state.state=='review'or state.state=='review_warning')then
@@ -131,8 +138,8 @@ return function(M,ui,options)
   local id=R.genGuid():gsub('[^%w]','');local path=data..'/sessions/'..id
   R.RecursiveCreateDirectory(path,0);session=B.begin(path,range);handled='';chat_scroll=0
   save_config();local job={model=config.model,direction=config.direction,rounds=config.rounds,
-   stop_after_usd=config.stop_after_usd,references=selected,bounds=range,visual_analysis=config.visual_analysis}
-  for _,key in ipairs({'model','direction','rounds','stop_after_usd','references','visual_analysis'})do if options[key]~=nil then job[key]=options[key]end end
+   stop_after_usd=config.stop_after_usd,references=selected,bounds=range,visual_analysis=config.visual_analysis,target_lufs=config.target_lufs}
+  for _,key in ipairs({'model','direction','rounds','stop_after_usd','references','visual_analysis','target_lufs'})do if options[key]~=nil then job[key]=options[key]end end
   J.write(path..'/config.json',job)
   state={state='running',events=J.array(),measurements=J.array(),updated=os.time()};phase='session'
   J.write(path..'/status.json',state);B.trace(session,'start_requested',{source=options.source or 'panel',config=job})
@@ -162,12 +169,13 @@ return function(M,ui,options)
   end
  end
  local function advanced()
-  local ok,value=R.GetUserInputs('Limits per mixing pass',2,'Maximum model rounds (1-100),Stop after reported cost USD,extrawidth=220',config.rounds..','..config.stop_after_usd)
+  local ok,value=R.GetUserInputs('Mix target and pass limits',3,'Maximum model rounds (1-100),Stop after reported cost USD,Loudness target LUFS (-24 to -8),extrawidth=220',config.rounds..','..config.stop_after_usd..','..config.target_lufs)
   if ok then
-   local rounds,cost=value:match('^([^,]+),([^,]+)$');rounds=tonumber(rounds);cost=tonumber(cost)
+   local rounds,cost,target=value:match('^([^,]+),([^,]+),([^,]+)$');rounds=tonumber(rounds);cost=tonumber(cost);target=tonumber(target)
    assert(rounds and rounds%1==0 and rounds>=1 and rounds<=100,'Rounds must be 1–100.')
    assert(cost and cost>0 and cost<=20,'Reported cost threshold must be above 0 and at most $20.')
-   config.rounds=rounds;config.stop_after_usd=cost;save_config()
+   assert(target and target>=-24 and target<=-8,'Loudness target must be -24 to -8 LUFS. Quieter references can lower it further.')
+   config.rounds=rounds;config.stop_after_usd=cost;config.target_lufs=target;save_config()
   end
  end
  local function choose_model()
@@ -195,8 +203,8 @@ return function(M,ui,options)
   assert(session.mode=='candidate','Select Candidate first.')
   local job=read(session.path..'/config.json');job.resume=true
   job.direction=job.direction..'\nUser feedback: '..value
-  job.rounds=config.rounds;job.stop_after_usd=config.stop_after_usd
-  for _,key in ipairs({'rounds','stop_after_usd','model','visual_analysis'})do if options and options[key]~=nil then job[key]=options[key]end end
+  job.rounds=config.rounds;job.stop_after_usd=config.stop_after_usd;job.target_lufs=config.target_lufs
+  for _,key in ipairs({'rounds','stop_after_usd','model','visual_analysis','target_lufs'})do if options and options[key]~=nil then job[key]=options[key]end end
   J.write(session.path..'/config.json',job)
   -- A reopened panel has no in-memory handled ID. Retire the previous pass's
   -- final request before publishing running, so it cannot replay during spawn.
@@ -223,7 +231,7 @@ return function(M,ui,options)
    busy=X.busy()or false,pending=X.pending()or false,mode=session and session.mode,
    recovery_changed=session and session.recovery_changed or false,
    connected=connection().connected,defaults={model=config.model,direction=config.direction,rounds=config.rounds,
-    stop_after_usd=config.stop_after_usd,visual_analysis=config.visual_analysis,references=selected},bounds=bounds()}
+    stop_after_usd=config.stop_after_usd,visual_analysis=config.visual_analysis,references=selected,target_lufs=config.target_lufs},bounds=bounds()}
  end
  function X.control(command,args)
   args=args or {}
@@ -289,7 +297,7 @@ return function(M,ui,options)
    button(models.busy and 'Refreshing…'or 'Refresh models',right,y+272,167,30,models.refresh,nil,not models.busy)
    button('Advanced settings…',right+175,y+272,175,30,advanced)
    if models.message()then text('Offline list · retry Refresh models',right,y+315,3,C.gold,350)end
-   text('Usage billed by OpenRouter. Cost stop is checked after each response.',x,y+301,3,C.muted,w)
+   text('Target: '..metric(config.target_lufs)..' LUFS or a quieter reference. Advanced settings changes the target and pass limits.',x,y+301,3,C.muted,w)
    button('Create candidate mix',x,y+333,215,40,start,C.blue,c.connected and not importing and not X.pending()and R.GetPlayState()==0)
    button('Back',x+227,y+333,87,40,function()phase='intro'end)
    button(config.visual_analysis and 'Visual analysis: on'or 'Visual analysis: off',x+326,y+333,196,40,function()
@@ -302,7 +310,7 @@ return function(M,ui,options)
    text(label,x,y+52,4)
    if first then
     text('Original: '..metric(first.loudness.integrated_lufs)..' LUFS  /  '..metric(first.loudness.true_peak_dbtp)..' dBTP',x+355,y+58,3,C.muted)
-    if state.measurement_error then text('Candidate: unverified (render failed)',x+730,y+58,3,C.gold)
+    if type(state.measurement_error)=='table'and type(state.measurement_error.reason)=='string'then text('Candidate: unverified (render failed)',x+730,y+58,3,C.gold)
     elseif last and #measurements>1 then text('Candidate: '..metric(last.loudness.integrated_lufs)..' LUFS  /  '..metric(last.loudness.true_peak_dbtp)..' dBTP',x+730,y+58,3,C.blue)end
    end
    local transport=R.GetPlayState();local stopped=transport==0;local reviewing=not busy and transport&4==0
@@ -314,17 +322,45 @@ return function(M,ui,options)
    button('Give feedback…',x+690,y+85,155,32,refine,nil,not busy and stopped and state~=nil)
    text('A/B at actual levels.  1: Original  /  2: Candidate  /  Space: play or stop',x,y+126,3,C.muted,680)
    button('Continue mixing',x+690,y+121,155,27,continue_mix,nil,not busy and stopped and state~=nil and session.mode=='candidate')
-   button('Pass limits: '..config.rounds..' rounds…',x+855,y+121,233,27,advanced,nil,not busy)
+   button('Target '..metric(config.target_lufs)..' LUFS · Limits…',x+855,y+121,233,27,advanced,nil,not busy)
    button(show_graphs and 'Chat log'or 'Graphs',x+855,y+85,105,32,function()show_graphs=not show_graphs end,nil,#measurements>1)
    button('New mix…',x+970,y+85,118,32,restart,nil,not busy and stopped)
    if show_graphs and #measurements>1 then
-    local plots={{x=x,y=y+177,w=(w-45)/2,h=h-230},{x=x+(w+25)/2,y=y+177,w=(w-45)/2,h=h-230}}
+    for i,tab in ipairs({{'overview','Overview'},{'spectrogram','Spectrogram'},{'waterfall','Waterfall'},{'dynamics','Dynamics'}})do
+     button(tab[2],x+(i-1)*132,y+154,122,29,function()graph_mode=tab[1]end,graph_mode==tab[1]and C.blue or nil)
+    end
+    if graph_mode~='overview'then
+     local filename=graphics and graphics.views and graphics.views[graph_mode]
+     if filename and not filename:match('^[%w_.%-]+%.png$')then filename=nil end
+     local path=filename and session.path..'/visuals/'..filename
+     if path then
+      button('Open full size',x+540,y+154,137,29,function()R.ExecProcess('/usr/bin/open '..quote(path),-1)end)
+      if graph_image~=path then
+       gfx.setimgdim(graph_slot,0,0)
+       if gfx.loadimg(graph_slot,path)>=0 then graph_image=path else graph_image=nil end
+      end
+      if graph_image then
+       local iw,ih=gfx.getimgdim(graph_slot);local scale=math.min(w/iw,math.max(1,h-236)/ih)
+       gfx.x=x+(w-iw*scale)/2;gfx.y=y+194;gfx.a=1;gfx.blit(graph_slot,scale,0)
+       text('Last measured audio · '..(graphics.title or 'Candidate')..' · Charts do not change with live playback or A/B.',x,y+h-24,3,C.muted,w)
+      else text('Chart could not be loaded. Use Open full size or Show analysis files.',x,y+215,3,C.gold,w)end
+     else
+      text(graphics_working and 'Building graphics from the saved audio…'or 'Create these views from the last measured full mix.',x,y+210,3,C.muted,w)
+      button(graphics_working and 'Generating…'or 'Generate graphics',x,y+252,190,35,function()
+       os.remove(session.path..'/graphics-status.json');graphics_working=true
+       launch({'--graphics',session.path})
+      end,nil,not busy and not graphics_working)
+      text('Uses the saved render. No new REAPER render or AI request.',x,y+303,3,C.muted,w)
+     end
+     return
+    end
+    local plots={{x=x,y=y+217,w=(w-45)/2,h=h-270},{x=x+(w+25)/2,y=y+217,w=(w-45)/2,h=h-270}}
     local curves={{p=first,c=C.muted},{p=last,c=C.blue}}
     for _,ref in ipairs(lib.references)do for _,id in ipairs(selected)do if id==ref.id then
      local profile=read(ref.profile);if profile then curves[#curves+1]={p=profile,c=#curves==2 and C.gold or {0.73,0.52,0.78}}end
     end end end
-    text('Spectrum · relative band energy',plots[1].x,y+151,3,C.text)
-    text('Level envelope · RMS dBFS',plots[2].x,y+151,3,C.text)
+    text('Spectrum · relative band energy',plots[1].x,y+191,3,C.text)
+    text('Level envelope · RMS dBFS',plots[2].x,y+191,3,C.text)
     for n,plot in ipairs(plots)do
      color(C.surface);gfx.rect(plot.x,plot.y,plot.w,plot.h,1)
      for i=0,3 do color(C.line);gfx.line(plot.x,plot.y+plot.h*i/3,plot.x+plot.w,plot.y+plot.h*i/3)end
@@ -378,6 +414,7 @@ return function(M,ui,options)
  end
  function X.wheel(delta)if mix_view=='bounces'then bounces().wheel(delta)else chat_scroll=math.max(0,chat_scroll+delta*3)end end
  function X.close(reason)
+  if graph_image then gfx.setimgdim(graph_slot,0,0);graph_image=nil end
   if library then library.close()end
   if session and not session.finished then
    if X.busy()then stopped(reason or 'panel_closed','Mix stopped because '..(reason=='project_switched'and 'the active project changed.'or 'the Solo Studio panel closed.'))end

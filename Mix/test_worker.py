@@ -273,7 +273,7 @@ class WorkerTests(unittest.TestCase):
     def test_invalid_track_measurement_can_be_corrected_without_aborting(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)
-            worker.write(path/'config.json', {'bounds': [0,8], 'rounds': 3})
+            worker.write(path/'config.json', {'bounds': [0,8], 'rounds': 3, 'target_lufs': -14})
             requests = []
             def api(route, payload):
                 requests.append(json.loads(json.dumps(payload)))
@@ -315,7 +315,7 @@ class WorkerTests(unittest.TestCase):
 
     def test_tool_loop_bad_tool_readbacks_and_final_render(self):
         with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp);worker.write(path/'config.json', {'bounds':[0,8], 'rounds':3})
+            path=Path(temp);worker.write(path/'config.json', {'bounds':[0,8], 'rounds':3, 'target_lufs':-18})
             requests=[];executed=[]
             def api(route, payload):
                 requests.append(payload)
@@ -366,7 +366,8 @@ class WorkerTests(unittest.TestCase):
 
     def run_scripted_responses(self, responses, profile, reference=None, **config):
         with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp);worker.write(path/'config.json',{'bounds':[0,8], 'rounds':8, **config})
+            path=Path(temp);worker.write(path/'config.json',{'bounds':[0,8], 'rounds':8,
+                'target_lufs':-12 if reference else -14, **config})
             requests=[];mutations=[]
             def api(route,payload):
                 requests.append(json.loads(json.dumps(payload)))
@@ -429,7 +430,8 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(len(requests),4)  # Three bounded completion challenges.
         self.assertEqual(state,'review')  # User can still audition and keep an imperfect result.
         self.assertEqual(session.completion_reason,'reference_gap')
-        self.assertIn('13.5 LU quieter',session.reference_issues[0])
+        self.assertIn('10.4 LU quieter',session.reference_issues[0])
+        self.assertIn('target -12.0 LUFS',session.reference_issues[0])
         self.assertIn('reference targets still off',session.events[-1]['text'])
         self.assertIn('MASTER',requests[1]['messages'][-1]['content'])
 

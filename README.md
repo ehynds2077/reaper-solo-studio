@@ -93,6 +93,10 @@ partial inverse moving-RMS automation for uneven playing, and can hold a volume
 ride across any specified time range. Refinements use short checks, followed by
 a required full-song leveling review. The leveler defaults to 50% correction
 with three-second smoothing, bounded gain and gradual transitions.
+The default loudness target is −12 LUFS or a quieter reference, with guidance to
+ease limiter drive rather than copy heavily limited mastering. **Graphs** shows
+a spectrogram, perspective waterfall, dynamics and the original overview using
+existing processed renders. **Open full size** opens a chart for closer inspection.
 Intentional dynamics, source clips and existing volume envelopes are preserved.
 Chat and progress appear after starting; **Give feedback…** refines the candidate.
 Switch **Original / Candidate** while the song plays (keys **1 / 2** in Mix),

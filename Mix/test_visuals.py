@@ -102,7 +102,7 @@ class VisualTests(unittest.TestCase):
         for supported, enabled in [(True, True), (False, True), (None, True), (True, False)]:
             with tempfile.TemporaryDirectory() as temp:
                 folder = Path(temp); worker.write(folder/'config.json', {'bounds': [100, 108], 'rounds': 2,
-                                                                       'visual_analysis': enabled})
+                                                                       'visual_analysis': enabled, 'target_lufs': -14})
                 source = folder/'render.wav'; write_wav(source, np.zeros((48000 * 8, 2)))
                 calls = []; requests = []
                 def api(route, payload):
@@ -129,7 +129,8 @@ class VisualTests(unittest.TestCase):
                 tool_positions = [i for i, m in enumerate(messages) if m['role'] == 'tool']
                 if has_images:
                     self.assertEqual(messages[max(tool_positions)+1]['role'], 'user')
-                    self.assertEqual(len(list((folder/'visuals').glob('*.png'))), 1)
+                    self.assertEqual(len(list((folder/'visuals').glob('*.png'))), 4)
+                self.assertTrue((folder / 'graphics.json').exists())  # Local charts also work with AI vision off.
                 self.assertNotIn('data:image', (folder/'status.json').read_text())
 
 

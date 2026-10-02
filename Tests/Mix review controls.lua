@@ -62,15 +62,18 @@ panel(1,'review_warning');check(not buttons['Keep mix'].enabled and buttons.Orig
 measurement_error={reason='silent_or_unmeasurable'};measurements={{loudness={integrated_lufs=-16,true_peak_dbtp=-2}},{loudness={integrated_lufs=-14,true_peak_dbtp=-1}}}
 panel(0,'error');check(labels['Candidate: unverified (render failed)'] and not labels['Candidate: -14 LUFS  /  -1 dBTP'],'Failed render hides outdated candidate metrics')
 check(not buttons['Keep mix'].enabled and buttons.Original.enabled and buttons.Revert.enabled,'Silent render keeps A/B and Revert available without accepting an unmeasured mix')
+measurement_error={};panel(0,'review')
+check(labels['Candidate: -14.0 LUFS  /  -1.0 dBTP'] and not labels['Candidate: unverified (render failed)'],'Decoded JSON null cannot masquerade as a failed render')
 measurement_error=nil;measurements=nil
 panel(1,'running');check(not buttons['Keep mix'].enabled,'Interrupted worker recovers without accepting incomplete mix')
 panel(0,'cancelled');check(buttons['Give feedback…'].enabled and not buttons['Keep mix'].enabled,'Interrupted pass can continue from feedback without accepting unmeasured changes')
 panel(1,'review','original');check(not buttons['Keep mix'].enabled and buttons.Candidate.enabled,'Recovered Original can switch back but cannot be kept')
 panel(0,'review','original');check(not buttons['Continue mixing'].enabled,'Continue requires Candidate')
-local resumed=panel(0,'review_warning');input='80,2';buttons['Pass limits: 60 rounds…'].run()
+local resumed=panel(0,'review_warning');input='80,2,-14';buttons['Target -12.0 LUFS · Limits…'].run()
 bridge_request={id='old-worker-99',name='add_effect',arguments={}}
 buttons['Continue mixing'].run()
 check(launches==1 and job.resume and job.rounds==80 and job.stop_after_usd==2,'Continue uses latest limits instead of the old twenty-round job')
+check(job.target_lufs==-14,'Changed loudness target applies to continuation')
 check(not archived and not kept and not reverted and resumed.pending(),'Continue preserves original comparison and session ownership')
 check(job.direction:find('reuse session%-owned effects')~=nil,'Continuation asks to reuse owned effects')
 state='running';poll_clock=1;resumed.poll()
@@ -80,6 +83,15 @@ check(bridge_calls==1,'New worker requests are still processed after retiring th
 settings={rounds=7,stop_after_usd=1};panel(0);input='Lift vocals';buttons['Give feedback…'].run()
 check(job.rounds==7 and job.stop_after_usd==1 and job.direction:find('Lift vocals',1,true),'Feedback preserves explicitly configured smaller budgets')
 settings=nil
+panel(0);input='60,2,-6';check(not pcall(buttons['Target -12.0 LUFS · Limits…'].run),'Over-loud target rejected before settings change')
+check(next(writes)==nil,'Rejected loudness target does not change saved settings')
+measurements={{loudness={integrated_lufs=-16,true_peak_dbtp=-2}},{loudness={integrated_lufs=-12,true_peak_dbtp=-1}}}
+local graph_panel=panel(0);buttons.Graphs.run();graph_panel.draw(0,0,1200,700)
+check(buttons.Spectrogram and buttons.Waterfall and buttons.Dynamics and buttons.Overview,'Measured graph view exposes all four chart tabs')
+check(buttons['Generate graphics'].enabled,'Legacy review can generate plots from saved renders')
+buttons['Generate graphics'].run();check(launches==1,'Generating graphics launches a local background job')
+check(not kept and not reverted and not compared,'Graph generation cannot change the candidate')
+measurements=nil
 local x=panel(0,'review','candidate',true)
 check(buttons['Start a new mix'].enabled and not buttons.Original,'Changed project offers current-mix recovery instead of outdated A/B')
 x.key(49);x.key(50);check(not compared,'Recovery page cannot trigger hidden A/B shortcuts')
