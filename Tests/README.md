@@ -33,6 +33,8 @@ Revert, including preservation of later manual edits. Close Solo Studio and stop
 all transport first; the current project must contain Pro-L 2. It restores the
 original tab and reopens the panel, checks the original song's audio state, and
 writes `existing-fx-native-checks.txt`. It makes no model requests.
+It also reproduces bypassing an already offline Pro-L 2, combined offline/bypass
+requests, and restoring those flags through Original/Candidate.
 
 For the native REAPER checks, first generate their synthetic audio:
 

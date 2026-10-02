@@ -63,4 +63,16 @@ function F.apply(plans)
   error(err)
  end
 end
+function F.set_offline_enabled(tr,id,enabled)
+ assert(type(enabled)=='boolean','enabled must be a boolean')
+ local before=F.capture(tr,id)
+ -- TrackFX_SetEnabled ignores offline FX. Update only its stored bypass bit,
+ -- retaining the offline flag, opaque plugin data and parameter envelopes.
+ -- Do not load the plugin just to change its bypass state.
+ local after,count=before:gsub('^(%s*BYPASS%s+)[01](%s+1%s+)',function(prefix,suffix)
+  return prefix..(enabled and '0'or '1')..suffix
+ end,1)
+ assert(count==1,'Expected an offline plugin snapshot')
+ if before~=after then F.apply({F.plan(tr,{[id]=after})})end
+end
 return F

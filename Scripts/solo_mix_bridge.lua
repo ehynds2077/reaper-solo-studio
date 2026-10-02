@@ -403,7 +403,11 @@ function B.execute(s,name,a)
    assert(type(a.enabled)=='boolean'or type(a.offline)=='boolean','Supply enabled and/or offline')
    local tr,idx=editable(s,a.track,a.effect)
    if a.offline~=nil then assert(type(a.offline)=='boolean','offline must be a boolean');R.TrackFX_SetOffline(tr,idx,a.offline)end
-   if a.enabled~=nil then assert(type(a.enabled)=='boolean','enabled must be a boolean');R.TrackFX_SetEnabled(tr,idx,a.enabled)end
+   if a.enabled~=nil then
+    assert(type(a.enabled)=='boolean','enabled must be a boolean')
+    if R.TrackFX_GetOffline(tr,idx)then FXState.set_offline_enabled(tr,a.effect,a.enabled)
+    else R.TrackFX_SetEnabled(tr,idx,a.enabled)end
+   end
    assert(a.offline==nil or R.TrackFX_GetOffline(tr,idx)==a.offline,'Plugin could not reach the requested online/offline state')
    assert(a.enabled==nil or R.TrackFX_GetEnabled(tr,idx)==a.enabled,'Plugin could not reach the requested bypass state')
    return {enabled=R.TrackFX_GetEnabled(tr,idx),offline=R.TrackFX_GetOffline(tr,idx)}

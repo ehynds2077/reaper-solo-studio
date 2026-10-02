@@ -410,6 +410,8 @@ the song automatically; use your normal REAPER save workflow.
   agent must establish the mapping before using it. `set_effect_state` controls
   bypass and offline status separately: an enabled but offline plugin does not
   process audio. Load it before inspecting or changing parameters.
+  Bypass changes on an offline plugin update its saved bypass flag without
+  loading it; combined offline/bypass requests and A/B retain both states.
 - Existing plugin state is journaled locally before the first edit, including
   opaque state, bypass/offline flags and parameter envelopes. Original/Candidate
   restores these snapshots without stopping playback; Revert restores originals

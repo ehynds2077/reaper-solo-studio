@@ -23,4 +23,12 @@ check(t.chunk==before and other.chunk==before_other,'Failure rolls back every to
 fail=false;writes=0
 check(not pcall(F.plan,t,{['{A}']=second})and writes==0,'Mismatched snapshot GUID rejected before writes')
 check(not pcall(F.capture,t,'{missing}'),'Deleted existing effect is reported rather than recreated')
+local offline_before=t.chunk
+F.set_offline_enabled(t,'{B}',true)
+check(F.capture(t,'{B}')==second:gsub('^BYPASS 1','BYPASS 0')and F.capture(t,'{A}')==changed,'Offline enable changes only its stored bypass bit')
+F.set_offline_enabled(t,'{B}',false)
+check(t.chunk==offline_before,'Offline bypass preserves plugin payload, offline flag and neighboring media')
+writes=0;F.set_offline_enabled(t,'{B}',false)
+check(writes==0,'Repeated offline bypass makes no state writes')
+check(not pcall(F.set_offline_enabled,t,'{A}',false)and writes==0,'Offline helper rejects an online plugin before writing')
 print(n..' FX snapshot checks passed')
