@@ -29,7 +29,7 @@ class BatchTests(unittest.TestCase):
         self.session = worker.Session(self.path)
         self.session.diagnostic_bounds = [30, 60]
         self.calls = []
-        self.project = {'capabilities': {'mix_tools_version': 3}, 'tracks': [
+        self.project = {'capabilities': {'mix_tools_version': 4}, 'tracks': [
             {'id': 'track-%d' % i, 'name': 'Guitar %d' % i, 'volume_db': -6, 'pan': 0}
             for i in range(10)]}
 

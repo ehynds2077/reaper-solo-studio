@@ -20,7 +20,7 @@ class InstrumentInventoryTests(unittest.TestCase):
         self.session = worker.Session(self.folder)
         self.tracks = [{'id': 'track-%d' % i, 'name': 'Guitar' if i < 2 else 'Source %d' % i,
                         'items': 1, 'playing_items_in_passage': 1} for i in range(10)]
-        self.project = {'tracks': self.tracks, 'capabilities': {'mix_tools_version': 3}}
+        self.project = {'tracks': self.tracks, 'capabilities': {'mix_tools_version': 4}}
         self.session.project = self.project
         self.calls = []; self.requests = []
         self.session.bridge = self.bridge

@@ -101,7 +101,7 @@ return function(M,ui,options)
  end
  function X.poll()
   if library then library.poll()end
-  if R.time_precise()-lastpoll<.2 then return end;lastpoll=R.time_precise()
+  if R.time_precise()-lastpoll<(session and session.probe and .05 or .2)then return end;lastpoll=R.time_precise()
   models.poll()
   if checking then local c=read(data..'/connection.json');if c then checking=false;status=c.message end end
   if importing then local v=read(data..'/import-result.json');if v then importing=false;status=v.error or ('Reference saved: '..v.title);lib=read(data..'/library.json',lib)end end
@@ -129,6 +129,17 @@ return function(M,ui,options)
    local result=read(session.path..'/graphics-status.json')
    if result then graphics_working=false;if result.state=='error'then status=result.message end end
   end
+  if session.probe then
+   local ident=session.probe.request_id
+   local cancel_file=io.open(session.path..'/cancel','r');local cancel=cancel_file~=nil;if cancel_file then cancel_file:close()end
+   local ok,response=pcall(B.poll_probe,session,cancel)
+   if not ok then B.cancel_probe(session);response={error=tostring(response),fatal=false}end
+   if response then
+    J.write(session.path..'/response-'..ident..'.json',response)
+    B.trace(session,'request_finished',{id=ident,tool='measure_gain_reduction',error=response.error})
+   end
+   return
+  end
   if state and (state.state=='recovery'or state.state=='stale')then return end
   local fresh=read(session.path..'/status.json');if fresh and not (state and state.state=='error')then state=fresh end
   if state and (state.state=='review'or state.state=='review_warning')then
@@ -145,6 +156,7 @@ return function(M,ui,options)
    handled=req.id
    B.trace(session,'request_received',{id=req.id,tool=req.name})
    local ok,result=pcall(B.execute,session,req.name,req.arguments)
+   if ok and result.pending and session.probe then session.probe.request_id=req.id;return end
    local response=ok and {result=result}or {error=tostring(result):match('^[^\n]+'),fatal=false}
    J.write(session.path..'/response-'..req.id..'.json',response)
    B.trace(session,'request_finished',{id=req.id,tool=req.name,error=response.error,context=not ok and B.diagnostics(session)or nil})
@@ -537,6 +549,7 @@ return function(M,ui,options)
  end
  function X.wheel(delta)if mix_view=='bounces'then bounces().wheel(delta)else chat_scroll=math.max(0,chat_scroll+delta*3)end end
  function X.close(reason)
+  if session and session.probe then B.cancel_probe(session)end
   if graph_image then gfx.setimgdim(graph_slot,0,0);graph_image=nil end
   if library then library.close()end
   if session and not session.finished then

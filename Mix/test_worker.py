@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 import worker
 
-PROJECT = {'tracks': [], 'capabilities': {'mix_tools_version': 3}}
+PROJECT = {'tracks': [], 'capabilities': {'mix_tools_version': 4}}
 
 
 class WorkerTests(unittest.TestCase):

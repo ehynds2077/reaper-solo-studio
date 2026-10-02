@@ -115,7 +115,7 @@ class VisualTests(unittest.TestCase):
                 session = worker.Session(folder, api)
                 def bridge(name, args):
                     calls.append(name)
-                    if name == 'inspect_project': return {'tracks': [], 'capabilities': {'mix_tools_version': 3}}
+                    if name == 'inspect_project': return {'tracks': [], 'capabilities': {'mix_tools_version': 4}}
                     return {'path': str(source), 'cached': calls.count('measure_mix') > 1}
                 session.bridge = bridge
                 with patch.object(worker, 'image_support', return_value=supported), \

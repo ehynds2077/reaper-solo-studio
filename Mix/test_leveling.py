@@ -88,7 +88,7 @@ class LevelWorkflowTests(unittest.TestCase):
         self.path = Path(self.temp.name)
         worker.write(self.path / 'config.json', {'bounds': [100, 180], 'rounds': 3, 'visual_analysis': False})
         self.session = worker.Session(self.path)
-        self.project = {'capabilities': {'mix_tools_version': 3}, 'tracks': [
+        self.project = {'capabilities': {'mix_tools_version': 4}, 'tracks': [
             {'id': 'vocal', 'name': 'Lead vocal', 'items': 1, 'volume_db': -6, 'pan': 0},
             {'id': 'guitar', 'name': 'Guitar', 'items': 1, 'volume_db': -6, 'pan': 0}]}
         self.calls = []; self.windows = []

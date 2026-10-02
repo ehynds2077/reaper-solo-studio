@@ -9,10 +9,10 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, `Mix/track_graphics.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/experiments.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, `Mix/track_graphics.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua` and
-   `solo_mix_effects.lua`.
+   `solo_mix_effects.lua`, `solo_mix_controls.lua` and `solo_mix_measure.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
 3. Copy `Effects/Mix trim.jsfx` into `Effects/Solo Studio/`.
 4. Install FFmpeg/ffprobe and the Python dependencies in `ReferenceLab/requirements.txt`
@@ -128,8 +128,10 @@ requests alongside the numeric measurements:
   through other tracks. Time/item limits mark incomplete overviews explicitly.
 - Processed charts read existing render WAVs and show the peak-preserving waveform,
   level envelope, normalized spectrum/reference curves and stereo energy. Axes use
-  absolute project seconds. Solo-track charts include routing, shared returns and
-  master processing, matching the measurements. A chart does not require another
+  absolute project seconds. Automatic instrument/leveling charts use post-fader
+  taps before downstream buses and master processing. Explicit `measure_track`
+  charts retain solo-in-place contribution semantics; each profile identifies
+  its scope. A chart does not require another
   audio render. Unchanged render charts are reused.
 - Full-mix spectrograms use project time horizontally, logarithmic frequency
   vertically and fixed −90…0 dBFS log-band power in color. All overlapping Hann
@@ -376,8 +378,7 @@ and restores only fader/pan controls that have not been manually changed.
 Added or removed tracks no longer misidentify a saved song as another project.
 Refinement reuses the session's existing effect IDs and every render has a unique
 filename, including after recovery. A cancelled render cannot reuse an old WAV.
-A second project cannot start a
-new session while the first has an unresolved journal. Keep/revert does not save
+Keep/revert does not save
 the song automatically; use your normal REAPER save workflow.
 
 ## Tools and limits
@@ -396,14 +397,15 @@ the song automatically; use your normal REAPER save workflow.
   `MASTER`, including EQ, compression and
   FabFilter Pro-L 2. Its calibrated adapter sets 0–24 dB gain, a -12…-1 dBTP
   ceiling, true-peak limiting on, 2x oversampling and unity gain off. The master
-  fader stays unchanged. Original/Candidate and Revert include edited existing
+  fader can be adjusted independently with `set_master_output` (-60…+12 dB),
+  preserving active master volume automation. Original/Candidate and Revert include edited existing
   plugins and session-added effects. The full render verifies output
   after the master fader; a limiter setting alone does not guarantee final peaks.
   Inspection and limiter readback expose the post-FX master gain and a suggested
   compensated plugin ceiling with 0.1 dB margin. For example, a +2.57 dB master
   fader needs about -3.67 dB at the limiter. This is guidance, not an automatic
   gain change; automated master gain and adapter-range limits are flagged.
-- New instances of ReaEQ, ReaComp, FabFilter and UADx VST/VST3 effects are available.
+- New instances of ReaEQ, ReaComp, ReaVerbate, ReaDelay, FabFilter and UADx VST/VST3 effects are available.
   Existing top-level track/master plugins of any format expose their host
   parameters, inspected in pages of 96 with actual names/ranges/normalized values
   and formatted readbacks. Moves can span the full normalized 0–1 range; the
@@ -421,8 +423,38 @@ the song automatically; use your normal REAPER save workflow.
   remain saved and Original/Revert restore it. Raw plugin snapshots are never
   sent to OpenRouter.
 - Third-party discovery is not a license/load test or a calibrated hardware
-  emulation adapter. Adding UAD DSP-only plugins, nested FX containers, take FX,
-  sends/routing edits and item edits are outside this version's tools.
+  emulation adapter. Adding UAD DSP-only plugins, nested FX containers, take FX
+  and source-item edits are outside this version's tools.
+- `move_effect` changes order within a track/master chain. `create_mix_bus` creates
+  an empty shared return; `set_send` creates/adjusts stereo sends or supported
+  existing sends. Feedback loops, hardware routing and automated sends are
+  protected. Set reverb/delay fully wet using inspected plugin parameters.
+  Original mutes new sends/returns; Revert removes unchanged owned returns and
+  restores existing sends. Later manual changes are preserved as conflicts.
+- `measure_signal` measures before FX, after FX/before fader, or after fader using
+  a temporary stereo tap and 32-bit float stem render. It leaves sources unsoloed
+  and their processing/routing active. Downstream buses/master are excluded;
+  use the full mix to evaluate overall balance. Taps and selection are restored
+  after success or failure. Automatic instrument and leveling analysis uses
+  post-fader taps on updated installations.
+- `measure_gain_reduction` samples actual plugin-reported `GainReduction_dB`
+  during 3–30 seconds of silent real-time playback, for up to 16 processors.
+  Hardware output levels, cursor and repeat are restored, including interrupted
+  probe recovery. Readings are sampled up to 20 Hz, so brief peaks may be missed.
+  Unsupported plugins are explicitly unknown; waveforms never substitute for GR.
+- `set_pre_fx_automation` writes a separate owned gain envelope at the start of
+  the effect chain, useful for stabilizing compressor input. Post-FX trim remains
+  available for musical level rides. Both use -12…+6 dB, smooth linear points
+  and zero-dB passage endpoints; source clips and user envelopes stay intact.
+- Named checkpoints save plugin states/order, track/master gain, and supported
+  send changes. Save/list/restore/delete tools support up to 24 snapshots.
+  `compare_mix_checkpoints` renders 2–4 alternatives over the same window,
+  attenuates audition copies to equal integrated loudness, creates a dynamics
+  chart, and restores the starting candidate even after render failure/cancel.
+  A blocked restoration retains its checkpoint and reports its ID. Later-added
+  effects remain available but bypassed when restoring an earlier experiment.
+  Local audition files and comparison JSON live under `experiments/`; charts
+  live under `visuals/`. These tools are agent controls, not a new manual browser.
 - Full-mix and solo-in-place contribution renders run through routing and master
   processing. Solo measurements include shared returns; they are not dry stems.
 - Analysis includes integrated LUFS, true peak, LRA, RMS, crest, spectrum,
@@ -434,7 +466,7 @@ the song automatically; use your normal REAPER save workflow.
   output ceiling, musical dynamics and available controls; reference peaks above
   that ceiling are not copied. Source balancing and tonal work come before final
   master compression/limiting; matching loudness alone is not a completed mix.
-- 24-bit render output makes clipping a failed candidate rather than preserving
+- Full-mix 24-bit render output makes clipping a failed candidate rather than preserving
   above-full-scale samples. A final true peak above -1 dBTP prevents Keep.
 - Edits/transport changes stop tool execution. Tool schemas, finite bounds and
   plugin snapshot requirements are enforced in code; model instructions alone do not enforce

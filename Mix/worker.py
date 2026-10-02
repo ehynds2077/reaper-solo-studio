@@ -186,7 +186,7 @@ TOOLS = [
     schema('inspect_project', 'Read tracks, master, routing, regions, available plugins and all existing effect GUIDs, chain indices, enabled/offline states. Existing and session-added track/master effects are editable and restorable. Reuse them instead of adding duplicates.', {}, []),
     schema('view_arrangement', 'Inspect source clip positions and available peak shapes without rendering. Returns up to 16 tracks per page; use next_track to paginate. Source peaks do NOT include track FX/faders/master and each track image is scaled independently. MIDI/unavailable peaks are not silence. Images are attached separately when vision is enabled.',
            {'start_track': {'type': 'integer', 'minimum': 0}, 'track_count': {'type': 'integer', 'minimum': 1, 'maximum': 16}}, []),
-    schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. Master fader and automated controls are protected.',
+    schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. For master output use set_master_output; automated controls are protected.',
            {'track': TRACK, 'volume_db': number(-90, 24), 'pan': number(-1, 1)}, ['track', 'volume_db', 'pan']),
     schema('add_effect', 'Append one effect on a track or MASTER. Use an exact name from available_plugins. Reuse suitable existing processors before adding another. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Put the master limiter last. For trim rides call set_trim_automation directly; it creates/reuses its dedicated processor. Do not add JS Mix Trim with this tool.',
            {'track': TRACK, 'plugin': {'type': 'string'}}, ['track', 'plugin']),
@@ -208,7 +208,7 @@ TOOLS = [
            ['track', 'effect', 'band', 'band_index', 'frequency_hz', 'gain_db']),
     schema('set_effect_parameter', 'Set any exposed parameter on an existing or session-added track/master effect, across the full normalized 0–1 range. Inspect the mapping/readback; never guess units. No incremental 0.20 cap. Active parameter automation requires explicit override_automation=true. Render after meaningful processing changes.',
            {'track': TRACK, 'effect': FX, 'parameter': {'type': 'integer', 'minimum': 0}, 'normalized': number(0, 1), 'override_automation': OVERRIDE_AUTOMATION}, ['track', 'effect', 'parameter', 'normalized']),
-    schema('set_trim_automation', 'Replace the WHOLE session-owned trim envelope: inspect_project trim_envelopes shows existing rides to retain/merge on resume. Linear points in absolute project seconds, within the selected passage, -12 to +6 dB, up to 256 points. Smooth phrase/section rides; zero dB at passage endpoints. Existing user automation and source clips stay intact.',
+    schema('set_trim_automation', 'Replace the WHOLE session-owned trim envelope: inspect_project trim_envelopes shows existing rides to retain/merge on resume. Linear points in absolute project seconds, within the selected passage, -12 to +6 dB, up to 256 points. Smooth phrase/section rides; zero dB at passage endpoints. Existing user volume automation and source clips stay intact.',
            {'track': TRACK, 'points': {'type': 'array', 'minItems': 2, 'maxItems': 256,
             'items': {'type': 'object', 'properties': {'seconds': number(0, 86400), 'db': number(-12, 6)},
                       'required': ['seconds', 'db'], 'additionalProperties': False}}}, ['track', 'points']),
@@ -221,12 +221,34 @@ TOOLS = [
     schema('measure_mix', 'Measure the mix through actual master FX: LUFS, peaks, crest, spectrum, stereo and time envelopes. Defaults to the shared 30-second diagnostic window. Supply start/duration for another section, or full_passage=true. Final review always verifies the entire selected passage.', WINDOW, []),
 ]
 
+# Expanded processing and experiments use the same typed bridge and journal.
+TOOLS.extend([
+    schema('create_mix_bus', 'Create an empty stereo return bus with no recording input or hardware sends. Add an appropriate fully wet reverb/delay and set source sends. Original silences it; Revert removes an unchanged session-created bus. Returns its track GUID.', {'name': {'type': 'string', 'maxLength': 80}}, ['name']),
+    schema('set_master_output', 'Set absolute post-FX master output gain. Prefer this over extra limiter drive when loudness is low but true-peak headroom remains. Automated master volume is protected. Always verify final loudness/true peak.', {'volume_db': number(-60, 12)}, ['volume_db']),
+    schema('move_effect', 'Move an existing/session-added effect within its own chain to a zero-based index. Inspect current order first. Original/Candidate and Revert restore order; use to place EQ, compression or gain deliberately.', {'track': TRACK, 'effect': FX, 'index': {'type': 'integer', 'minimum': 0}}, ['track', 'effect', 'index']),
+    schema('set_send', 'Create/update an audio send between existing tracks, including shared reverb/delay returns. Exact existing index is optional unless duplicate sends exist. New sends use stereo audio with MIDI disabled. Feedback loops and automated sends are rejected. Original/Revert restore routing.',
+           {'track': TRACK, 'destination': TRACK, 'index': {'type': 'integer', 'minimum': 0}, 'volume_db': number(-90, 6), 'pan': number(-1, 1), 'muted': {'type': 'boolean'}, 'mode': {'type': 'string', 'enum': ['post_fader', 'pre_fx', 'post_fx']}}, ['track', 'destination', 'volume_db']),
+    schema('set_pre_fx_automation', 'Write dedicated gain rides BEFORE the track effect chain to stabilize compressor/distortion input. Does not edit source clips or user envelopes. Same dB/time bounds as post-FX trim; do not blindly duplicate post-FX rides. Inspect and measure pre_fx/post_fx before and after.',
+           copy.deepcopy(next(t['function']['parameters']['properties'] for t in TOOLS if t['function']['name'] == 'set_trim_automation')), ['track', 'points']),
+    schema('measure_signal', 'Measure stereo signal before FX, after FX/before fader, or after fader, excluding downstream buses/master. A silent native tap keeps the full project processing in context, including sidechains; no solo or bypass. Use this to diagnose gain staging; use measure_mix for final output.',
+           {'track': TRACK, 'point': {'type': 'string', 'enum': ['pre_fx', 'post_fx', 'post_fader']}, **WINDOW}, ['track', 'point']),
+    schema('measure_gain_reduction', 'Sample actual GainReduction_dB from supported active plugins during 3–30 seconds of silent real-time playback. Returns time samples, mean/max/p95 reduction. Unsupported plugins are explicitly marked, never estimated from crest. Transport/cursor/output levels are restored afterward.',
+           {'effects': {'type': 'array', 'minItems': 1, 'maxItems': 16, 'items': {'type': 'object', 'properties': {'track': TRACK, 'effect': FX}, 'required': ['track', 'effect'], 'additionalProperties': False}}, 'start_seconds': number(0, 86400), 'duration_seconds': number(3, 30)}, ['effects', 'start_seconds', 'duration_seconds']),
+    schema('save_mix_checkpoint', 'Save a named experiment with all current plugin settings/order, faders/master gain and supported send changes. Does not render. Save before a substantial experiment. Original/Revert baseline is independent.', {'name': {'type': 'string', 'maxLength': 80}}, ['name']),
+    schema('list_mix_checkpoints', 'List the saved experiments for this mix session.', {}, []),
+    schema('restore_mix_checkpoint', 'Restore a saved experiment without changing recordings. Effects added later stay available but bypassed. Invalidates prior measurements; inspect and re-measure before finishing.', {'id': {'type': 'string'}}, ['id']),
+    schema('delete_mix_checkpoint', 'Delete only a saved experiment snapshot, not its mix or recordings. Frees one of 24 checkpoint slots.', {'id': {'type': 'string'}}, ['id']),
+    schema('compare_mix_checkpoints', 'Render 2–4 saved experiments over exactly the same window, create loudness-matched audition WAVs and a comparison chart, and restore the starting candidate afterward. Numerical differences are evidence, not an automatic quality score. Restore your preferred checkpoint explicitly after comparison.',
+           {'ids': {'type': 'array', 'minItems': 2, 'maxItems': 4, 'items': {'type': 'string'}}, **WINDOW}, ['ids']),
+])
+
 # Batch members retain the same typed schemas and native ownership/range checks
 # as individual calls. No nested batches, measurements, or generated code in edits.
 EDIT_TOOLS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS
               if tool['function']['name'] in (
                   'set_track_mix', 'add_effect', 'configure_eq', 'configure_compressor',
-                  'configure_limiter', 'set_effect_parameter', 'set_effect_state', 'set_trim_automation', 'set_phrase_rides')}
+                  'configure_limiter', 'set_effect_parameter', 'set_effect_state', 'set_trim_automation', 'set_phrase_rides',
+                  'create_mix_bus', 'set_master_output', 'move_effect', 'set_send', 'set_pre_fx_automation', 'restore_mix_checkpoint')}
 BATCH_VARIANTS = []
 for name, parameters in EDIT_TOOLS.items():
     parameters = copy.deepcopy(parameters)
@@ -478,8 +500,9 @@ Source-clip overview images locate entrances, gaps and uneven performances; each
 track is scaled independently and these peaks do NOT show processed mix balance.
 Unavailable peaks and MIDI blocks must never be treated as measured silence.
 Use view_arrangement for additional tracks/pages if the initial overview is partial.
-Processed charts come from the same measured renders and include actual routing
-and master effects. Track charts remain solo-in-place contributions, not dry stems.
+Full-mix charts include master processing. Automatic track charts use post-fader
+signal taps before downstream buses/master when supported. Legacy contribution
+charts use solo-in-place; inspect the scope field before interpreting them.
 Full-mix spectrograms show project time, logarithmic frequency and fixed-scale
 band power in color. Use them to locate evolving tonal buildup, gaps or noisy
 sections, then verify with numeric evidence. Colors are neither LUFS nor perceived
@@ -526,8 +549,9 @@ Original/Candidate and Revert. Never claim they are read-only. Check both enable
 AND offline: an enabled offline plugin does not process audio. Load it with
 set_effect_state offline=false, enabled=true before configuring it. Prefer one
 effective final true-peak limiter; bypass redundant stages rather than stacking.
-Never claim measured gain
-reduction from a waveform or spectrogram; plugin GR metering is not available.
+Never claim measured gain reduction from a waveform or spectrogram. Use
+measure_gain_reduction for actual readings from plugins that expose that meter;
+unsupported plugins have unknown gain reduction.
 Compare crest/peak-to-loudness, LRA and short-window crest to decide whether the
 gap needs dynamics control rather than only gain. Avoid crushing transients or
 pumping to hit a number; report a remaining gap when the available tools or the
@@ -676,7 +700,7 @@ check exposes a remaining level problem, fix and recheck it rather than merely
 checking a box. Do not claim leveling is finished if evidence is missing, stale,
 or unmeasurable. Report any budget/tool limit and the affected tracks explicitly.
 
-Preserve timing and phase relationships. Do not edit items, takes, inputs or routing.
+Preserve timing and phase relationships. Do not edit items, takes or recording inputs. Change sends only with set_send.
 Do not hard-pan individual close drum microphones; keep related
 mics coherent. Avoid boost cascades through folders. Stop on silent/empty projects.
 You CAN rebalance faders up to +24 dB, EQ by up to +/-12 dB, set ReaComp makeup,
@@ -694,7 +718,7 @@ tonal balance and dynamics after processing. A 10+ LU gap is unfinished work, no
 an excuse for "restrained" processing. Scratch track names do not justify lighter
 processing: mix the populated tracks as the source material the user supplied.
 Keep the -1 dBTP output ceiling. Do not stack limiters or boost every routing stage.
-The master fader stays fixed and is AFTER the limiter. inspect_project returns
+The master fader is AFTER the limiter and is editable with set_master_output. inspect_project returns
 master.limiter_headroom.suggested_limiter_ceiling_db, compensating positive static
 master gain with 0.1 dB margin. Use that plugin ceiling: for example +2.57 dB on
 the master needs about -3.67 dB at the limiter, not -1 dB. configure_limiter does
@@ -711,6 +735,34 @@ that parameter's automation with override_automation=true; saved points remain
 available in Original/Revert. Preserve useful musical automation otherwise.
 Verify the completed pass by measuring.
 Automation points must begin/end at zero trim to avoid changing other sections.
+
+Expanded tools: inspect_project capabilities describes the installed controls.
+When final output is quiet with unused true-peak headroom, prefer set_master_output
+to close the loudness gap without extra compression. Predict the peak increase,
+leave a margin, then measure_mix to verify. More output gain cannot undo limiting.
+Use measure_signal pre_fx/post_fx/post_fader to separate performance dynamics,
+processing and fader gain. These stereo taps exclude downstream buses/master;
+measure_track remains a solo-in-place contribution. Neither alone establishes
+perceptual masking or relative musical importance. Automatic source charts and
+level analysis use post-fader taps where supported; compare time patterns with
+full-mix context, not identical absolute LUFS across instruments.
+Use measure_gain_reduction on a representative 3–15 second passage after meaningful
+compression changes. It samples actual plugin telemetry during silent playback.
+Unsupported or unsampled processors must be reported as unknown, not zero GR.
+For uneven compressor input, set_pre_fx_automation supplies independent smooth
+-12/+6 dB rides before effects. Post-FX rides control musical prominence. Inspect
+pre_fx_envelopes and trim_envelopes, preserve useful rides, and avoid double correction.
+Use move_effect for deliberate chain order. Use create_mix_bus for a new shared wet return. Existing send indices and destinations
+are exposed by inspect_project; set_send can shape shared wet returns while
+preserving their existing automation. Use exact plugin parameters to set a shared
+reverb/delay fully wet. Do not create feedback loops or route to hardware outputs.
+Before a substantial alternate EQ/dynamics approach, save_mix_checkpoint with a
+clear name. Compare 2–4 alternatives with compare_mix_checkpoints on the same
+representative passage. It restores the starting candidate even on errors;
+restore_mix_checkpoint explicitly selects the preferred experiment. Charts and
+loudness-matched files support judgment, not an automatic quality ranking.
+After restoring a checkpoint, redo final measurements and leveling verification.
+
 Communicate short plans, actions and measured results in plain language. Do not
 emit private chain-of-thought. Never declare success before measuring a candidate.
 The user will audition and explicitly Keep or Revert. Your last response should
@@ -856,7 +908,7 @@ class Session:
             self.publish('Preparing instrument charts %d/%d · %s…' % (index, len(tracks), row['name']))
             self.track_graphs.pop(row['id'], None)
             try:
-                profile = self.measure('Pre-mix · ' + row['name'], row['id'], window=report['bounds'])
+                profile = self.measure('Pre-mix · ' + row['name'], row['id'], window=report['bounds'], **self.signal_options())
             except ValueError as error:
                 report['errors'].append({'track': row['id'], 'name': row['name'], 'error': str(error)})
                 continue
@@ -918,7 +970,7 @@ class Session:
         return summary
 
     def bridge(self, name, args):
-        if self.cancelled():
+        if self.cancelled() and not getattr(self, 'checkpoint_cleanup', False):
             raise RuntimeError('Session cancelled')
         self.calls += 1
         if self.calls > MAX_BRIDGE_CALLS:
@@ -929,7 +981,7 @@ class Session:
         write(self.dir / 'request.json', {'id': ident, 'name': name, 'arguments': args})
         deadline = time.monotonic() + 360
         while time.monotonic() < deadline:
-            if self.cancelled():
+            if self.cancelled() and not getattr(self, 'checkpoint_cleanup', False):
                 raise RuntimeError('Session cancelled')
             result = read(self.dir / ('response-' + ident + '.json'))
             if result is not None:
@@ -990,7 +1042,7 @@ class Session:
                 args['effect'] = effects[args['effect'][1:]]['effect']
             self.publish('Mix batch %d/%d · %s…' % (index, len(operations), name.replace('_', ' ')), 'tool')
             result = self.mix_edit(name, args)
-            results.append({'index': index, 'tool': name, 'track': args['track'], 'result': result})
+            results.append({'index': index, 'tool': name, 'track': args.get('track', 'MASTER'), 'result': result})
             if result.get('error'):
                 return {'error': 'Operation %d failed: %s. %d earlier edits remain applied. Repair the failed/remainder only.' % (index, result['error'], index - 1),
                         'failed_index': index, 'completed': index - 1, 'skipped': len(operations) - index,
@@ -1049,8 +1101,13 @@ class Session:
         if spec is None:
             raise ValueError('Unknown tool')
         validate(args, spec)
-        if self.measurement_error and (name in EDIT_TOOLS or name in ('apply_mix_batch', 'apply_level_automation')):
+        if self.measurement_error and (name in EDIT_TOOLS or name in ('apply_mix_batch', 'apply_level_automation', 'compare_mix_checkpoints')):
             raise ValueError('Mix edits are paused after a failed render. Obtain a valid measure_mix result from an active passage before changing settings.')
+        if name == 'compare_mix_checkpoints':
+            from experiments import compare
+            return compare(self, args)
+        if name == 'measure_signal':
+            return self.measure('Signal · ' + args['point'], args['track'], window=self.measurement_window(args), point=args['point'])
         if name == 'apply_mix_batch':
             return self.apply_mix_batch(args['operations'])
         if name == 'inspect_effects':
@@ -1082,7 +1139,7 @@ class Session:
                 return project
             self.project = project
             existing = next((row['points'] for row in project.get('trim_envelopes', [])
-                             if row['track'] == args['track']), [])
+                             if row['track'] == args['track'] and row.get('enabled', True) and not row.get('offline', False)), [])
             points = planning.phrase_envelope(existing, args['rides'], self.config['bounds'])
             if points == existing:
                 return {'unchanged': True, 'points': points, 'next_step': 'This envelope is already applied; reuse current evidence.'}
@@ -1092,15 +1149,18 @@ class Session:
         # evidence cannot approve the candidate after any attempted mix edit.
         self.mix_revision += 1
         result = self.bridge(name, args)
+        if name == 'restore_mix_checkpoint':
+            self.trim_edits.clear()
+            self.trim_changes.clear()
         if name == 'set_trim_automation' and not result.get('error'):
             envelopes = self.project.setdefault('trim_envelopes', [])
             row = next((row for row in envelopes if row['track'] == args['track']), None)
-            before = row['points'] if row else []
+            before = row['points'] if row and row.get('enabled', True) and not row.get('offline', False) else []
             self.trim_changes.setdefault(args['track'], []).extend(
                 planning.changed_trim_spans(before, args['points'], self.config['bounds']))
             if row is None:
                 row = {'track': args['track']}; envelopes.append(row)
-            row['points'] = copy.deepcopy(args['points'])
+            row.update(points=copy.deepcopy(args['points']), enabled=True, offline=False)
             if any(abs(point['db']) > .01 for point in args['points']):
                 self.trim_edits.add(args['track'])
             else:
@@ -1148,7 +1208,7 @@ class Session:
                     continue
                 if mix is None:
                     mix = self.measure('Level-balance mix', window=bounds)
-                profile = self.measure('Level-balance contribution', track, window=bounds)
+                profile = self.measure('Level-balance source', track, window=bounds, **self.signal_options())
                 report = leveling.level_report(profile, mix, bounds, project.get('regions', []))
                 report.update(track=track, name=by_id[track]['name'], verification_scope='full_passage', revision=self.mix_revision)
                 self.level_reports[track] = {'revision': self.mix_revision, 'report': report}
@@ -1181,7 +1241,7 @@ class Session:
         checks = []
         for window in windows:
             mix = self.measure('Level-check mix', window=window)
-            profile = self.measure('Level-check contribution', track, window=window)
+            profile = self.measure('Level-check source', track, window=window, **self.signal_options())
             current = leveling.level_report(profile, mix, window, self.project.get('regions', []))
             previous = leveling.level_report(planning.slice_profile(baseline['track'], bounds, window),
                                             planning.slice_profile(baseline['mix'], bounds, window), window, [])
@@ -1199,7 +1259,8 @@ class Session:
             raise ValueError('Explain the measured outcome or musical reason.')
         if bool(report.get('error')) != (decision == 'unmeasurable'):
             raise ValueError('A failed measurement must be reported as unmeasurable; successful evidence needs a measured decision.')
-        owned_trim = any(row.get('track') == track and any(abs(point['db']) > .01 for point in row.get('points', []))
+        owned_trim = any(row.get('track') == track and row.get('enabled', True) and not row.get('offline', False)
+                         and any(abs(point['db']) > .01 for point in row.get('points', []))
                          for row in self.project.get('trim_envelopes', []))
         if decision == 'automated' and track not in self.trim_edits and not owned_trim:
             raise ValueError('No session trim automation exists for this track; apply rides or choose an accurate decision.')
@@ -1219,8 +1280,9 @@ class Session:
         if not row:
             raise ValueError('Choose an instrument track, not MASTER, for continuous leveling.')
         baseline = self.level_baselines.get(track)
-        profile = baseline['track'] if baseline and baseline['revision'] == self.mix_revision else self.measure('Level-curve source', track)
-        existing = next((row['points'] for row in project.get('trim_envelopes', []) if row['track'] == track), [])
+        profile = baseline['track'] if baseline and baseline['revision'] == self.mix_revision else self.measure('Level-curve source', track, **self.signal_options())
+        existing = next((row['points'] for row in project.get('trim_envelopes', [])
+                         if row['track'] == track and row.get('enabled', True) and not row.get('offline', False)), [])
         controls = {k: v for k, v in args.items() if k not in ('track', 'start_seconds', 'end_seconds')}
         plan = planning.level_curve(profile, existing, self.config['bounds'], args.get('start_seconds'), args.get('end_seconds'), **controls)
         ident = uuid.uuid4().hex[:16]
@@ -1270,7 +1332,10 @@ class Session:
             write(self.dir / ('level-plan-' + plan['plan_id'] + '.json'), plan)
         return {'results': results, 'next_step': 'Use analyze_track_levels stage=plan for short actual checks. Do not repeatedly stack inverse curves; inspect the result, preserve dynamics, and finish with stage=verify and review_level_balance.'}
 
-    def measure(self, label, track_id=None, window=None, _retry=False):
+    def signal_options(self):
+        return {'point': 'post_fader'} if self.project.get('capabilities', {}).get('signal_taps') else {}
+
+    def measure(self, label, track_id=None, window=None, _retry=False, point=None):
         bounds = list(window if window is not None else self.config['bounds'])
         full = bounds == list(self.config['bounds'])
         self.publish('Measuring %s · %.0f seconds (%s)…' % (
@@ -1279,7 +1344,9 @@ class Session:
         if not full:
             args.update(start_seconds=bounds[0], duration_seconds=bounds[1] - bounds[0])
         started = time.monotonic()
-        rendered = self.bridge('measure_track' if track_id else 'measure_mix', args)
+        if point:
+            args['point'] = point
+        rendered = self.bridge('measure_signal' if point else 'measure_track' if track_id else 'measure_mix', args)
         render_time = time.monotonic() - started
         if 'error' in rendered:
             # A bad GUID or muted source is a recoverable tool error. Fatal bridge
@@ -1340,6 +1407,7 @@ class Session:
             raise RuntimeError('Mix paused: the full passage is still silent or unmeasurable. No more AI edits were made after this failure. Original/Revert remain available; inspect playback and the signal path before continuing.')
         if not cached:
             self.analysis_cache[str(path)] = copy.deepcopy(profile)
+        profile['render_file'] = path.name
         profile.update(title=label, measurement_bounds=bounds,
                        measurement_kind='full_passage' if full else 'diagnostic',
                        envelope_time_origin_seconds=bounds[0])
@@ -1420,7 +1488,7 @@ class Session:
             project = self.bridge('inspect_project', {})
             if 'error' in project:
                 raise RuntimeError(project['error'])
-            if project.get('capabilities', {}).get('mix_tools_version', 0) < 3:
+            if project.get('capabilities', {}).get('mix_tools_version', 0) < 4:
                 raise RuntimeError('Reopen Solo Studio to load the updated mixing controls, then start a new pass.')
             self.project = project
             self.level_targets = leveling.targets(project)

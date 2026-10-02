@@ -88,6 +88,9 @@ Open **Mix → Mix with AI** to connect OpenRouter, choose saved reference analy
 and create a reversible candidate mix. The local worker can adjust track levels
 and pan, add EQ/compression, write separate trim automation, render through
 REAPER, and compare measured loudness, spectrum, dynamics and stereo balance.
+It can also adjust master output, measure signals at three points in the chain,
+read supported plugins' gain-reduction meters, write pre-FX gain rides, reorder
+effects, build shared wet returns, and compare named experiments at matched loudness.
 It also checks vocal and guitar levels across the selected passage, previews
 partial inverse moving-RMS automation for uneven playing, and can hold a volume
 ride across any specified time range. Refinements use short checks, followed by

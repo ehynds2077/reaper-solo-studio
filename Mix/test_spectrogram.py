@@ -94,7 +94,7 @@ class LoudnessGoalTests(unittest.TestCase):
                 requests.append(payload)
                 return {'choices': [{'message': {'role': 'assistant', 'content': 'Measured candidate.'}}]}
             session = worker.Session(folder, api)
-            session.bridge = lambda *args: {'tracks': [], 'capabilities': {'mix_tools_version': 3}}
+            session.bridge = lambda *args: {'tracks': [], 'capabilities': {'mix_tools_version': 4}}
             session.measure = lambda *args, **kwargs: {'loudness': {'integrated_lufs': -12, 'true_peak_dbtp': -1.1}}
             with patch.object(worker, 'library', return_value={'references': [{'id': 'ref', 'profile': str(folder / 'ref.json')}]}), patch('charts.render_charts'):
                 self.assertEqual(session.run(), 'review')

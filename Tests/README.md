@@ -1,5 +1,16 @@
 # Recording workflow checks
 
+`Run advanced mix checks.lua` tests master gain, effect order, shared sends/buses,
+pre-FX rides, named checkpoint restores, A/B, Revert and deferred gain-reduction
+sampling in a silent disposable project. Close Solo Studio and stop transport
+first; install Mix trim.jsfx and generate `mix-tone.wav` with `make_fixtures.py`.
+The test restores the original song, verifies its audio fingerprint, and reopens
+Solo Studio. It also checks cancelled/failed measurements and interrupted meter
+recovery. Run `python3 Mix/test_native_advanced.py 'Tests/Advanced mix data/ID'`
+on the reported data folder to verify actual float-WAV gain differences and GR.
+`Mix/test_experiments.py` checks matched comparison outputs, chart delivery,
+cancellation/failure restoration, retained recovery snapshots, and batch edits.
+
 Ableton XML and native import checks are documented in the
 [importer guide](../Ableton/README.md#installation-and-validation). They cover
 source preservation, complete indexing, ambiguous relinks, tempo maps, loops,

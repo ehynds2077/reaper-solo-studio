@@ -3,8 +3,10 @@ local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 local J=dofile(dir..'/solo_json.lua')
 local AudioState=dofile(dir..'/solo_mix_state.lua')
 local FXState=dofile(dir..'/solo_mix_effects.lua')
+local Controls=dofile(dir..'/solo_mix_controls.lua')
+local Probe=dofile(dir..'/solo_mix_measure.lua')
 local R=reaper
-local B={json=J}
+local B={json=J};local API={}
 local function finite(v,lo,hi)assert(type(v)=='number'and v==v and v>=lo and v<=hi,'Value outside allowed range');return v end
 local function db(v)return v>0 and 20*math.log(v,10)or -150 end
 local function track(guid,proj)
@@ -39,7 +41,7 @@ local function list_tracks(proj,bounds)
   fx=effect_list(tr)
   for n=0,R.GetTrackNumSends(tr,0)-1 do
    local dest=R.GetTrackSendInfo_Value(tr,0,n,'P_DESTTRACK')
-   sends[#sends+1]={destination=dest and R.GetTrackGUID(dest)or '',volume_db=db(R.GetTrackSendInfo_Value(tr,0,n,'D_VOL'))}
+   sends[#sends+1]={index=n,pan=R.GetTrackSendInfo_Value(tr,0,n,'D_PAN'),muted=R.GetTrackSendInfo_Value(tr,0,n,'B_MUTE')~=0,mode=R.GetTrackSendInfo_Value(tr,0,n,'I_SENDMODE'),destination=dest and R.GetTrackGUID(dest)or '',volume_db=db(R.GetTrackSendInfo_Value(tr,0,n,'D_VOL'))}
   end
   local playing_items
   if bounds then
@@ -64,7 +66,7 @@ function B.plugins()
  local result=J.array();local seen={}
  for i=0,10000 do
   local ok,name=R.EnumInstalledFX(i);if not ok then break end
-  if name:find('ReaEQ',1,true)or name:find('ReaComp',1,true)or name:find('FabFilter',1,true)or name:find('UADx',1,true)then
+  if name:find('ReaEQ',1,true)or name:find('ReaComp',1,true)or name:find('ReaVerbate',1,true)or name:find('ReaDelay',1,true)or name:find('FabFilter',1,true)or name:find('UADx',1,true)then
    -- Prefer VST3 or stock VST; omit AU duplicates, instruments and DSP-only UAD.
    if (name:match('^VST3:')or name:match('^VST:'))and not seen[name]then result[#result+1]=name;seen[name]=true end
   end
@@ -102,7 +104,7 @@ end
 local function journal(s)
  J.write(s.path..'/snapshot.json',{original=s.original,owned=s.owned,bounds=s.bounds,expected=s.expected,
   candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path,resolution=s.resolution,
-  audio_signature=s.audio_signature,modified=s.modified})
+  audio_signature=s.audio_signature,modified=s.modified,controls=s.controls})
 end
 local function remember(s)
  s.expected={}
@@ -114,6 +116,7 @@ local function remember(s)
   row.expected=FXState.capture(track(row.track,s.project),row.id)
   if s.mode=='candidate'then row.candidate=row.expected end
  end
+ Controls.remember(s,API)
  s.audio_signature=AudioState.capture(s.project)
  s.version=R.GetProjectStateChangeCount(s.project);journal(s)
 end
@@ -133,6 +136,7 @@ function B.recover(path)
  local data=J.read(path..'/snapshot.json');if not data or data.finished then return nil end
  local p,name=R.EnumProjects(-1,'')
  if name~=data.project_path then return nil end
+ data.path=path;data.project=p
  -- Track edits do not change ownership of a saved project. Unsaved tabs need
  -- matching GUIDs because they all have the same empty filename.
  local changed=#data.original~=R.CountTracks(p)
@@ -145,6 +149,8 @@ function B.recover(path)
   elseif math.abs(R.GetMediaTrackInfo_Value(tr,'D_VOL')-expected.volume)>1e-9 or
    math.abs(R.GetMediaTrackInfo_Value(tr,'D_PAN')-expected.pan)>1e-9 then changed=true end
  end
+ -- Verify unsaved-tab identity before restoring any temporary hardware levels.
+ Probe.recover(data,API)
  for _,row in ipairs(data.owned)do
   local ok=pcall(function()return fx_index(track(row.track,p),row.id)end)
   if not ok then changed=true end
@@ -159,6 +165,7 @@ function B.recover(path)
  -- Older journals predate the fingerprint. Preserve their existing recovery
  -- checks, then establish the baseline once; new journals verify across reloads.
  data.audio_signature=data.audio_signature or signature
+ local controls_ok=pcall(Controls.guard,data,API);if not controls_ok then changed=true end
  data.recovery_changed=changed
  B.trace(data,'checkpoint_recovered',B.diagnostics(data))
  return data
@@ -209,6 +216,7 @@ function B.guard(s,check_version,allow_playback)
     undo_label=label})
    s.version=version -- Keep verified renders; the audio state did not change.
   end
+  Controls.guard(s,API)
   for id,expected in pairs(s.expected)do
    local tr=track(id,s.project)
    assert(math.abs(R.GetMediaTrackInfo_Value(tr,'D_VOL')-expected.volume)<1e-9 and math.abs(R.GetMediaTrackInfo_Value(tr,'D_PAN')-expected.pan)<1e-9,'A fader or pan was changed outside the mixer. Revert preserves that edit.')
@@ -265,18 +273,18 @@ function B.inspect(s)
   if isregion then regions[#regions+1]={name=name,start_seconds=start,end_seconds=ending}end
  end
  local master=R.GetMasterTrack(s.project);local effects=effect_list(master)
- local trims=J.array()
- for _,row in ipairs(s.owned)do if row.trim then
+ local trims=J.array();local pretrims=J.array()
+ for _,row in ipairs(s.owned)do if row.trim or row.pretrim then
   local tr=track(row.track,s.project);local idx=fx_index(tr,row.id)
   local env=R.GetFXEnvelope(tr,idx,0,false);local points=J.array()
   if env then for i=0,R.CountEnvelopePointsEx(env,-1)-1 do
    local ok,seconds,value=R.GetEnvelopePointEx(env,-1,i)
    if ok then points[#points+1]={seconds=seconds,db=value}end
   end end
-  trims[#trims+1]={track=row.track,effect=row.id,points=points}
+  local target=row.pretrim and pretrims or trims;target[#target+1]={track=row.track,effect=row.id,points=points,enabled=R.TrackFX_GetEnabled(tr,idx),offline=R.TrackFX_GetOffline(tr,idx)}
  end end
- return {tracks=list_tracks(s.project,s.bounds),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,trim_envelopes=trims,
-  capabilities={mix_tools_version=3,existing_effects_editable=true,parameter_automation_override=true,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
+ return {tracks=list_tracks(s.project,s.bounds),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,trim_envelopes=trims,pre_fx_envelopes=pretrims,
+  capabilities={mix_tools_version=4,master_output=true,signal_taps=true,gain_reduction_probe=true,pre_fx_automation=true,mix_checkpoints=true,effect_order=true,send_controls=true,existing_effects_editable=true,parameter_automation_override=true,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
   master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL')),limiter_headroom=master_headroom(s.project)},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
@@ -287,7 +295,7 @@ local function measurement_bounds(s,a)
  assert(start+duration<=s.bounds[2]+1e-7,'Measurement must stay within the selected passage')
  return {start,math.min(start+duration,s.bounds[2])}
 end
-local function render(s,bounds,scope)
+local function render(s,bounds,scope,settings)
  s.render_cache=s.render_cache or {}
  local key=scope..':'..string.format('%.17g:%.17g',bounds[1],bounds[2])
  local cached=s.render_cache[key]
@@ -298,12 +306,12 @@ local function render(s,bounds,scope)
  end
  s.renders=s.renders+1;assert(s.renders<=160,'Render limit reached')
  local started=R.time_precise()
- local numbers={RENDER_SETTINGS=0,RENDER_BOUNDSFLAG=0,RENDER_STARTPOS=bounds[1],RENDER_ENDPOS=bounds[2],
+ local numbers={RENDER_SETTINGS=settings or 0,RENDER_BOUNDSFLAG=0,RENDER_STARTPOS=bounds[1],RENDER_ENDPOS=bounds[2],
   RENDER_CHANNELS=2,RENDER_TAILFLAG=0,RENDER_ADDTOPROJ=0,RENDER_DITHER=0,RENDER_NORMALIZE=0,RENDER_SRATE=48000}
  -- A recovered bridge starts its counter again. Unique names also make a cancelled
  -- render fail instead of accidentally accepting an earlier WAV as fresh analysis.
  local pattern='render-'..s.renders..'-'..R.genGuid():gsub('[^%w]','')
- local strings={RENDER_FORMAT='ZXZhdxgAAA==',RENDER_FORMAT2='',RENDER_FILE=s.path,RENDER_PATTERN=pattern}
+ local strings={RENDER_FORMAT=settings and 'ZXZhdyAAAA=='or 'ZXZhdxgAAA==',RENDER_FORMAT2='',RENDER_FILE=s.path,RENDER_PATTERN=pattern}
  local oldn,olds={},{}
  for k in pairs(numbers)do oldn[k]=R.GetSetProjectInfo(s.project,k,0,false)end
  for k in pairs(strings)do local _,v=R.GetSetProjectInfo_String(s.project,k,'',false);olds[k]=v end
@@ -332,6 +340,7 @@ end
 function B.execute(s,name,a)
  B.guard(s,true);assert(s.mode=='candidate','Return to Candidate before continuing');a=a or {}
  if name=='inspect_project'then return B.inspect(s)end
+ if name=='save_mix_checkpoint'or name=='list_mix_checkpoints'or name=='delete_mix_checkpoint'then return Controls.execute(s,name,a,API)end
  -- Internal worker controls, deliberately absent from the model's tool schema.
  if name=='discard_measurements'then s.render_cache={};return {discarded=true}end
  if name=='recover_silent_render'then
@@ -347,6 +356,8 @@ function B.execute(s,name,a)
   return {restarted=true}
  end
  if name=='inspect_arrangement'then return dofile(dir..'/solo_mix_visuals.lua').overview(s.project,s.bounds,a)end
+ if name=='measure_signal'then return Probe.signal(s,a,API)end
+ if name=='measure_gain_reduction'then return Probe.start(s,a,API)end
  if name=='measure_mix'then return render(s,measurement_bounds(s,a),'mix')end
  if name=='measure_track'then
   assert(a.track~='MASTER','Use measure_mix to measure the master output')
@@ -370,10 +381,11 @@ function B.execute(s,name,a)
  end
  R.Undo_BeginBlock2(s.project)
  local ok,result=xpcall(function()
-  if name=='set_track_mix'then
+  if Controls.names[name]then return Controls.execute(s,name,a,API)
+  elseif name=='set_track_mix'then
    local tr=track(a.track,s.project);local baseline
    for _,row in ipairs(s.original)do if row.id==a.track then baseline=row end end
-   assert(baseline,'Unknown original track; master fader is read-only');finite(a.volume_db,-90,24);finite(a.pan,-1,1)
+   assert(baseline,'Unknown track; use set_master_output for the master fader');finite(a.volume_db,-90,24);finite(a.pan,-1,1)
    assert(not active_envelope(tr,'<VOLENV2')and not active_envelope(tr,'<PANENV2'),'Existing volume/pan automation is protected; use trim automation instead')
    local _,_,_,mode=R.GetTrackUIPan(tr);assert(mode==0 or mode==3,'Dual/stereo pan tracks require manual adjustment')
    R.SetMediaTrackInfo_Value(tr,'D_VOL',10^(a.volume_db/20));R.SetMediaTrackInfo_Value(tr,'D_PAN',a.pan)
@@ -493,17 +505,20 @@ function B.execute(s,name,a)
    assert(R.TrackFX_SetParamNormalized(tr,idx,a.parameter,a.normalized),'Parameter was rejected')
    local _,label=R.TrackFX_GetParamName(tr,idx,a.parameter,'');local _,value=R.TrackFX_GetFormattedParamValue(tr,idx,a.parameter,'')
    return {name=label,formatted=value,normalized=R.TrackFX_GetParamNormalized(tr,idx,a.parameter)}
-  elseif name=='set_trim_automation'then
+  elseif name=='set_trim_automation'or name=='set_pre_fx_automation'then
+   local pre=name=='set_pre_fx_automation'
    assert(type(a.points)=='table'and #a.points>=2 and #a.points<=256,'Supply 2–256 automation points')
    local previous=-1
    for _,point in ipairs(a.points)do finite(point.seconds,s.bounds[1],s.bounds[2]);finite(point.db,-12,6);assert(point.seconds>previous,'Points must be strictly ordered');previous=point.seconds end
    assert(a.points[1].seconds==s.bounds[1]and a.points[#a.points].seconds==s.bounds[2]and a.points[1].db==0 and a.points[#a.points].db==0,'Use zero dB endpoints at excerpt boundaries')
    local tr=track(a.track,s.project);local idx
-   for _,row in ipairs(s.owned)do if row.track==a.track and row.trim then idx=fx_index(tr,row.id)end end
+   for _,row in ipairs(s.owned)do if row.track==a.track and (pre and row.pretrim or not pre and row.trim)then idx=fx_index(tr,row.id)end end
    if not idx then
     assert(#s.owned<24,'Effect limit reached');idx=R.TrackFX_AddByName(tr,'Solo Studio/Mix trim.jsfx',false,-1);assert(idx>=0,'Install Mix trim.jsfx first')
-    s.owned[#s.owned+1]={track=a.track,id=R.TrackFX_GetFXGUID(tr,idx),trim=true,plugin='Solo Studio Mix Trim'};journal(s)
+    s.owned[#s.owned+1]={track=a.track,id=R.TrackFX_GetFXGUID(tr,idx),trim=not pre or nil,pretrim=pre or nil,plugin='Solo Studio Mix Trim'};journal(s)
    end
+   if pre and idx~=0 then Controls.order_checkpoint(s,a.track,API);R.TrackFX_CopyToTrack(tr,idx,tr,0,true);idx=0 end
+   R.TrackFX_SetOffline(tr,idx,false);R.TrackFX_SetEnabled(tr,idx,true)
    local env=R.GetFXEnvelope(tr,idx,0,true);assert(env,'Could not create trim envelope')
    R.DeleteEnvelopePointRangeEx(env,-1,-math.huge,math.huge)
    -- Native JSFX envelopes use slider units (dB here), not normalized FX values.
@@ -560,10 +575,11 @@ function B.compare(s,mode)
   R.SetMediaTrackInfo_Value(tr,'D_VOL',v.volume);R.SetMediaTrackInfo_Value(tr,'D_PAN',v.pan)
  end
  for _,fx in ipairs(effects)do R.TrackFX_SetEnabled(fx.track,fx.index,mode=='candidate'and fx.row.candidate_enabled~=false)end
+ Controls.compare(s,mode,API)
  s.mode=mode;R.Undo_EndBlock2(s.project,'Solo Studio compare '..mode,-1);remember(s);R.UpdateArrange()
 end
 function B.revert(s)
- B.guard(s,false,true);local conflicts=0
+ B.guard(s,false,true);local remove_buses,conflicts=Controls.removable_buses(s,API)
  local replacements,plans={},{}
  for _,row in ipairs(s.modified or {})do
   local ok,current=pcall(function()return FXState.capture(track(row.track,s.project),row.id)end)
@@ -585,9 +601,11 @@ function B.revert(s)
    end
   end
  end
+ conflicts=conflicts+Controls.revert(s,API)
  for _,row in ipairs(s.owned)do
   local ok,tr,idx=pcall(own,s,row.track,row.id);if ok then R.TrackFX_Delete(tr,idx)end
  end
+ Controls.remove_buses(s,remove_buses,API)
  s.finished=true;journal(s);R.Undo_EndBlock2(s.project,'Solo Studio revert candidate mix',-1);R.UpdateArrange()
  return conflicts
 end
@@ -600,5 +618,8 @@ function B.archive_current(s)
  B.guard(s,false);assert(not s.finished,'This session is already finished')
  s.finished=true;s.resolution='continued_from_current_mix';journal(s)
 end
+API={render=render,bounds=measurement_bounds,track=track,fx_index=fx_index,finite=finite,active_envelope=active_envelope,journal=journal,editable=editable,remember=remember}
+B.poll_probe=function(s,cancel)return Probe.poll(s,API,cancel)end
+B.cancel_probe=function(s)if s.probe then Probe.cleanup(s,API);remember(s)end end
 B.track=track
 return B

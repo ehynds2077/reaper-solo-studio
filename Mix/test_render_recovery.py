@@ -19,7 +19,7 @@ class RecoveryTests(unittest.TestCase):
         self.path = Path(self.temp.name)
         worker.write(self.path / 'config.json', {'bounds': [0, 8], 'visual_analysis': False})
         self.session = worker.Session(self.path)
-        self.project = {'tracks': [], 'capabilities': {'mix_tools_version': 3, 'silent_render_recovery': True}}
+        self.project = {'tracks': [], 'capabilities': {'mix_tools_version': 4, 'silent_render_recovery': True}}
         self.session.project = self.project
         self.calls = []; self.renders = 0
         def bridge(name, args):
