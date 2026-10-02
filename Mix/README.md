@@ -271,6 +271,9 @@ Press **G** in the Mix review to open feedback from the keyboard.
 These buttons switch actual project levels; **this A/B is not
 loudness matched**. LUFS readouts make that difference visible. **Give feedback…**
 continues from the current candidate while retaining the original rollback point.
+The latest feedback is sent separately from the overall mix direction and replaces
+previous pass instructions, so a request to ease limiting does not repeat an old
+request to apply leveling.
 **Keep mix** accepts a measured candidate below or equal to -1 dBTP. A candidate
 with higher peaks needs another pass or manual review; the Keep button remains
 unavailable. **Revert** removes session-added effects and restores original

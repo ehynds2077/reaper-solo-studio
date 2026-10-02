@@ -199,7 +199,9 @@ class WorkerTests(unittest.TestCase):
     def test_reference_gaps_reach_model_and_refresh_after_actual_measurements(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp)
-            worker.write(path/'config.json', {'bounds': [0, 8], 'references': ['chosen'], 'rounds': 2})
+            worker.write(path/'config.json', {'bounds': [0, 8], 'references': ['chosen'], 'rounds': 2,
+                                             'direction': 'Natural indie rock',
+                                             'feedback': 'Reduce limiting; preserve existing leveling.'})
             worker.write(path/'reference.json', {
                 'title': 'Reference', 'source_name': 'private-source.wav',
                 'loudness': {'integrated_lufs': -12, 'true_peak_dbtp': -1},
@@ -224,6 +226,8 @@ class WorkerTests(unittest.TestCase):
                  patch('charts.render_charts'):
                 self.assertEqual(session.run(), 'review')
             context = json.loads(requests[0]['messages'][1]['content'])
+            self.assertEqual(context['direction'], 'Natural indie rock')
+            self.assertEqual(context['current_request'], 'Reduce limiting; preserve existing leveling.')
             before = context['original']['reference_comparison']
             self.assertEqual(before['metrics']['integrated_lufs']['delta_to_reference'], 12)
             self.assertEqual(before['bands'][0]['delta_to_reference'], -6)

@@ -202,7 +202,11 @@ return function(M,ui,options)
   if not guarded then B.trace(session,'resume_rejected',{message=tostring(reason),context=B.diagnostics(session)});error(reason,0)end
   assert(session.mode=='candidate','Select Candidate first.')
   local job=read(session.path..'/config.json');job.resume=true
-  job.direction=job.direction..'\nUser feedback: '..value
+  -- Old versions appended every prior request to the direction, causing the
+  -- model to repeat completed work. Keep style and the current task separate;
+  -- historical feedback remains in the session event log.
+  job.direction=job.direction:match('^(.-)\nUser feedback:')or job.direction
+  job.feedback=value
   job.rounds=config.rounds;job.stop_after_usd=config.stop_after_usd;job.target_lufs=config.target_lufs
   for _,key in ipairs({'rounds','stop_after_usd','model','visual_analysis','target_lufs'})do if options and options[key]~=nil then job[key]=options[key]end end
   J.write(session.path..'/config.json',job)
