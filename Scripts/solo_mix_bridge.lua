@@ -41,6 +41,7 @@ local function list_tracks(proj,bounds)
    end
   end
   out[#out+1]={id=R.GetTrackGUID(tr),name=name,volume_db=db(R.GetMediaTrackInfo_Value(tr,'D_VOL')),
+   fader_silent=R.GetMediaTrackInfo_Value(tr,'D_VOL')<=0,
    pan=R.GetMediaTrackInfo_Value(tr,'D_PAN'),pan_mode=R.GetMediaTrackInfo_Value(tr,'I_PANMODE'),
    muted=R.GetMediaTrackInfo_Value(tr,'B_MUTE')~=0,solo=R.GetMediaTrackInfo_Value(tr,'I_SOLO')~=0,
    items=R.CountTrackMediaItems(tr),playing_items_in_passage=playing_items,parent=parent and R.GetTrackGUID(parent)or '',sends=sends,
@@ -181,6 +182,14 @@ local function own(s,guid,effect)
  for _,row in ipairs(s.owned)do if row.track==guid and row.id==effect then return tr,fx_index(tr,effect),row end end
  error('Only effects added by this session can be changed')
 end
+local function master_headroom(proj)
+ local master=R.GetMasterTrack(proj);local volume=R.GetMediaTrackInfo_Value(master,'D_VOL')
+ local automated=active_envelope(master,'<VOLENV2')
+ local ceiling=not automated and volume>0 and (-1.1-math.max(0,db(volume)))or nil
+ return {post_fx_fader_db=db(volume),fader_silent=volume<=0,volume_automated=automated,
+  suggested_limiter_ceiling_db=ceiling,within_adapter_range=ceiling and ceiling>=-12 or false,
+  note='Master fader is after FX. Suggested plugin ceiling compensates static positive master gain with 0.1 dB margin; assumes limiter is last. Automated/muted gain needs signal-path inspection. Always verify actual rendered true peak.'}
+end
 function B.inspect(s)
  local regions=J.array()
  for i=0,10000 do local ok,isregion,start,ending,name=R.EnumProjectMarkers3(s.project,i);if ok==0 then break end
@@ -200,7 +209,7 @@ function B.inspect(s)
  end end
  return {tracks=list_tracks(s.project,s.bounds),regions=regions,available_plugins=B.plugins(),bounds=s.bounds,session_effects=s.owned,trim_envelopes=trims,
   capabilities={mix_tools_version=3,arrangement_peaks=true,measurement_windows=true,measurement_cache=true,silent_render_recovery=true,master_effects=true,track_max_db=24,eq_max_db=12,compressor_makeup_max_db=6,limiter_gain_max_db=24},
-  master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))},
+  master={id='MASTER',effects=effects,volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL')),limiter_headroom=master_headroom(s.project)},
   master_volume_db=db(R.GetMediaTrackInfo_Value(master,'D_VOL'))}
 end
 local function measurement_bounds(s,a)
@@ -354,7 +363,10 @@ function B.execute(s,name,a)
     end
    end)
    if not good then for i,v in pairs(old)do R.TrackFX_SetParamNormalized(tr,idx,i,v)end;error(why)end
-   return {gain_db=a.gain_db,ceiling_db=a.ceiling_db,true_peak=true,oversampling='2x',next_step='Render measure_mix to verify final loudness and true peak, including the master fader.'}
+   local headroom=a.track=='MASTER'and master_headroom(s.project)or nil
+   return {gain_db=a.gain_db,ceiling_db=a.ceiling_db,true_peak=true,oversampling='2x',master_headroom=headroom,
+    estimated_post_fader_ceiling_db=headroom and not headroom.volume_automated and not headroom.fader_silent and (a.ceiling_db+headroom.post_fx_fader_db)or nil,
+    next_step='If master gain raises the ceiling, lower the plugin ceiling using master_headroom, then render measure_mix to verify final loudness and true peak. Existing master fader is unchanged.'}
   elseif name=='configure_eq'then
    local tr,idx,row=own(s,a.track,a.effect);assert(row.plugin:find('ReaEQ',1,true),'This adapter requires ReaEQ')
    local band=({low_shelf=1,bell=2,high_shelf=4})[a.band];assert(band,'Unknown EQ band')

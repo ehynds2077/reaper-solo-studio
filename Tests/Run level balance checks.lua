@@ -44,6 +44,17 @@ local ok,err=xpcall(function()
   R.SetMediaItemInfo_Value(item,'D_VOL',i==1 and .2 or .1)
   R.SetMediaItemInfo_Value(item,'D_FADEINLEN',0);R.SetMediaItemInfo_Value(item,'D_FADEOUTLEN',0)
  end
+ R.SetMediaTrackInfo_Value(tr,'D_VOL',0)
+ check(B.inspect({project=project,bounds={0,24},owned={}}).tracks[1].fader_silent,'Native zero-gain tracks are identified explicitly')
+ R.SetMediaTrackInfo_Value(tr,'D_VOL',10^(-90/20))
+ check(not B.inspect({project=project,bounds={0,24},owned={}}).tracks[1].fader_silent,'Very quiet nonzero faders are not classified as silent')
+ R.SetMediaTrackInfo_Value(tr,'D_VOL',1)
+ for _,gain in ipairs({0,-6,2.57,18})do
+  R.SetMediaTrackInfo_Value(master,'D_VOL',10^(gain/20))
+  local hint=B.inspect({project=project,bounds={0,24},owned={}}).master.limiter_headroom
+  check(math.abs(hint.suggested_limiter_ceiling_db-(-1.1-math.max(0,gain)))<1e-8 and hint.within_adapter_range==(gain<=10.9),'Master limiter guidance compensates '..gain..' dB without exceeding adapter limits silently')
+ end
+ R.SetMediaTrackInfo_Value(master,'D_VOL',10^(2.57/20))
  session=B.begin(job,{0,24})
  check(B.inspect(session).tracks[1].playing_items_in_passage==3,'Leveling targets include the three playing phrases in scope')
  check(B.inspect({project=project,bounds={25,28},owned={}}).tracks[1].playing_items_in_passage==0,'Clips outside the selected passage are not leveling targets')
@@ -79,6 +90,13 @@ local function tick()
    check(not pcall(B.execute,session,'set_trim_automation',{track=guid,points=points}),'Out-of-range rides are rejected before replacing the envelope')
    B.compare(session,'original');check(not R.TrackFX_GetEnabled(tr,0),'Original bypasses the level rides')
    B.compare(session,'candidate');check(R.TrackFX_GetEnabled(tr,0),'Candidate restores the level rides')
+   local master=R.GetMasterTrack(project);local master_volume=R.GetMediaTrackInfo_Value(master,'D_VOL')
+   local limiter=B.execute(session,'add_effect',{track='MASTER',plugin='VST3: Pro-L 2 (FabFilter)'})
+   local configured=B.execute(session,'configure_limiter',{track='MASTER',effect=limiter.effect,gain_db=0,ceiling_db=-1})
+   check(math.abs(configured.estimated_post_fader_ceiling_db-1.57)<1e-8,'Limiter readback exposes the positive master gain after the plugin')
+   local suggestion=configured.master_headroom.suggested_limiter_ceiling_db
+   configured=B.execute(session,'configure_limiter',{track='MASTER',effect=limiter.effect,gain_db=0,ceiling_db=suggestion})
+   check(math.abs(configured.ceiling_db+3.67)<1e-8 and math.abs(configured.estimated_post_fader_ceiling_db+1.1)<1e-8 and R.GetMediaTrackInfo_Value(master,'D_VOL')==master_volume,'Compensated limiter ceiling is applied in physical units while the master fader stays unchanged')
    B.revert(session);session=nil
    check(R.TrackFX_GetCount(tr)==0 and R.GetMediaTrackInfo_Value(tr,'D_VOL')==1,'Revert removes the trim and preserves the original fader')
    for i=0,2 do check(R.GetMediaItemInfo_Value(R.GetTrackMediaItem(tr,i),'D_VOL')==(i==1 and .2 or .1),'Source clip '..(i+1)..' gain is untouched')end

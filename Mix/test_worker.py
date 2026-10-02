@@ -34,15 +34,46 @@ class WorkerTests(unittest.TestCase):
             session = worker.Session(path); session.diagnostic_bounds = [160, 190]
             self.assertEqual(session.measurement_window({}), [160, 190])
             self.assertEqual(session.measurement_window({'full_passage': True}), [100, 280])
+            self.assertEqual(session.measurement_window({'full_passage': True, 'start_seconds': 0, 'duration_seconds': 600}), [100, 280])
+            self.assertEqual(session.measurement_window({'full_passage': True, 'start_seconds': 0}), [100, 280])
             self.assertEqual(session.measurement_window({'start_seconds': 200, 'duration_seconds': 30}), [200, 230])
             for args in ({'start_seconds': 100}, {'duration_seconds': 30},
                          {'start_seconds': 80, 'duration_seconds': 30},
-                         {'start_seconds': 270, 'duration_seconds': 30},
-                         {'full_passage': True, 'start_seconds': 100, 'duration_seconds': 30}):
+                         {'start_seconds': 270, 'duration_seconds': 30}):
                 with self.assertRaises(ValueError): session.measurement_window(args)
             spec = next(t['function']['parameters'] for t in worker.TOOLS if t['function']['name'] == 'measure_mix')
             for value in ('false', 1, None):
                 with self.assertRaises(ValueError): worker.validate({'full_passage': value}, spec)
+            for value in (True, float('inf'), -1):
+                with self.assertRaises(ValueError):
+                    session.execute_tool('measure_mix', {'full_passage': True, 'start_seconds': value})
+
+    def test_conflicting_full_range_calls_do_not_pause_the_model_loop(self):
+        request = {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
+            {'id': 'mixed', 'function': {'name': 'measure_mix', 'arguments': json.dumps({
+                'full_passage': True, 'start_seconds': 0, 'duration_seconds': 600})}}]}}]}
+        done = {'choices': [{'message': {'role': 'assistant', 'content': 'Measured summary.'}}]}
+        session, state, requests, _ = self.run_scripted_responses([request] * 3 + [done],
+            {'loudness': {'integrated_lufs': -14, 'true_peak_dbtp': -2}})
+        self.assertEqual(len(requests), 4)
+        self.assertEqual((state, session.completion_reason), ('review', 'measured_completion'))
+        self.assertEqual(len(session.measurements), 6)  # Original + 3 requests + completion + final.
+
+    def test_rejected_requests_log_parsed_known_arguments_without_crashing(self):
+        for arguments in ('{"start_seconds":0}', '{"start_seconds":1e999}', '{bad json',
+                          '{"start_seconds":0,"unknown_secret_field":"do-not-log"}'):
+            bad = {'choices': [{'message': {'role': 'assistant', 'tool_calls': [
+                {'id': 'bad', 'function': {'name': 'measure_mix', 'arguments': arguments}}]}}]}
+            with patch.object(worker.Session, 'trace', autospec=True) as trace:
+                session, state, _, _ = self.run_scripted_responses([bad],
+                    {'loudness': {'integrated_lufs': -14, 'true_peak_dbtp': -2}}, rounds=3)
+            self.assertEqual((state, session.completion_reason), ('review', 'repeated_tool_errors'))
+            rejected = [call.kwargs for call in trace.call_args_list if call.args[1] == 'tool_rejected']
+            self.assertEqual(len(rejected), 3)
+            encoded = json.dumps(rejected, allow_nan=False)
+            self.assertNotIn('do-not-log', encoded)
+            self.assertEqual(rejected[0]['tool'], 'measure_mix')
+            self.assertIn('arguments', rejected[0])
 
     def test_cached_analysis_needs_native_confirmation_and_preserves_original(self):
         with tempfile.TemporaryDirectory() as temp:

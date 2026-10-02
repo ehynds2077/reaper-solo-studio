@@ -177,7 +177,7 @@ MAX_BATCH_READS = 16
 WINDOW = {
     'start_seconds': dict(number(0, 86400), description='Absolute project start; supply duration_seconds too.'),
     'duration_seconds': number(3, 600),
-    'full_passage': {'type': 'boolean', 'description': 'Measure the entire selected passage instead of a diagnostic window; omit start/duration.'},
+    'full_passage': {'type': 'boolean', 'description': 'Measure the entire selected passage. When true, takes precedence over start_seconds/duration_seconds; those range fields are ignored.'},
 }
 TOOLS = [
     schema('inspect_project', 'Read tracks, master, routing, regions, available plugins and session_effects IDs. Reuse these owned effects on refinement instead of adding duplicates.', {}, []),
@@ -193,7 +193,7 @@ TOOLS = [
            {'track': TRACK, 'effect': FX, 'threshold_db': number(-60, 0), 'ratio': number(1, 20),
             'attack_ms': number(.1, 200), 'release_ms': number(10, 3000), 'makeup_db': number(0, 6)},
            ['track', 'effect', 'threshold_db', 'ratio', 'attack_ms', 'release_ms']),
-    schema('configure_limiter', 'Configure session-added FabFilter Pro-L 2 on MASTER (or a track): gain in dB, true-peak ceiling, true-peak limiting ON, 2x oversampling, unity gain OFF. Raise gain toward the measured LUFS gap, re-render, and refine. Existing user FX are untouched.',
+    schema('configure_limiter', 'Configure session-added FabFilter Pro-L 2 on MASTER (or a track): gain in dB, plugin output ceiling, true-peak limiting ON, 2x oversampling, unity gain OFF. MASTER fader gain happens AFTER the limiter: use inspect_project master.limiter_headroom to choose a ceiling that compensates positive master gain. Raise gain toward the measured LUFS gap, re-render, and refine. Existing user FX are untouched.',
            {'track': TRACK, 'effect': FX, 'gain_db': number(0, 24), 'ceiling_db': number(-12, -1)},
            ['track', 'effect', 'gain_db', 'ceiling_db']),
     schema('configure_eq', 'Set frequency and gain of an existing band in a newly added ReaEQ. Broad default bandwidth. Use low_shelf/high_shelf index 0, or bell index 0/1.',
@@ -489,7 +489,8 @@ windows; measurement_bounds are absolute project seconds, while envelope_1s time
 are relative to measurement_bounds[0]. A diagnostic window's LUFS/LRA is not the
 whole song's loudness/dynamics. Inspect other sections with start_seconds and
 duration_seconds when needed, especially after automation; use full_passage=true
-for an overall check. If a track is silent in a window, inspect another relevant
+for an overall check (it overrides any supplied start/duration and stays within
+the selected passage). If a track is silent in a window, inspect another relevant
 section or report missing audio; do not boost silence. Repeated measurements of an
 unchanged state reuse verified renders. Completion is checked over the ENTIRE
 selected passage after the last edit; short diagnostics cannot approve a final mix.
@@ -524,7 +525,9 @@ including trim processors. Each measurement and edit counts toward normal limits
 REQUIRED LEVEL-BALANCE PASS, especially vocals and guitars:
 Overall LUFS or one good chorus does not prove a balanced song. The initial context
 lists level_balance_targets inferred from contributing vocal/guitar names. Inspect
-routing/roles and include other relevant sources as needed. Analyze their FULL
+routing/roles and include other relevant sources as needed. Static zero-fader
+tracks with no sends are excluded; do not render or turn up unused scratch tracks.
+Zero-fader tracks with automation or sends may still contribute. Analyze their FULL
 selected passage with analyze_track_levels (up to eight sources together). This is
 a purposeful full-song check, not a routine render of every drum microphone. Use
 its active phrase/section summaries and same-time mix comparison to find parts
@@ -574,7 +577,14 @@ tonal balance and dynamics after processing. A 10+ LU gap is unfinished work, no
 an excuse for "restrained" processing. Scratch track names do not justify lighter
 processing: mix the populated tracks as the source material the user supplied.
 Keep the -1 dBTP output ceiling. Do not stack limiters or boost every routing stage.
-The master fader stays fixed; compensate for its value and verify rendered output.
+The master fader stays fixed and is AFTER the limiter. inspect_project returns
+master.limiter_headroom.suggested_limiter_ceiling_db, compensating positive static
+master gain with 0.1 dB margin. Use that plugin ceiling: for example +2.57 dB on
+the master needs about -3.67 dB at the limiter, not -1 dB. configure_limiter does
+not compensate automatically and returns the estimated post-fader ceiling.
+If master gain is automated or the suggested ceiling is outside the adapter's
+range, inspect/report that constraint rather than assume a fixed ceiling works.
+Always verify the actual rendered output; downstream FX/routing can change peaks.
 Use the configure_eq/configure_compressor physical-unit adapters for new ReaEQ/ReaComp instances where useful. Optional installed FabFilter/UADx plugins require
 inspection of actual parameter names and formatted values; do not guess units.
 Do not change a parameter if you cannot establish its mapping. Generic normalized
@@ -751,7 +761,8 @@ class Session:
         full = args.get('full_passage', False)
         supplied = 'start_seconds' in args or 'duration_seconds' in args
         if full and supplied:
-            raise ValueError('Use full_passage OR start_seconds/duration_seconds, not both')
+            self.trace('measurement_window_normalized', arguments=args,
+                       bounds=self.config['bounds'], reason='full_passage takes precedence over custom range')
         if full:
             return list(self.config['bounds'])
         if not supplied:
@@ -1182,12 +1193,21 @@ class Session:
                 failed_calls = 0
                 for call in calls:
                     fn = call['function']; name = fn['name']
+                    args = None
                     try:
                         args = json.loads(fn['arguments'], parse_constant=lambda _: (_ for _ in ()).throw(ValueError('Non-finite JSON')))
                         self.publish(name.replace('_', ' ') + '…', 'tool')
                         result = self.execute_tool(name, args)
                     except (ValueError, KeyError, TypeError) as error:
                         result = {'error': str(error)}
+                        # Keep rejected typed requests diagnosable even when they never
+                        # reach REAPER. Omit raw JSON, unknown fields and provider metadata.
+                        properties = TOOL_SPECS.get(name, {}).get('properties', {})
+                        logged = {k: v for k, v in args.items() if k in properties} if isinstance(args, dict) else None
+                        # Overflowing JSON numbers (e.g. 1e999) must not break logging
+                        # while reporting the original validation error.
+                        logged = json.loads(json.dumps(logged), parse_constant=lambda _: None)
+                        self.trace('tool_rejected', tool=name, arguments=logged, error=str(error))
                     if isinstance(result, dict) and result.get('error'):
                         failed_calls += 1
                         self.publish(name.replace('_', ' ') + ' failed: ' + str(result['error']), 'tool')

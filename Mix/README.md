@@ -171,10 +171,17 @@ model round trips; they do not remove rendering cost or the 24-added-effect limi
 Rejected track-measurement requests return an error for the model to correct;
 they do not terminate the whole pass. Silent or unmeasurable audio is explicitly
 reported as a failure, never as meeting the reference targets.
+For measurement tools, `full_passage: true` takes precedence over supplied
+start/duration fields and uses the selected passage bounds. Invalid field types
+are still rejected. Rejected tool requests log their known arguments and reason
+locally, including requests that fail before reaching REAPER.
 
 **Vocal and guitar leveling is an explicit part of mixing.** Populated, unmuted
 vocal/guitar tracks are identified from their names and routing as required review
 targets; the agent can include other sources after inspecting their roles.
+Tracks with a static zero fader and no sends are excluded, so unused scratch tracks
+do not trigger silent renders. A zero fader with volume automation or sends remains
+eligible because it can still contribute audio; quiet nonzero faders also remain.
 `analyze_track_levels` checks up to eight sources over the **entire selected
 passage**, reusing valid renders. It reports active phrase windows, named song
 sections, sustained level differences and same-time track-to-mix balance proxies.
@@ -260,6 +267,10 @@ the song automatically; use your normal REAPER save workflow.
   fader and pre-existing master effects stay unchanged. Original/Candidate and
   Revert include the session's master effects. The full render verifies output
   after the master fader; a limiter setting alone does not guarantee final peaks.
+  Inspection and limiter readback expose the post-FX master gain and a suggested
+  compensated plugin ceiling with 0.1 dB margin. For example, a +2.57 dB master
+  fader needs about -3.67 dB at the limiter. This is guidance, not an automatic
+  gain change; automated master gain and adapter-range limits are flagged.
 - New instances of ReaEQ, ReaComp, FabFilter and UADx VST/VST3 effects are available.
   Existing FX are read-only. Parameters are inspected in pages of 96 with actual
   names/ranges/normalized values/formatted readbacks. Each normalized move is
@@ -327,8 +338,10 @@ unverified label and Keep/Original/Revert availability after failure.
 runs the real worker with a scripted model (no API call), writes a phrase ride,
 and checks the resulting level spread. It also checks recovered envelope readback,
 long envelopes, the +6 dB limit, Original/Candidate, Revert, unchanged clip gain,
-and exact preservation of the user's track/master state. Close the panel and stop
-transport first; the test restores the song and reopens the panel.
+zero-fader detection, and post-master-gain limiter guidance using installed
+FabFilter Pro-L 2. It checks exact preservation of the user's track/master state.
+Close the panel and stop transport first; the test restores the song and reopens
+the panel.
 `Tests/Run mix checks.lua` uses an isolated REAPER tab and a
 synthetic sine, with all hardware outputs removed. It checks real native effects,
 automation, fader/pan edits, render setting restoration, A/B, rollback, manual-edit

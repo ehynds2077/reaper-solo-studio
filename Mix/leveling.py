@@ -30,7 +30,12 @@ def targets(project):
             seen.add(row['parent']); row = by_id[row['parent']]
             yield row
 
-    audible = [row for row in tracks if not row.get('muted') and
+    def silent_fader(row):
+        # Native zero gain, not a quiet dB threshold. Automation or a pre-fader
+        # send can still contribute; retain those sources for measurement.
+        return row.get('fader_silent') is True and not row.get('volume_automated') and not row.get('sends')
+
+    audible = [row for row in tracks if not row.get('muted') and not silent_fader(row) and
                not any(parent.get('muted') for parent in ancestors(row))]
     candidates = []
     for row in audible:

@@ -15,6 +15,15 @@ def profile(levels):
 
 
 class LevelEvidenceTests(unittest.TestCase):
+    def test_static_zero_faders_are_skipped_but_automation_sends_and_quiet_sources_remain(self):
+        project = {'tracks': [
+            {'id': 'scratch', 'name': 'Scratch guitar', 'items': 2, 'fader_silent': True},
+            {'id': 'auto', 'name': 'Vocal', 'items': 2, 'fader_silent': True, 'volume_automated': True},
+            {'id': 'send', 'name': 'Guitar', 'items': 2, 'fader_silent': True, 'sends': [{'destination': 'bus'}]},
+            {'id': 'quiet', 'name': 'Guitar', 'items': 2, 'fader_silent': False, 'volume_db': -90},
+            {'id': 'old', 'name': 'Vocal', 'items': 2, 'volume_db': -150}]}
+        self.assertEqual([row['track'] for row in leveling.targets(project)], ['auto', 'send', 'quiet', 'old'])
+
     def test_quiet_phrase_and_balance_change_outside_diagnostic_window(self):
         track = profile([-24] * 48 + [None] * 8 + [-33] * 16 + [-24] * 48)
         mix = profile([-18] * 120)
