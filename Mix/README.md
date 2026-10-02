@@ -78,6 +78,18 @@ with an empty cache. Cancelled/incomplete renders are never cached as valid
 measurements. The status feed separates rendering from analysis and reports their
 elapsed times; session status also saves measurement timings for diagnosis.
 
+Opening, closing, moving or selecting a plugin window no longer cancels a pass.
+When REAPER's project-change counter advances, the bridge compares a saved audio
+fingerprint: all track/master chunks (including opaque plugin state, bypass,
+routing, clips and automation), tempo map, play rate and automation override.
+Only specific REAPER window/selection fields are omitted. The exception requires
+one recognized window action since the last check AND an unchanged fingerprint;
+an undo label such as "Close FX config" is never sufficient by itself. This keeps
+unrecognized project settings changes protected. A verified window change keeps
+the pass and render cache. Actual audio edits still pause mixing, and new journals
+also check the fingerprint when reopening Solo Studio. Plugins that change their
+opaque saved state on a UI action can still trigger a conservative stop.
+
 Silent or unmeasurable output is a failed measurement, not 0 LUFS. Both render
 and analysis caches are cleared. For a failed mix measurement the worker restarts
 the audio engine once (only with transport stopped in every project), then renders

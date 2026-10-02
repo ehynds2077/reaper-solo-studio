@@ -1,6 +1,7 @@
 -- Main-thread REAPER tools for the local worker. No model-provided code execution.
 local dir=debug.getinfo(1,'S').source:sub(2):match('^(.*)/')
 local J=dofile(dir..'/solo_json.lua')
+local AudioState=dofile(dir..'/solo_mix_state.lua')
 local R=reaper
 local B={json=J}
 local function finite(v,lo,hi)assert(type(v)=='number'and v==v and v>=lo and v<=hi,'Value outside allowed range');return v end
@@ -90,7 +91,8 @@ function B.trace(s,kind,details)
 end
 local function journal(s)
  J.write(s.path..'/snapshot.json',{original=s.original,owned=s.owned,bounds=s.bounds,expected=s.expected,
-  candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path,resolution=s.resolution})
+  candidate=s.candidate,mode=s.mode,finished=s.finished or false,project_path=s.project_path,resolution=s.resolution,
+  audio_signature=s.audio_signature})
 end
 local function remember(s)
  s.expected={}
@@ -98,6 +100,7 @@ local function remember(s)
   local tr=track(row.id,s.project)
   s.expected[row.id]={volume=R.GetMediaTrackInfo_Value(tr,'D_VOL'),pan=R.GetMediaTrackInfo_Value(tr,'D_PAN')}
  end
+ s.audio_signature=AudioState.capture(s.project)
  s.version=R.GetProjectStateChangeCount(s.project);journal(s)
 end
 function B.begin(path,bounds)
@@ -133,6 +136,11 @@ function B.recover(path)
   if not ok then changed=true end
  end
  data.path=path;data.project=p;data.version=R.GetProjectStateChangeCount(p);data.renders=0
+ local signature=AudioState.capture(p)
+ if data.audio_signature and data.audio_signature~=signature then changed=true end
+ -- Older journals predate the fingerprint. Preserve their existing recovery
+ -- checks, then establish the baseline once; new journals verify across reloads.
+ data.audio_signature=data.audio_signature or signature
  data.recovery_changed=changed
  B.trace(data,'checkpoint_recovered',B.diagnostics(data))
  return data
@@ -170,7 +178,19 @@ function B.guard(s,check_version,allow_playback)
  assert(allow_playback or transport==0,'Stop playback before continuing the mixing pass.')
  if check_version then
   assert(not s.recovery_changed,'Project changed since this mix. Start a new mix from the current sound, or revert the previous pass.')
-  assert(R.GetProjectStateChangeCount(s.project)==s.version,'Project was edited outside the mixer. Session stopped; review or revert its changes.')
+  local version=R.GetProjectStateChangeCount(s.project)
+  if version~=s.version then
+   local label=R.Undo_CanUndo2 and R.Undo_CanUndo2(s.project)
+   local signature=AudioState.capture(s.project)
+   -- Limit the exception to one known window action. This also protects
+   -- project-wide settings not exposed by the track/tempo APIs, and prevents
+   -- an intervening settings edit being hidden by a subsequent window close.
+   assert(version==s.version+1 and AudioState.window_action(label)and s.audio_signature and signature==s.audio_signature,
+    'Project audio settings were edited outside the mixer. Session stopped; review or revert its changes.')
+   B.trace(s,'presentation_change_accepted',{previous_version=s.version,project_version=version,
+    undo_label=label})
+   s.version=version -- Keep verified renders; the audio state did not change.
+  end
   for id,expected in pairs(s.expected)do
    local tr=track(id,s.project)
    assert(math.abs(R.GetMediaTrackInfo_Value(tr,'D_VOL')-expected.volume)<1e-9 and math.abs(R.GetMediaTrackInfo_Value(tr,'D_PAN')-expected.pan)<1e-9,'A fader or pan was changed outside the mixer. Revert preserves that edit.')

@@ -20,6 +20,7 @@ lua 'Tests/Section stop helper.lua'
 lua 'Tests/Lead-in restoration.lua'
 lua "$PWD/Tests/Mix comparison.lua"
 lua "$PWD/Tests/Mix review controls.lua"
+lua "$PWD/Tests/Mix window guard.lua"
 ```
 
 For the native REAPER checks, first generate their synthetic audio:
@@ -33,6 +34,13 @@ then load the desired `Run ... checks.lua` script from REAPER's Actions list.
 The integration, tempo, section, and lead-in checks use separate test projects;
 the visual section check opens its own interactive fixture. Test projects, audio,
 and logs are generated locally and excluded from Git.
+
+`Mix window guard.lua` checks presentation-only changes, preserved render caches,
+plugin/route/media/envelope/master edits, project timing, recovery and transport
+locks. `Run mix window checks.lua` checks floating and chain windows on the active
+stopped project's online Bass ReaEQ, without rendering, model requests or audio
+setting edits. It restores window visibility and writes private diagnostics under
+`Tests/Mix window check data/` and `mix-window-native-checks.txt`.
 
 `Run lead-in checks.lua` requires an available audio device and native pre-roll
 set to two measures. It records silent track outputs with muted hardware sends,
