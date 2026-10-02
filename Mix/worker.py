@@ -185,7 +185,7 @@ TOOLS = [
            {'start_track': {'type': 'integer', 'minimum': 0}, 'track_count': {'type': 'integer', 'minimum': 1, 'maximum': 16}}, []),
     schema('set_track_mix', 'Set absolute track fader -90 to +24 dB and pan (-1 left, 1 right). Rebalance raw recording levels freely. Master fader and automated controls are protected.',
            {'track': TRACK, 'volume_db': number(-90, 24), 'pan': number(-1, 1)}, ['track', 'volume_db', 'pan']),
-    schema('add_effect', 'Append one effect on a track or MASTER. Use exact installed plugin name. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Only session-added effects can be changed. Put the master limiter last.',
+    schema('add_effect', 'Append one effect on a track or MASTER. Use an exact name from available_plugins, not session_effects. ReaEQ/ReaComp and FabFilter Pro-L 2 have physical-unit adapters. Only session-added effects can be changed. Put the master limiter last. For trim rides call set_trim_automation directly; it creates/reuses its dedicated processor. Do not add JS Mix Trim with this tool.',
            {'track': TRACK, 'plugin': {'type': 'string'}}, ['track', 'plugin']),
     schema('inspect_effect', 'Read parameter indices, raw ranges, normalized values and formatted values of a newly added effect.',
            {'track': TRACK, 'effect': FX, 'start_parameter': {'type': 'integer', 'minimum': 0}}, ['track', 'effect']),
@@ -547,7 +547,10 @@ Use ramps rather than abrupt jumps or frantic syllable-by-syllable normalization
 Respect intentional song dynamics and the user's requested direction.
 
 Trim is a dedicated post-FX gain effect, not source clip gain. Do not edit audio
-items or existing user envelopes. set_trim_automation REPLACES the complete owned
+items or existing user envelopes. set_trim_automation creates/reuses its own trim
+processor; never request JS Mix Trim through add_effect. That tool only accepts
+names from available_plugins, not the session_effects inventory of existing FX.
+set_trim_automation REPLACES the complete owned
 envelope: read inspect_project trim_envelopes and preserve/merge earlier useful
 rides, including on resume. Use absolute project seconds, strict point ordering,
 and zero-dB points at both SELECTED PASSAGE boundaries, not at every diagnostic
