@@ -10,6 +10,7 @@ The standalone interaction checks need Lua 5.3 or newer. From the repository roo
 ```sh
 lua "$PWD/Tests/Visual timeline interactions.lua"
 lua "$PWD/Tests/Track management.lua"
+lua "$PWD/Tests/Track meters.lua"
 lua "$PWD/Tests/Take deletion.lua"
 lua "$PWD/Tests/Take selection.lua"
 lua "$PWD/Tests/Recorded tempo.lua"
@@ -23,6 +24,10 @@ lua "$PWD/Tests/Mix review controls.lua"
 lua "$PWD/Tests/Mix window guard.lua"
 lua "$PWD/Tests/Mix FX snapshots.lua"
 ```
+
+`Track meters.lua` checks stereo group maxima, shared per-frame sampling, peak
+hold/decay, overload clearing, project and membership changes, and invalid native
+readings. The meter reader exposes no project writes or monitoring changes.
 
 `Mix FX snapshots.lua` checks per-plugin snapshot boundaries, untouched adjacent
 plugins, strict opaque-state comparisons and rollback after failed restoration.

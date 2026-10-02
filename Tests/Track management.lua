@@ -31,6 +31,7 @@ local function fixture()
   GetEnvelopeStateChunk=function(env)return true,'\nACT '..env.active..'\n'end,
   GetProjExtState=function(_,_,key)return 1,f.state[key]or ''end,SetProjExtState=function(_,_,key,value)f.state[key]=value end,
   EnumProjects=function()return f.project end,GetPlayState=function()return f.recording and 4 or 0 end,
+  time_precise=function()return 1 end,Track_GetPeakInfo=function()return 0 end,
   GetProjectStateChangeCount=function()return f.revision end,
   ValidatePtr2=function(_,tr)for _,candidate in ipairs(f.tracks)do if tr==candidate then return true end end;return false end,
   DeleteTrack=function(tr)for i,candidate in ipairs(f.tracks)do if candidate==tr then table.remove(f.tracks,i);f.revision=f.revision+1;return end end;error('Missing track')end,

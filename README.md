@@ -232,6 +232,12 @@ The **Tracks** tab shows the same instrument groups as the header tabs. Click a
 group name to select it, or **+** to expand its individual microphones/tracks.
 **Other tracks** keeps buses and tracks outside recording groups accessible.
 
+- Stereo meters below each volume control show live native REAPER levels: left
+  on top, right below, with a 1.2-second peak hold and a dBFS readout. Group meters
+  show the loudest member per channel, rather than a summed bus level. Expand a
+  group to see individual tracks. A red indicator stays lit after reaching
+  0 dBFS; click the meter to clear it. Meter history resets when switching songs.
+  Meters remain active during recording and do not change input monitoring.
 - Drag a volume slider, click its dB value, or use **-1 / +1** for fine changes.
   Group dB shows the loudest member fader; all members move by the same dB amount,
   preserving their relative levels. Volume and pan respond while you drag,
