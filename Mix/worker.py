@@ -20,6 +20,7 @@ import urllib.request
 import urllib.parse
 import uuid
 import leveling
+import planning
 
 os.environ['PATH'] = '/opt/homebrew/bin:/usr/local/bin:' + os.environ.get('PATH', '')
 ROOT = Path(__file__).resolve().parent
@@ -207,6 +208,11 @@ TOOLS = [
            {'track': TRACK, 'points': {'type': 'array', 'minItems': 2, 'maxItems': 256,
             'items': {'type': 'object', 'properties': {'seconds': number(0, 86400), 'db': number(-12, 6)},
                       'required': ['seconds', 'db'], 'additionalProperties': False}}}, ['track', 'points']),
+    schema('set_phrase_rides', 'Preferred for sustained vocal/guitar corrections. Holds an ABSOLUTE session trim gain across each entire phrase with smooth ramps before/after; preserves owned rides outside those ranges. Repeating the same request does not stack gain. Native user automation and clips stay intact. Batch all supported phrase changes together. Measure targeted checks with analyze_track_levels stage=plan, then verify once at the end.',
+           {'track': TRACK, 'rides': {'type': 'array', 'minItems': 1, 'maxItems': 16, 'items': {
+               'type': 'object', 'properties': {'start_seconds': number(0, 86400), 'end_seconds': number(0, 86400),
+                   'gain_db': number(-12, 6), 'ramp_seconds': number(.1, 3)},
+               'required': ['start_seconds', 'end_seconds', 'gain_db'], 'additionalProperties': False}}}, ['track', 'rides']),
     schema('measure_track', 'Measure one track solo-in-place, including routing, shared returns and master FX; not a dry stem. Defaults to the shared 30-second diagnostic window. Supply start/duration to inspect another section, or full_passage=true. Compare with the mix over the SAME window.', {'track': TRACK, **WINDOW}, ['track']),
     schema('measure_mix', 'Measure the mix through actual master FX: LUFS, peaks, crest, spectrum, stereo and time envelopes. Defaults to the shared 30-second diagnostic window. Supply start/duration for another section, or full_passage=true. Final review always verifies the entire selected passage.', WINDOW, []),
 ]
@@ -216,7 +222,7 @@ TOOLS = [
 EDIT_TOOLS = {tool['function']['name']: tool['function']['parameters'] for tool in TOOLS
               if tool['function']['name'] in (
                   'set_track_mix', 'add_effect', 'configure_eq', 'configure_compressor',
-                  'configure_limiter', 'set_effect_parameter', 'set_trim_automation')}
+                  'configure_limiter', 'set_effect_parameter', 'set_trim_automation', 'set_phrase_rides')}
 BATCH_VARIANTS = []
 for name, parameters in EDIT_TOOLS.items():
     parameters = copy.deepcopy(parameters)
@@ -237,9 +243,16 @@ TOOLS.extend([
     schema('measure_tracks', 'Compare up to 16 track contributions over the SAME project-time window in one request. Returns a side-by-side summary plus numeric profiles. Each contribution still requires a sequential solo-in-place render unless cached; includes shared returns/master, NOT isolated dry stems. Choose informative tracks; do not routinely render every track. Errors are reported per track.',
            {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': MAX_BATCH_READS, 'items': TRACK},
             **WINDOW}, ['tracks']),
-    schema('analyze_track_levels', 'Full selected-passage vocal/guitar level check, NOT the 30-second window. Measures the processed mix and up to 8 selected contributions, reusing valid renders. Returns activity-gated phrase windows, section levels and track-to-mix balance proxies to find disappearing/jumping-out parts. No edits. Repeat after the final edits to verify rides before review_level_balance.',
-           {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': 8, 'items': TRACK}}, ['tracks']),
-    schema('review_level_balance', 'Record the measured leveling outcome for a track after analyze_track_levels at the CURRENT mix settings. Explain corrected times/gains, or why the measured dynamics should stay. automated requires session trim rides; unmeasurable requires a failed level analysis and remains visibly unverified. This does not edit audio.',
+    schema('analyze_track_levels', 'Plan/verify vocal and guitar leveling. Default stage=plan obtains a full-passage baseline once, then uses short source-active or changed-phrase checks after edits and skips untouched sources. Returns precise full-resolution local evidence and before/after comparisons. stage=verify measures the ENTIRE selected passage at current settings and is required before review_level_balance. Batch changes, use plan for refinement, verify once after final source/master edits.',
+           {'tracks': {'type': 'array', 'minItems': 1, 'maxItems': 8, 'items': TRACK},
+            'stage': {'type': 'string', 'enum': ['plan', 'verify']}}, ['tracks']),
+    schema('plan_level_automation', 'Analyze continuous uneven playing and preview a PARTIAL inverse moving-RMS curve. No edits. Works over the whole passage or any start/end seconds, not fixed song sections. Default strength 0.5 halves measured level differences approximately; 3-second smoothing preserves attacks, silence is gated, gain and slew are limited. Reuses current full-resolution renders. Returns plan_id, predicted spread and a chart when vision is enabled. Inspect then apply_level_automation; verify actual output afterward. Existing useful trim is retained with this bounded correction added once.',
+           {'track': TRACK, 'start_seconds': number(0, 86400), 'end_seconds': number(0, 86400),
+            'window_seconds': number(1, 12), 'strength': number(0, .9), 'max_boost_db': number(0, 6),
+            'max_cut_db': number(0, 12), 'slew_db_per_second': number(.25, 6)}, ['track']),
+    schema('apply_level_automation', 'Apply up to 8 current preview plans together as one coordinated leveling pass. Only plans made at the current settings are accepted; one plan per track. Already applied plans are never stacked again. Stops on first native error and reports earlier applied plans. Use short stage=plan checks to evaluate the change, then one full stage=verify audit at the end.',
+           {'plan_ids': {'type': 'array', 'minItems': 1, 'maxItems': 8, 'items': {'type': 'string'}}}, ['plan_ids']),
+    schema('review_level_balance', 'Record the leveling outcome after analyze_track_levels stage=verify at CURRENT settings (or the initial full-passage baseline if no edits). Short plan checks cannot approve a song. Explain corrected times/gains, or why measured dynamics should stay. automated requires session trim rides; unmeasurable requires failed full-passage evidence and remains visibly unverified.',
            {'track': TRACK, 'decision': {'type': 'string', 'enum': ['automated', 'already_consistent', 'intentional_dynamics', 'unmeasurable']},
             'reason': {'type': 'string', 'maxLength': 2048, 'description': 'Concise measured outcome and musical rationale, up to 2048 characters.'}}, ['track', 'decision', 'reason']),
 ])
@@ -287,7 +300,7 @@ def validate(value, spec):
             raise ValueError('Number outside allowed range')
 
 
-def compact(profile):
+def compact(profile, envelope_limit=90):
     result = {k: v for k, v in profile.items() if k in (
         'title', 'group', 'duration_seconds', 'rms_dbfs', 'sample_peak_dbfs', 'crest_db',
         'median_1s_crest_db', 'lr_correlation', 'side_energy_fraction', 'peak_to_loudness_db',
@@ -295,7 +308,7 @@ def compact(profile):
     result['loudness'] = {k: v for k, v in profile.get('loudness', {}).items() if k != 'timeline'}
     # At most 90 time samples; retain the complete measured profile locally.
     envelope = result.get('envelope_1s', [])
-    result['envelope_1s'] = envelope[::max(1, math.ceil(len(envelope) / 90))]
+    result['envelope_1s'] = envelope[::max(1, math.ceil(len(envelope) / envelope_limit))] if envelope_limit else envelope
     return result
 
 
@@ -404,7 +417,9 @@ def reference_issues(profile, references):
 def analyze_audio(path, out, title):
     from analyze import analyze
     profile, _ = analyze({'path': str(path), 'title': title, 'group': 'Mix session'}, out)
-    return compact(profile)
+    # Level analysis must use every second. Thin timelines only when sending
+    # evidence to the model, never before local phrase/activity calculations.
+    return compact(profile, envelope_limit=None)
 
 
 def library():
@@ -502,7 +517,10 @@ Work in coordinated passes across the arrangement, not a long sequence of tiny
 single-track adjustments. inspect_project already shows ALL tracks, routing and
 owned effects. First plan the largest balance/tonal problems across the band.
 Use measure_tracks to compare several informative sources over the same window
-when processed source measurements are needed; do not render an entire inventory
+when processed source measurements are needed: use its default short diagnostic
+window for EQ/dynamics, not full_passage=true on an entire track inventory.
+Full-passage renders belong at the baseline and final verification, not after
+each local adjustment. Do not render an entire inventory
 without a specific reason. Its summary compares contributions through shared
 returns/master, so their loudness values are not additive or isolated dry levels.
 Use inspect_effects to establish multiple third-party parameter mappings together.
@@ -528,9 +546,12 @@ Overall LUFS or one good chorus does not prove a balanced song. The initial cont
 lists level_balance_targets inferred from contributing vocal/guitar names. Inspect
 routing/roles and include other relevant sources as needed. Static zero-fader
 tracks with no sends are excluded; do not render or turn up unused scratch tracks.
-Zero-fader tracks with automation or sends may still contribute. Analyze their FULL
-selected passage with analyze_track_levels (up to eight sources together). This is
-a purposeful full-song check, not a routine render of every drum microphone. Use
+Zero-fader tracks with automation or sends may still contribute. Start with
+analyze_track_levels stage=plan (up to eight sources together). The first call gets
+a full-passage baseline using EVERY one-second sample locally. Later plan calls
+check short changed-phrase/source-active windows and skip untouched sources.
+Use these quick before/after checks while refining; do not request full mix plus
+full instrument renders after each ride. Use
 its active phrase/section summaries and same-time mix comparison to find parts
 that jump out or disappear. Track-to-mix ratios are imperfect proxies because of
 shared/master processing; use finer targeted measurements for ambiguous passages.
@@ -538,7 +559,7 @@ shared/master processing; use finer targeted measurements for ambiguous passages
 Aim for consistent musical prominence: lead vocals remain present, guitars support
 them, and no accidental section dominates or vanishes. This does NOT mean equal
 RMS/LUFS for every instrument or flattening verses, chorus lifts, fills and solos.
-Fix sustained local level problems explicitly with set_trim_automation; one static
+Fix sustained local level problems explicitly with volume automation; one static
 fader, compressor, or master limiter is not a substitute for section/phrase rides.
 Use the fader for the overall balance, compression for short-term dynamics, and
 smooth trim rides for phrases/sections. Start with measured 1-4 dB rides when useful;
@@ -546,6 +567,28 @@ larger supported corrections are allowed within -12/+6 dB. Never boost gaps,
 breaths, bleed, reverb tails, missing media or near-silence to match active playing.
 Use ramps rather than abrupt jumps or frantic syllable-by-syllable normalization.
 Respect intentional song dynamics and the user's requested direction.
+For uneven playing across arbitrary seconds, prefer plan_level_automation. It
+computes a continuous partial inverse moving-RMS curve from every second of the
+processed source, with peak context, activity gating and gradual transitions.
+Start with 3-second smoothing, strength=0.5 (roughly half the variation), +3/-6 dB
+correction caps and 1.5 dB/second slew. No song-section or phrase boundaries are
+required. Optional start/end can restrict the correction to any range of at least
+one second, while the target still uses the full performance. Plan all affected
+tracks at the same settings, inspect the predicted spread/chart, then use ONE
+apply_level_automation call with their plan_ids before measuring. Plans are
+previews, not proof: nonlinear processing requires actual verification. Do not
+repeatedly stack inverse curves or force normal playing variations to disappear.
+An already consistent performance may need no curve. Preserve deliberate quiet
+sections and solos; use a restricted range or explicit rides when appropriate.
+For a sustained quiet phrase, hold the correction across its full start/end with
+short ramps; a single triangular gain peak corrects only its center. set_phrase_rides
+does this and preserves other rides automatically. Choose a supported correction
+in one pass (e.g. an accidental 3 dB drop merits roughly a 3 dB ride), not repeated
+0.5–1 dB nudges. Batch all supported rides across tracks before checking.
+Evaluate whether the measured prominence improved; do not chase a barely crossed
+3 dB review flag. After two refinements of the same phrase, use a wider contextual
+check and explain remaining musical/processing constraints instead of blindly
+raising it again. Solo measurements through a limiter do not respond linearly.
 
 Trim is a dedicated post-FX gain effect, not source clip gain. Do not edit audio
 items or existing user envelopes. set_trim_automation creates/reuses its own trim
@@ -557,7 +600,13 @@ rides, including on resume. Use absolute project seconds, strict point ordering,
 and zero-dB points at both SELECTED PASSAGE boundaries, not at every diagnostic
 window. Budget trim processors within the 24-effect limit before adding optional FX.
 
-After the final source/master edits, rerun analyze_track_levels for the required
+After ALL source/EQ/dynamics/master edits, run analyze_track_levels stage=verify
+ONCE for the required sources (it also measures the full mix). This is the final
+full-song audit; planning windows are never sufficient to approve the song.
+If finishing before this audit, the worker performs it and returns its evidence.
+For verified sources, call review_level_balance. Avoid a redundant measure_mix
+full_passage call immediately before/after the same verification.
+Review the required
 sources and call review_level_balance for each. State what rides changed and where,
 or give a measured musical reason for leaving dynamics intact. When the full-song
 check exposes a remaining level problem, fix and recheck it rather than merely
@@ -634,6 +683,10 @@ class Session:
         self.level_reports = {}
         self.level_reviews = {}
         self.trim_edits = set()
+        self.level_baselines = {}
+        self.trim_changes = {}
+        self.global_edit_revision = 0
+        self.level_plans = {}
 
     def trace(self, kind, **details):
         # Append-only per worker pass. No provider headers or opaque reasoning.
@@ -868,7 +921,7 @@ class Session:
         if spec is None:
             raise ValueError('Unknown tool')
         validate(args, spec)
-        if self.measurement_error and (name in EDIT_TOOLS or name == 'apply_mix_batch'):
+        if self.measurement_error and (name in EDIT_TOOLS or name in ('apply_mix_batch', 'apply_level_automation')):
             raise ValueError('Mix edits are paused after a failed render. Obtain a valid measure_mix result from an active passage before changing settings.')
         if name == 'apply_mix_batch':
             return self.apply_mix_batch(args['operations'])
@@ -877,7 +930,11 @@ class Session:
         if name == 'measure_tracks':
             return self.measure_tracks(args)
         if name == 'analyze_track_levels':
-            return self.analyze_track_levels(args['tracks'])
+            return self.analyze_track_levels(args['tracks'], args.get('stage', 'plan'))
+        if name == 'plan_level_automation':
+            return self.plan_level_automation(args)
+        if name == 'apply_level_automation':
+            return self.apply_level_automation(args['plan_ids'])
         if name == 'review_level_balance':
             return self.review_level_balance(args)
         if name == 'measure_mix':
@@ -891,15 +948,37 @@ class Session:
         return self.bridge(name, args)
 
     def mix_edit(self, name, args):
+        if name == 'set_phrase_rides':
+            project = self.bridge('inspect_project', {})
+            if project.get('error'):
+                return project
+            self.project = project
+            existing = next((row['points'] for row in project.get('trim_envelopes', [])
+                             if row['track'] == args['track']), [])
+            points = planning.phrase_envelope(existing, args['rides'], self.config['bounds'])
+            if points == existing:
+                return {'unchanged': True, 'points': points, 'next_step': 'This envelope is already applied; reuse current evidence.'}
+            result = self.mix_edit('set_trim_automation', {'track': args['track'], 'points': points})
+            return {**result, 'points': points, 'next_step': 'Use analyze_track_levels stage=plan for short changed-phrase checks. Batch further supported changes, then stage=verify once before final review.'}
         # Even a failed plugin operation can partially change audio. Old level
         # evidence cannot approve the candidate after any attempted mix edit.
         self.mix_revision += 1
         result = self.bridge(name, args)
         if name == 'set_trim_automation' and not result.get('error'):
+            envelopes = self.project.setdefault('trim_envelopes', [])
+            row = next((row for row in envelopes if row['track'] == args['track']), None)
+            before = row['points'] if row else []
+            self.trim_changes.setdefault(args['track'], []).extend(
+                planning.changed_trim_spans(before, args['points'], self.config['bounds']))
+            if row is None:
+                row = {'track': args['track']}; envelopes.append(row)
+            row['points'] = copy.deepcopy(args['points'])
             if any(abs(point['db']) > .01 for point in args['points']):
                 self.trim_edits.add(args['track'])
             else:
                 self.trim_edits.discard(args['track'])
+        else:
+            self.global_edit_revision = self.mix_revision
         return result
 
     def leveling_issues(self):
@@ -912,7 +991,7 @@ class Session:
                 issues.append(target['name'] + ': level balance could not be verified (' + review['reason'] + ').')
         return issues
 
-    def analyze_track_levels(self, tracks):
+    def analyze_track_levels(self, tracks, stage='plan'):
         if len(set(tracks)) != len(tracks) or 'MASTER' in tracks:
             raise ValueError('Choose unique contributing track GUIDs, not MASTER.')
         self.batch_budget(len(tracks) + 2)
@@ -924,33 +1003,70 @@ class Session:
             raise ValueError('Unknown track; inspect_project for current GUIDs.')
         self.project = project
         bounds = list(self.config['bounds'])
-        self.publish('Checking vocal/guitar levels across the full selected passage…')
-        mix = self.measure('Level-balance mix', window=bounds)
+        self.publish('Verifying full-passage vocal/guitar levels…' if stage == 'verify' else
+                     'Planning level rides; using short checks where a baseline is available…')
+        mix = None
         reports = []; errors = []
         for index, track in enumerate(tracks, 1):
             self.publish('Level balance %d/%d · %s…' % (index, len(tracks), by_id[track]['name']), 'tool')
+            baseline = self.level_baselines.get(track)
+            full_check = stage == 'verify' or not baseline or baseline['revision'] == self.mix_revision
             try:
+                if baseline and baseline['revision'] == self.mix_revision:
+                    reports.append(baseline['report'])
+                    continue
+                if stage == 'plan' and baseline and baseline['revision'] != self.mix_revision:
+                    reports.append(self.check_track_levels(track, baseline))
+                    continue
+                if mix is None:
+                    mix = self.measure('Level-balance mix', window=bounds)
                 profile = self.measure('Level-balance contribution', track, window=bounds)
                 report = leveling.level_report(profile, mix, bounds, project.get('regions', []))
-                report.update(track=track, name=by_id[track]['name'])
+                report.update(track=track, name=by_id[track]['name'], verification_scope='full_passage', revision=self.mix_revision)
                 self.level_reports[track] = {'revision': self.mix_revision, 'report': report}
+                self.level_baselines[track] = {'revision': self.mix_revision, 'track': profile, 'mix': mix, 'report': report}
+                self.trim_changes.pop(track, None)
                 reports.append(report)
             except ValueError as error:
                 failure = {'track': track, 'name': by_id[track]['name'], 'error': str(error)}
-                self.level_reports[track] = {'revision': self.mix_revision, **failure}
+                if full_check:
+                    self.level_reports[track] = {'revision': self.mix_revision, **failure}
                 errors.append(failure)
         write(self.dir / 'level-balance.json', self.level_reports)
-        result = {'measurement_bounds': bounds, 'reports': reports, 'errors': errors,
-                  'next_step': 'Correct accidental phrase/section jumps with smooth trim rides, then reanalyze after the final edits and review_level_balance for each source. Preserve intentional dynamics.'}
+        result = {'measurement_bounds': bounds, 'stage': stage, 'reports': reports, 'errors': errors,
+                  'next_step': 'For continuous uneven playing, preview plan_level_automation then batch apply_level_automation. For an explicit time-range gain use set_phrase_rides. Use stage=plan for short checks while refining; after all edits stage=verify once for every required source, then review_level_balance. Preserve intentional dynamics; do not chase every flag or repeatedly nudge a single point.'}
         if not reports:
             result['error'] = 'No tracks supplied usable level evidence; see individual errors.'
         return result
+
+    def check_track_levels(self, track, baseline):
+        spans = self.trim_changes.get(track, [])
+        global_change = self.global_edit_revision > baseline['revision']
+        result = {'track': track, 'name': baseline['report']['name'], 'revision': self.mix_revision,
+                  'baseline_revision': baseline['revision'], 'verification_scope': 'diagnostic',
+                  'final_verification_required': True}
+        if not spans and not global_change:
+            return {**result, 'skipped_unchanged_source': True,
+                    'note': 'No direct change to this source. Recheck its mix interaction at final full-passage verification.'}
+        bounds = list(self.config['bounds'])
+        windows = planning.check_windows(spans, bounds) if spans else [planning.active_check_window(baseline['track'], bounds)]
+        checks = []
+        for window in windows:
+            mix = self.measure('Level-check mix', window=window)
+            profile = self.measure('Level-check contribution', track, window=window)
+            current = leveling.level_report(profile, mix, window, self.project.get('regions', []))
+            previous = leveling.level_report(planning.slice_profile(baseline['track'], bounds, window),
+                                            planning.slice_profile(baseline['mix'], bounds, window), window, [])
+            checks.append({'measurement_bounds': window, 'before': previous, 'after': current,
+                           'active_median_change_db': round(current['active_rms_median_dbfs'] - previous['active_rms_median_dbfs'], 2)})
+        return {**result, 'changed_spans': spans, 'checks': checks,
+                'note': 'Actual short renders through all processing. Compare before/after over the same range; this is not a full-song verification. Global fader/FX changes may shift all levels. Batch justified edits and avoid repeated tiny nudges; retain musical dynamics.'}
 
     def review_level_balance(self, args):
         track = args['track']; decision = args['decision']; reason = args['reason'].strip()
         report = self.level_reports.get(track)
         if not report or report['revision'] != self.mix_revision:
-            raise ValueError('Run analyze_track_levels for this track after the latest edits before reviewing it.')
+            raise ValueError('Run analyze_track_levels with stage=verify for this track after the latest edits before reviewing it. Short planning checks cannot approve the full passage.')
         if not reason:
             raise ValueError('Explain the measured outcome or musical reason.')
         if bool(report.get('error')) != (decision == 'unmeasurable'):
@@ -964,6 +1080,67 @@ class Session:
         name = report.get('report', report).get('name', track)
         self.publish('Level balance · ' + name + ' · ' + decision.replace('_', ' ') + ': ' + reason, 'tool')
         return {'track': track, **review, 'remaining': self.leveling_issues()}
+
+    def plan_level_automation(self, args):
+        project = self.bridge('inspect_project', {})
+        if project.get('error'):
+            return project
+        self.project = project
+        track = args['track']
+        row = next((row for row in project['tracks'] if row['id'] == track), None)
+        if not row:
+            raise ValueError('Choose an instrument track, not MASTER, for continuous leveling.')
+        baseline = self.level_baselines.get(track)
+        profile = baseline['track'] if baseline and baseline['revision'] == self.mix_revision else self.measure('Level-curve source', track)
+        existing = next((row['points'] for row in project.get('trim_envelopes', []) if row['track'] == track), [])
+        controls = {k: v for k, v in args.items() if k not in ('track', 'start_seconds', 'end_seconds')}
+        plan = planning.level_curve(profile, existing, self.config['bounds'], args.get('start_seconds'), args.get('end_seconds'), **controls)
+        ident = uuid.uuid4().hex[:16]
+        plan.update(plan_id=ident, track=track, name=row['name'], revision=self.mix_revision)
+        self.level_plans[ident] = plan
+        # Keep current plans bounded; historical JSON remains local for inspection.
+        if len(self.level_plans) > 32:
+            self.level_plans.pop(next(iter(self.level_plans)))
+        write(self.dir / ('level-plan-' + ident + '.json'), plan)
+        self.publish('Level curve · %s · %.0f%% strength, %.1fs smoothing; predicted spread %.1f → %.1f dB (preview).' % (
+            row['name'], plan['strength'] * 100, plan['window_seconds'], plan['before_spread_db'], plan['predicted_spread_db']))
+        if self.visuals_enabled:
+            try:
+                from visuals import level_curve_chart
+                folder = self.dir / 'visuals'; folder.mkdir(exist_ok=True)
+                chart = folder / ('level-plan-' + ident + '.png')
+                level_curve_chart(plan, chart)
+                self.queue_image(chart, 'Level automation preview for %s. Predicted curve is a linear estimate, not a verified render.' % row['name'])
+            except Exception:
+                self.publish('Level-curve chart unavailable; numeric preview remains available.')
+        return {k: v for k, v in plan.items() if k not in ('curve', 'points')} | {
+            'point_count': len(plan['points']), 'next_step': 'Review limits and predicted spread, then apply_level_automation with this plan_id. Aim to reduce sustained differences, preserving performance dynamics.'}
+
+    def apply_level_automation(self, identifiers):
+        if len(set(identifiers)) != len(identifiers):
+            raise ValueError('Choose unique plan IDs.')
+        plans = []
+        for ident in identifiers:
+            plan = self.level_plans.get(ident)
+            if not plan:
+                raise ValueError('Unknown level plan; use plan_level_automation first.')
+            if 'applied_revision' not in plan and plan['revision'] != self.mix_revision:
+                raise ValueError('Level plan is stale after other mix edits. Create a current preview before applying it.')
+            plans.append(plan)
+        if len({p['track'] for p in plans}) != len(plans):
+            raise ValueError('Apply only one plan per track in a batch.')
+        self.batch_budget(len(plans))
+        results = []
+        for plan in plans:
+            if 'applied_revision' in plan:
+                results.append({'plan_id': plan['plan_id'], 'already_applied': True}); continue
+            result = self.mix_edit('set_trim_automation', {'track': plan['track'], 'points': plan['points']})
+            results.append({'plan_id': plan['plan_id'], 'track': plan['track'], 'result': result})
+            if result.get('error'):
+                return {'error': 'Level batch stopped; earlier successful plans remain applied. Replan any remainder at current settings.', 'results': results}
+            plan['applied_revision'] = self.mix_revision
+            write(self.dir / ('level-plan-' + plan['plan_id'] + '.json'), plan)
+        return {'results': results, 'next_step': 'Use analyze_track_levels stage=plan for short actual checks. Do not repeatedly stack inverse curves; inspect the result, preserve dynamics, and finish with stage=verify and review_level_balance.'}
 
     def measure(self, label, track_id=None, window=None, _retry=False):
         bounds = list(window if window is not None else self.config['bounds'])
@@ -1115,6 +1292,7 @@ class Session:
                 'excerpt_seconds': self.config['bounds'], 'diagnostic_seconds': self.diagnostic_bounds, 'project': project,
                 'original': original, 'references': refs,
                 'level_balance_targets': self.level_targets}, allow_nan=False)}]
+            messages[1]['content'] = json.dumps(planning.model_evidence(json.loads(messages[1]['content'])), allow_nan=False)
             self.attach_images(messages)
             rounds = min(MAX_ROUNDS, max(1, int(self.config.get('rounds', DEFAULT_ROUNDS))))
             empty_retries = 0
@@ -1126,6 +1304,7 @@ class Session:
                     raise RuntimeError('Session cancelled')
                 self.publish('Waiting for OpenRouter · round %d / %d…' % (turn + 1, rounds))
                 self.attach_images(messages)
+                planning.compact_history(messages)
                 self.phase('openrouter_request', round=turn + 1)
                 response = self.api('/chat/completions', {'model': self.config.get('model', DEFAULT_MODEL),
                     'messages': messages, 'tools': TOOLS, 'tool_choice': 'auto',
@@ -1169,6 +1348,15 @@ class Session:
                         self.publish('The model did not provide a complete response. This pass is unfinished.')
                         break
                     checked = self.measure('Completion check')
+                    verification = None
+                    stale = [target['track'] for target in self.level_targets
+                             if self.level_reports.get(target['track'], {}).get('revision') != self.mix_revision]
+                    if stale:
+                        verification = {'reports': [], 'errors': []}
+                        for offset in range(0, len(stale), 8):
+                            batch = self.analyze_track_levels(stale[offset:offset + 8], 'verify')
+                            verification['reports'].extend(batch['reports'])
+                            verification['errors'].extend(batch['errors'])
                     issues = reference_issues(checked, refs)
                     level_issues = self.leveling_issues()
                     issues.extend(level_issues)
@@ -1179,8 +1367,9 @@ class Session:
                         completion_checks += 1
                         self.publish('Mix checks still need work: ' + ' '.join(issues) + ' Continuing the pass.')
                         messages.append({'role': 'user', 'content': json.dumps({
-                            'completion_check': 'The candidate still has unfinished checks. For level-balance gaps, use analyze_track_levels across the full passage, correct accidental phrase/section differences with trim automation, reanalyze after edits, and review_level_balance for each required source. Do not use master loudness as a substitute for leveling. For reference gaps use source balance/EQ and appropriate MASTER processing.',
-                            'remaining_gaps': issues, 'latest_measurement': checked}, allow_nan=False)})
+                            'completion_check': 'The candidate still has unfinished checks. Current full-passage verification is attached when needed: review it and use review_level_balance for each required source. For material level problems batch justified phrase rides, use stage=plan for short checks, then stage=verify once after final edits. Do not chase every flag or flatten intentional dynamics. For reference gaps use source balance/EQ and appropriate MASTER processing.',
+                            'remaining_gaps': issues, 'level_verification': verification,
+                            'latest_measurement': planning.model_evidence(checked)}, allow_nan=False)})
                         continue
                     self.completion_reason = 'cost_limit' if cost_reached else ('level_balance_incomplete' if level_issues else 'reference_gap' if issues else 'measured_completion')
                     break
@@ -1215,7 +1404,7 @@ class Session:
                     if isinstance(result, dict) and result.get('error'):
                         failed_calls += 1
                         self.publish(name.replace('_', ' ') + ' failed: ' + str(result['error']), 'tool')
-                    messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(result, allow_nan=False)})
+                    messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': json.dumps(planning.model_evidence(result), allow_nan=False)})
                 # This is a post-response stop threshold, not a guaranteed billing cap.
                 if self.cost >= self.config.get('stop_after_usd', 2):
                     self.completion_reason = 'cost_limit'

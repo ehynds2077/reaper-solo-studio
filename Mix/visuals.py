@@ -47,6 +47,32 @@ def save(fig, output):
     return Path(output)
 
 
+def level_curve_chart(plan, output):
+    """Measured moving RMS and a clearly labeled, unrendered automation preview."""
+    fig, axes = plt.subplots(2, 1, figsize=(12, 6), sharex=True, constrained_layout=True)
+    rows = [row for row in plan['curve'] if 'rms_dbfs' in row]
+    x = [row['seconds'] for row in rows]
+    clean = lambda value: value if isinstance(value, (int, float)) and math.isfinite(value) else float('nan')
+    axes[0].plot(x, [clean(row.get('peak_dbfs')) for row in rows], color='#999999', alpha=.6, label='Measured 1s peak')
+    axes[0].plot(x, [clean(row.get('smoothed_rms_dbfs')) for row in rows], color='#287eab', label='Measured moving RMS')
+    axes[0].plot(x, [row['smoothed_rms_dbfs'] + row['applied_correction_db'] if row['active'] else float('nan')
+                     for row in rows], color='#d28b21', label='Predicted moving RMS (linear estimate)')
+    axes[0].axhline(plan['target_smoothed_rms_dbfs'], color='#777777', linestyle=':', linewidth=.8, label='Full-performance median')
+    axes[0].set(ylabel='dBFS', title='Activity-gated level preview · gaps excluded from target')
+    axes[1].plot([row['seconds'] for row in plan['curve']], [row['applied_correction_db'] for row in plan['curve']],
+                 color='#9266a9', label='New correction only')
+    axes[1].plot([p['seconds'] for p in plan['points']], [p['db'] for p in plan['points']],
+                 color='#287eab', alpha=.65, label='Resulting owned trim (includes earlier rides)')
+    axes[1].axhline(0, color='#777777', linewidth=.8)
+    axes[1].set(xlim=plan['range'], xlabel='Project time (seconds)', ylabel='Gain (dB)')
+    for ax in axes:
+        ax.grid(alpha=.2); ax.legend(fontsize=8, loc='best')
+    fig.suptitle('%s · %.0f%% strength · %.1fs smoothing\nActive p90–p10 spread %.1f → %.1f dB predicted · verify actual render after applying' % (
+        label(plan.get('name', 'Level automation')), plan['strength'] * 100, plan['window_seconds'],
+        plan['before_spread_db'], plan['predicted_spread_db']), fontsize=10)
+    return save(fig, output)
+
+
 def arrangement_chart(data, output):
     rows = data['tracks']; start, end = data['bounds']
     fig, axes = plt.subplots(len(rows), 1, figsize=(12, max(3, len(rows) * .46 + 1.4)),

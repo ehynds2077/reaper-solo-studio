@@ -18,7 +18,7 @@ def main(directory):
                 {'seconds': 0, 'db': 0}, {'seconds': 7.9, 'db': 0},
                 {'seconds': 8.05, 'db': -6.0206}, {'seconds': 15.95, 'db': -6.0206},
                 {'seconds': 16.1, 'db': 0}, {'seconds': 24, 'db': 0}]}),
-                ('analyze_track_levels', {'tracks': [track]}),
+                ('analyze_track_levels', {'tracks': [track], 'stage': 'verify'}),
                 ('review_level_balance', {'track': track, 'decision': 'automated',
                  'reason': 'Reduced the loud 8-16 second phrase by 6.02 dB with short ramps; remeasured all 24 seconds.'})]
         else:

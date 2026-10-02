@@ -103,7 +103,7 @@ class LevelWorkflowTests(unittest.TestCase):
         self.session.measure = measure
 
     def analyze(self, tracks=None):
-        return self.session.execute_tool('analyze_track_levels', {'tracks': tracks or ['vocal', 'guitar']})
+        return self.session.execute_tool('analyze_track_levels', {'tracks': tracks or ['vocal', 'guitar'], 'stage': 'verify'})
 
     def review(self, track, decision='already_consistent'):
         return self.session.execute_tool('review_level_balance', {
@@ -185,7 +185,7 @@ class LevelWorkflowTests(unittest.TestCase):
             self.assertEqual(self.session.run(), 'review')
         self.assertEqual(len(payloads), 3)
         self.assertIn('level_balance_targets', json.loads(payloads[0]['messages'][1]['content']))
-        self.assertIn('analyze_track_levels', payloads[1]['messages'][-1]['content'])
+        self.assertEqual(len(json.loads(payloads[1]['messages'][-1]['content'])['level_verification']['reports']), 2)
         self.assertEqual(self.session.leveling_issues(), [])
 
     def test_exhausted_budget_reports_unverified_leveling(self):

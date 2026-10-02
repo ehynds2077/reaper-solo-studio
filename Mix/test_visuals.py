@@ -11,6 +11,7 @@ import wave
 import numpy as np
 import worker
 import visuals
+import planning
 
 
 def write_wav(path, samples, width=3):
@@ -57,6 +58,9 @@ class VisualTests(unittest.TestCase):
                    'unavailable': 1, 'midi': 0, 'truncated': False}
             visuals.arrangement_chart({'tracks': [row], 'bounds': [100, 108], 'start_track': 0,
                                        'total_tracks': 1, 'truncated': False}, outputs[1])
+            plan = planning.level_curve(profile(), [], [100, 108])
+            outputs.append(folder / 'level-curve.png')
+            visuals.level_curve_chart(plan, outputs[-1])
             for output in outputs:
                 self.assertTrue(output.read_bytes().startswith(b'\x89PNG'))
                 self.assertLess(output.stat().st_size, 500000)

@@ -9,7 +9,7 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/charts.py`, `Mix/visuals.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
@@ -182,16 +182,45 @@ targets; the agent can include other sources after inspecting their roles.
 Tracks with a static zero fader and no sends are excluded, so unused scratch tracks
 do not trigger silent renders. A zero fader with volume automation or sends remains
 eligible because it can still contribute audio; quiet nonzero faders also remain.
-`analyze_track_levels` checks up to eight sources over the **entire selected
-passage**, reusing valid renders. It reports active phrase windows, named song
+`analyze_track_levels` checks up to eight sources. Its default `stage=plan` gets
+one **full-passage baseline**, then uses up to three short, representative
+12–24 second checks after edits. Unchanged sources wait for final verification.
+`stage=verify` checks the **entire selected passage at current settings** and is
+required for the final review; short checks cannot approve a song. Valid renders
+are reused. Local analysis retains every one-second sample; only evidence sent
+to the model is reduced, and older dense tables are retired from model context.
+It reports active phrase windows, named song
 sections, sustained level differences and same-time track-to-mix balance proxies.
 The roughly 3 dB review flags identify candidates for attention, not automatic gain
 instructions. Silence and very low noise are excluded from active-level medians;
 this is not a vocal/bleed detector. Solo-in-place processing means the balance
 proxy is affected by shared returns and nonlinear master FX, not a dry-stem ratio.
 
-The agent is directed to correct disappearing/overpowering phrases with smooth
-`set_trim_automation` rides, use faders for overall balance and compression for
+The agent can preview continuous leveling with **`plan_level_automation`**:
+activity-gated, moving power-RMS analysis produces a partial inverse gain curve.
+Defaults are 3-second smoothing, 50% correction, +3/−6 dB correction limits and
+1.5 dB/second maximum correction slope. It reduces sustained level differences
+without trying to flatten every attack. The whole passage or any range of at
+least one second can be treated; the target uses the full active performance.
+No phrase, bar or section boundary is required. Peaks are displayed for context;
+the correction follows RMS, not transient peaks. This uses one-second evidence,
+not a note detector or a substitute for compression.
+
+The preview includes a graph, predicted active p90–p10 spread and bounded gain
+range. Prediction assumes linear gain; actual shared bus/master processing still
+needs a rendered check. JSON and charts are saved in the session analysis folder.
+**`apply_level_automation`** applies up to eight current plans together. Plans
+become stale after other mix edits, and replaying an applied ID never stacks it.
+Silence is gated and existing owned rides are included; quiet bleed can still need
+musical judgment. Deliberate quiet sections can be preserved by restricting ranges
+or declining a plan. Defaults are agent tool parameters, not new panel sliders.
+
+For an explicit correction such as “+2 dB from 43.2 to 46.2 seconds,”
+**`set_phrase_rides`** holds gain across arbitrary start/end seconds with short
+ramps, preserving owned rides elsewhere. Despite the name, it has no phrase grid.
+These rides can be batched through `apply_mix_batch`. Low-level
+`set_trim_automation` remains available for replacing a full owned curve.
+The agent uses faders for overall balance and compression for
 short-term dynamics, and retain intentional verse/chorus lifts and solos. The goal
 is consistent musical prominence, not equal RMS across instruments. Source clips
 and pre-existing volume automation are unchanged: rides use a separate post-FX

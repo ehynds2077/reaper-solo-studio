@@ -28,7 +28,7 @@ def main():
                         ('configure_limiter',{'track':'MASTER','effect':limiter,'gain_db':9,'ceiling_db':-1.2}),
                         ('measure_mix',{})]
         elif len(calls)==3:
-            operations=[('analyze_track_levels',{'tracks':[track]}),
+            operations=[('analyze_track_levels',{'tracks':[track],'stage':'verify'}),
                         ('review_level_balance',{'track':track,'decision':'already_consistent',
                          'reason':'Full-passage synthetic sustained tone has stable active levels.'})]
         else:
