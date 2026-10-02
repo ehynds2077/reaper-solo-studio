@@ -3,6 +3,7 @@ local root=debug.getinfo(1,'S').source:sub(2):match('^(.*)/Tests/')
 local passed=0;local function check(v,name)assert(v,name);passed=passed+1;print('PASS '..name)end
 local state,transport,session,compared,kept,reverted,buttons,archived,foreign,extstate
 local settings,writes,launches,input,job,legacy,measurement_error,measurements,labels
+local graph_manifest,reference_manifest,loaded_image
 local poll_clock,bridge_request,bridge_calls=0,nil,0
 local J={array=function(t)return t or {}end,write=function(path,value)writes[path]=value end}
 function J.read(path)
@@ -12,6 +13,8 @@ function J.read(path)
  if path:match('/library.json$')then return {references={},default=''}end
  if path:match('/snapshot.json$')then return {finished=false,project_path='other.rpp'}end
  if path:match('/connection.json$')then return {connected=true}end
+ if path:match('/graphics.json$')then return graph_manifest end
+ if path:match('/reference%-graphics.json$')then return reference_manifest end
  if path:match('/request.json$')then return bridge_request end
 end
 local B={json=J,find_session=function()return not foreign and session or nil end,
@@ -34,7 +37,9 @@ reaper={RecursiveCreateDirectory=function()end,GetExtState=function(_,key)return
  GetPlayState=function()return transport end,time_precise=function()return poll_clock end,
  GetSet_LoopTimeRange2=function()return 0,20 end,SetExtState=function(_,_,v)extstate=v end,
  GetUserInputs=function()return true,input end,ExecProcess=function()launches=launches+1;return ''end}
-gfx={setfont=function()end,rect=function()end,measurestr=function(v)return #v*7 end}
+gfx={setfont=function()end,rect=function()end,measurestr=function(v)return #v*7 end,
+ setimgdim=function()end,loadimg=function(_,path)loaded_image=path;return 701 end,
+ getimgdim=function()return 1200,600 end,blit=function()end}
 local factory=original_dofile(root..'/Scripts/solo_mix.lua')
 local ui={text=function(label)labels[label]=true end,color=function()end,colors={},run=function(fn)fn()end,
  button=function(label,x,y,w,h,fn,color,enabled)buttons[label]={run=fn,enabled=enabled~=false}end}
@@ -98,6 +103,17 @@ check(not kept and not reverted and not compared,'Graph generation cannot change
 graph_panel=panel(0);check(graph_panel.key(118),'V opens measured graphics from the keyboard')
 buttons={};graph_panel.draw(0,0,1200,700)
 check(buttons['Chat log']and buttons.Spectrogram,'Keyboard graphics use the same graph view')
+graph_manifest={render='render-1-test.wav',views={spectrogram='mix.png'}}
+reference_manifest={render='render-1-test.wav',references={{title='Reference',views={spectrogram='reference.png'},comparison='comparison.png'}}}
+poll_clock=1;graph_panel.draw(0,0,1200,700)
+check(loaded_image:match('/mix.png$'),'Current mix uses its own graph')
+graph_panel.key(98);graph_panel.draw(0,0,1200,700)
+check(loaded_image:match('/reference.png$'),'B selects the reference graph')
+graph_panel.key(98);graph_panel.draw(0,0,1200,700)
+check(loaded_image:match('/comparison.png$'),'B selects the loudness-matched comparison')
+graph_manifest.render='render-2-test.wav';poll_clock=2;graph_panel.draw(0,0,1200,700)
+check(loaded_image:match('/mix.png$'),'A new render cannot display stale reference comparison')
+graph_manifest=nil;reference_manifest=nil
 measurements=nil
 local x=panel(0,'review','candidate',true)
 check(buttons['Start a new mix'].enabled and not buttons.Original,'Changed project offers current-mix recovery instead of outdated A/B')

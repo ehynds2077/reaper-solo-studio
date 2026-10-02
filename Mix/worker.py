@@ -455,7 +455,8 @@ def add_reference(path):
     lib = library()
     ident = cached.stem
     lib['references'] = [r for r in lib['references'] if r['id'] != ident]
-    lib['references'].append({'id': ident, 'title': profile['title'], 'profile': str(cached)})
+    lib['references'].append({'id': ident, 'title': profile['title'], 'profile': str(cached),
+                              'source_path': str(Path(path).expanduser().resolve())})
     write(DATA / 'library.json', lib)
     return profile
 
@@ -480,6 +481,10 @@ Full-mix spectrograms show project time, logarithmic frequency and fixed-scale
 band power in color. Use them to locate evolving tonal buildup, gaps or noisy
 sections, then verify with numeric evidence. Colors are neither LUFS nor perceived
 quality. Dynamics plots show peak/RMS/crest; they do not measure limiter GR.
+Reference comparison spectrograms use the same color scale, with reference-only
+display gain to match the current mix's integrated LUFS. Raw numbers remain
+unchanged. Different songs are not time/section aligned. Do not mistake mastering
+level or arrangement differences for EQ defects or chase a louder reference master.
 Use visual patterns to choose targeted measurements and level rides, then verify
 with the numeric data. Do not infer vocal intelligibility, musical quality or an
 exact gain adjustment from waveform size. Only the most recent four images remain
@@ -1290,6 +1295,16 @@ class Session:
                 if self.visuals_enabled:
                     self.queue_image(self.dir / 'visuals' / graphics['views']['spectrogram'],
                                      'Processed full-mix spectrogram. Time × log frequency × fixed-scale band power; not gain reduction or perceived loudness.')
+                if self.references:
+                    try:
+                        from reference_graphics import build
+                        comparisons = build(self.dir)
+                        if self.visuals_enabled:
+                            for ref in comparisons['references']:
+                                self.queue_image(self.dir / 'visuals' / ref['comparison'],
+                                    'Mix/reference spectrogram: %s. Reference display gain %+.1f dB matches integrated LUFS only; different song timelines, not aligned sections.' % (ref['title'], ref['display_gain_db']))
+                    except Exception:
+                        self.publish('Reference graphs unavailable; using saved numerical reference measurements. Reimport/relink source audio if needed.')
             except Exception:
                 self.publish('Mix graphics unavailable for this render; numerical measurement remains valid.')
         if self.visuals_enabled:
@@ -1583,8 +1598,35 @@ def main():
     parser.add_argument('--result', type=Path)
     parser.add_argument('--models', type=Path)
     parser.add_argument('--graphics', type=Path)
+    parser.add_argument('--reference-graphics', type=Path)
+    parser.add_argument('--review-graphs', type=Path)
+    parser.add_argument('--link-reference')
+    parser.add_argument('--source', type=Path)
     args = parser.parse_args()
-    if args.graphics:
+    if args.reference_graphics or args.review_graphs:
+        import fcntl
+        from reference_graphics import build, review
+        directory = args.reference_graphics or args.review_graphs
+        with (directory / 'graph-job.lock').open('a') as lock:
+            try:
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                return
+            status_path = directory / 'reference-graphics-status.json'
+            try:
+                if read(directory / 'status.json', {}).get('state') == 'running':
+                    raise ValueError('Wait for the mixing pass before reviewing saved graphs.')
+                write(status_path, {'state': 'running'})
+                result = review(directory) if args.review_graphs else build(directory)
+                write(status_path, {'state': 'ready', 'review': bool(args.review_graphs)})
+            except Exception as error:
+                write(status_path, {'state': 'error', 'message': str(error)})
+                raise
+    elif args.link_reference:
+        from reference_graphics import link_source
+        if not args.source: parser.error('--link-reference requires --source')
+        link_source(args.link_reference, args.source)
+    elif args.graphics:
         generate_session_graphics(args.graphics)
     elif args.models:
         refresh_models(args.models)

@@ -9,7 +9,7 @@ The client uses the standard API directly, with no Agents SDK or cloud service.
 
 After the main Solo Studio installation:
 
-1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, and `Mix/Connect OpenRouter.command` into
+1. Copy `Mix/worker.py`, `Mix/leveling.py`, `Mix/planning.py`, `Mix/charts.py`, `Mix/visuals.py`, `Mix/spectrogram.py`, `Mix/reference_graphics.py`, and `Mix/Connect OpenRouter.command` into
    `Scripts/Solo Studio/Mix/` in REAPER's resource folder.
    Keep the main Lua modules updated too, including `solo_mix_visuals.lua`.
 2. Copy `ReferenceLab/analyze.py` into `Scripts/Solo Studio/ReferenceLab/`.
@@ -134,6 +134,29 @@ measures plugin gain reduction or guarantees an audible improvement.
 Graphs are snapshots of the last measured full mix, not live playback or A/B.
 Existing sessions can use **Generate graphics** to analyze their saved render
 without a paid request or new REAPER render. Charts and `graphics.json` stay local.
+
+The graph **source dropdown** switches between the current mix, each selected
+reference, and a paired **Compare** spectrogram. **B** cycles those sources.
+Reference views include the same spectrogram, waterfall and dynamics plots.
+The paired view applies display gain to the reference to match the mix's integrated
+LUFS; raw reference views and measurements keep the original mastering level.
+It uses one fixed color/frequency scale, with no per-column normalization. Songs
+are not time- or section-aligned, so matching timestamps are not matching passages.
+Reference source files stay local and must match their saved analysis hash. New
+imports retain their source path locally. Older references need reimporting, or
+`worker.py --link-reference ID --source PATH` to link the exact original audio.
+Use **Build reference views** for an existing session. Subsequent full-mix
+measurements build matching comparisons automatically, and image-capable mixing
+models receive the paired spectrograms when visual analysis is enabled.
+
+**AI graph review… → Review graphs** explicitly requests one paid, read-only vision
+response using the selected mix model. This separate request sends charts and
+numerical measurements, has no editing tools or REAPER bridge, and does not start
+a mixing pass or render audio. **Open saved review** opens its report. A model
+without verified image support cannot run this review. The analysis concerns the
+saved render named in the report; subsequent live edits/A/B do not refresh it.
+The CLI equivalents are `--reference-graphics SESSION` and `--review-graphs SESSION`.
+Both use existing renders; only the latter sends a paid model request.
 
 At most four images are retained in model context; older images are replaced by
 text notices while numerical results remain. Charts are saved in the session's
