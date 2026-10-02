@@ -430,7 +430,8 @@ class WorkerTests(unittest.TestCase):
         done={'choices':[{'message':{'role':'assistant','content':'Done'}}]}
         measured={'loudness':{'integrated_lufs':-22.4,'true_peak_dbtp':-3.2}}
         ref={'loudness':{'integrated_lufs':-8.9,'true_peak_dbtp':.5}}
-        session,state,requests,_=self.run_scripted_responses([done],measured,ref)
+        session,state,requests,_=self.run_scripted_responses([done],measured,ref,
+            feedback='Adjust loudness only; preserve the EQ.')
         self.assertEqual(len(requests),4)  # Three bounded completion challenges.
         self.assertEqual(state,'review')  # User can still audition and keep an imperfect result.
         self.assertEqual(session.completion_reason,'reference_gap')
@@ -438,6 +439,9 @@ class WorkerTests(unittest.TestCase):
         self.assertIn('target -12.0 LUFS',session.reference_issues[0])
         self.assertIn('reference targets still off',session.events[-1]['text'])
         self.assertIn('MASTER',requests[1]['messages'][-1]['content'])
+        challenge=json.loads(requests[1]['messages'][-1]['content'])
+        self.assertEqual(challenge['current_request'],'Adjust loudness only; preserve the EQ.')
+        self.assertIn('does not expand the requested scope',challenge['completion_check'])
 
     def test_completion_retries_respect_cost_and_round_limits(self):
         done={'choices':[{'message':{'role':'assistant','content':'Done'}}],'usage':{'cost':.25}}

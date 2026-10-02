@@ -1423,7 +1423,8 @@ class Session:
                         completion_checks += 1
                         self.publish('Mix checks still need work: ' + ' '.join(issues) + ' Continuing the pass.')
                         messages.append({'role': 'user', 'content': json.dumps({
-                            'completion_check': 'The candidate still has unfinished checks. Current full-passage verification is attached when needed: review it and use review_level_balance for each required source. For material level problems batch justified phrase rides, use stage=plan for short checks, then stage=verify once after final edits. Do not chase every flag or flatten intentional dynamics. For reference gaps use source balance/EQ and appropriate MASTER processing.',
+                            'completion_check': 'Review these measurements within the current_request. This check does not expand the requested scope or override preserved settings. If a reference gap is outside that scope, explain it and finish without unrelated edits. Current full-passage verification is attached when needed: review it and use review_level_balance for each required source; preserved dynamics can be reviewed without new automation. Only when the request permits, address material level problems with justified rides or reference gaps with source balance/EQ and appropriate MASTER processing. Do not chase every flag or flatten intentional dynamics.',
+                            'current_request': self.config.get('feedback', ''),
                             'remaining_gaps': issues, 'level_verification': verification,
                             'latest_measurement': planning.model_evidence(checked)}, allow_nan=False)})
                         continue
